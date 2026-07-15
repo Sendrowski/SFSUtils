@@ -25,7 +25,7 @@ from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
 from .io_handlers import bases, get_called_bases, FASTAHandler, NoTypeException, \
     DummyVariant, MultiHandler, VCFHandler, is_monomorphic_snp
 from .settings import Settings
-from .spectrum import Spectra
+from .spectrum import Spectra, JointSFS, JointSpectra
 
 # logger
 logger = logging.getLogger('sfsutils')
@@ -941,7 +941,8 @@ class Parser(MultiHandler):
     def __init__(
             self,
             vcf: str,
-            n: int,
+            n: int | Dict[str, int] | List[int],
+            pops: Dict[str, List[str]] | None = None,
             gff: str | None = None,
             fasta: str | None = None,
             info_ancestral: str = 'AA',
@@ -969,7 +970,18 @@ class Parser(MultiHandler):
         :param fasta: The path to the FASTA file, possibly gzipped or a URL. This file is optional and depends on
             the annotations and filtrations that are used.
         :param n: The size of the resulting SFS. We down-sample to this number by drawing without replacement from
-            the set of all available genotypes per site. Sites with fewer than ``n`` genotypes are skipped.
+            the set of all available genotypes per site. Sites with fewer than ``n`` genotypes are skipped. For a
+            joint (multi-population) SFS (see ``pops``), this is the per-population sample size, given either as a
+            single ``int`` applied to every population, a list aligned with ``pops`` (in insertion order), or a
+            dictionary keyed by population name.
+        :param pops: Mapping of population name to the list of VCF sample names making up that population. When given,
+            :meth:`parse` returns a :class:`~sfsutils.spectrum.JointSpectra` holding the joint SFS across these
+            populations (one :class:`~sfsutils.spectrum.JointSFS` per stratification type) instead of the
+            one-dimensional :class:`~sfsutils.spectrum.Spectra`. The joint SFS is obtained by down-projecting each
+            population independently and accumulating the outer product of the per-population projections, which is
+            the exact hypergeometric down-projection under independent sampling within populations. When ``None``
+            (default), a single-population, one-dimensional SFS is parsed as before. Note that ``pops`` supersedes
+            ``include_samples`` / ``exclude_samples`` and is not currently compatible with ``target_site_counter``.
         :param info_ancestral: The tag in the INFO field that contains ancestral allele information. Consider using
             an ancestral allele annotation if this information is not available yet.
         :param skip_non_polarized: Whether to skip poly-morphic sites that are not polarized, i.e., without a valid
@@ -1020,8 +1032,52 @@ class Parser(MultiHandler):
         #: The target site counter
         self.target_site_counter: TargetSiteCounter | None = target_site_counter
 
-        #: The number of individuals in the sample
-        self.n: int = int(n)
+        #: Mapping of population name to sample names for the joint SFS, or ``None`` for a single-population SFS
+        self.pops: Dict[str, List[str]] | None = pops
+
+        if self.pops is None:
+            #: The per-population sample size (single population)
+            self.n: int = int(n)
+
+            #: Ordered population names (single ``all`` population)
+            self._pop_names: List[str] = []
+
+            #: Per-population sample sizes
+            self._n_per_pop: List[int] = [self.n]
+        else:
+            if len(self.pops) < 1:
+                raise ValueError("At least one population must be provided in 'pops'.")
+
+            if self.target_site_counter is not None:
+                raise NotImplementedError("TargetSiteCounter is not supported for joint (multi-population) parsing.")
+
+            self._pop_names = list(self.pops.keys())
+
+            # normalize n to a per-population list aligned with the population order
+            if isinstance(n, dict):
+                missing = set(self._pop_names) - set(n.keys())
+                if missing:
+                    raise ValueError(f"Missing sample size in 'n' for populations: {sorted(missing)}.")
+                self._n_per_pop = [int(n[name]) for name in self._pop_names]
+            elif isinstance(n, (list, tuple, np.ndarray)):
+                if len(n) != len(self._pop_names):
+                    raise ValueError(f"Length of 'n' ({len(n)}) must match the number of populations "
+                                     f"({len(self._pop_names)}).")
+                self._n_per_pop = [int(x) for x in n]
+            else:
+                self._n_per_pop = [int(n)] * len(self._pop_names)
+
+            # the single-population sample size is undefined in joint mode
+            self.n: int | None = None
+
+            if include_samples is not None or exclude_samples is not None:
+                logger.warning("'include_samples' and 'exclude_samples' are ignored when 'pops' is given.")
+
+        #: The shape of the joint SFS array (one axis per population)
+        self._joint_shape: Tuple[int, ...] = tuple(x + 1 for x in self._n_per_pop)
+
+        #: Per-population sample masks (joint mode), set up in :meth:`_prepare_samples_mask`
+        self._pop_masks: List[np.ndarray] | None = None
 
         #: The list of samples to include
         self.include_samples: List[str] | None = include_samples
@@ -1053,8 +1109,9 @@ class Parser(MultiHandler):
         #: The number of sites that were skipped because they had no valid ancestral allele
         self.n_no_ancestral: int = 0
 
-        #: Dictionary of SFS indexed by joint type
-        self.sfs: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros(self.n + 1))
+        #: Dictionary of SFS indexed by (stratification) type. Each value is a 1-D array of length ``n + 1`` for a
+        #: single-population SFS, or a joint SFS array of shape :attr:`_joint_shape` when ``pops`` is given.
+        self.sfs: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros(self._joint_shape))
 
         #: 1-based positions of lowest and highest site position per contig (only when target_site_counter is used)
         # noinspection PyTypeChecker
@@ -1118,10 +1175,37 @@ class Parser(MultiHandler):
 
     def _parse_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
         """
-        Parse a single site.
+        Parse a single site, adding its down-projected mass to the (possibly joint) SFS of its type.
 
         :param variant: The variant.
         :return: Whether the site was included in the SFS.
+        """
+        # compute the down-projected mass for this site (1-D or joint depending on whether populations are given)
+        m = self._project_joint(variant) if self.pops is not None else self._project(variant)
+
+        if m is None:
+            return False
+
+        # try to obtain type
+        try:
+            # create joint type
+            t = '.'.join([s.get_type(variant) for s in self.stratifications]) or 'all'
+
+            # add mass
+            self.sfs[t] += m
+
+        except NoTypeException as e:
+            self._logger.debug(e)
+            return False
+
+        return True
+
+    def _project(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> Optional[np.ndarray]:
+        """
+        Down-project a single site to the one-dimensional SFS, returning the mass over derived-allele counts.
+
+        :param variant: The variant.
+        :return: The mass array of length ``n + 1``, or ``None`` if the site is skipped.
         """
         # check `is_snp` property for performance reasons but site may still be monomorphic
         if variant.is_snp:
@@ -1135,14 +1219,14 @@ class Parser(MultiHandler):
             # skip if not enough samples
             if n_samples < self.n:
                 self._logger.debug(f'Skipping site due to too few samples at {variant.CHROM}:{variant.POS}.')
-                return False
+                return None
 
             try:
                 # determine ancestral allele
                 aa = self._get_ancestral(variant)
             except NoTypeException:
                 self.n_no_ancestral += 1
-                return False
+                return None
 
             # determine ancestral allele probability
             aa_prob = self._get_ancestral_prob(variant)
@@ -1155,7 +1239,7 @@ class Parser(MultiHandler):
 
             if len(counter) > 2:
                 self._logger.debug(f'Site has more than two alleles at {variant.CHROM}:{variant.POS} ({dict(counter)})')
-                return False
+                return None
 
             # determine down-projected allele count.
             if self.subsample_mode == 'random':
@@ -1182,21 +1266,82 @@ class Parser(MultiHandler):
         else:
             # skip other types of sites
             self._logger.debug(f'Site is not a valid single nucleotide site at {variant.CHROM}:{variant.POS}.')
-            return False
+            return None
 
-        # try to obtain type
-        try:
-            # create joint type
-            t = '.'.join([s.get_type(variant) for s in self.stratifications]) or 'all'
+        return m
 
-            # add mass
-            self.sfs[t] += m
+    def _project_joint(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> Optional[np.ndarray]:
+        """
+        Down-project a single site to the joint (multi-population) SFS.
 
-        except NoTypeException as e:
-            self._logger.debug(e)
-            return False
+        Each population is down-projected independently to a distribution over its derived-allele count, and the
+        site's contribution is the outer product of these per-population distributions. This is the exact
+        hypergeometric down-projection under sampling without replacement independently within each population.
 
-        return True
+        :param variant: The variant.
+        :return: The joint mass array of shape :attr:`_joint_shape`, or ``None`` if the site is skipped.
+        """
+        if variant.is_snp:
+
+            # obtain called bases per population
+            pop_bases = [get_called_bases(variant.gt_bases[mask]) for mask in self._pop_masks]
+
+            # skip if any population has too few called genotypes
+            if any(len(b) < n for b, n in zip(pop_bases, self._n_per_pop)):
+                self._logger.debug(f'Skipping site due to too few samples at {variant.CHROM}:{variant.POS}.')
+                return None
+
+            try:
+                # determine ancestral allele (site-level, shared across populations)
+                aa = self._get_ancestral(variant)
+            except NoTypeException:
+                self.n_no_ancestral += 1
+                return None
+
+            # determine ancestral allele probability
+            aa_prob = self._get_ancestral_prob(variant)
+
+            # biallelic check across all populations combined
+            counter = Counter(np.concatenate(pop_bases))
+
+            if len(counter) > 2:
+                self._logger.debug(f'Site has more than two alleles at {variant.CHROM}:{variant.POS} ({dict(counter)})')
+                return None
+
+            # down-project each population independently to a distribution over its derived-allele count
+            projections = []
+            for b, n in zip(pop_bases, self._n_per_pop):
+                n_samples = len(b)
+                n_der = n_samples - int(np.sum(b == aa))
+
+                if self.subsample_mode == 'random':
+                    vec = np.zeros(n + 1)
+                    vec[hypergeom.rvs(M=n_samples, n=n_der, N=n, random_state=self.rng)] = 1.0
+                else:
+                    vec = hypergeom.pmf(k=range(n + 1), M=n_samples, n=n_der, N=n)
+
+                projections.append(vec)
+
+            # the joint mass is the outer product of the per-population projections
+            m = functools.reduce(np.multiply.outer, projections)
+
+            # probabilistically polarize bi-allelic sites: a mispolarized site flips every population's
+            # derived count simultaneously, i.e. reflects the joint array on all axes
+            if len(counter) == 2 and aa_prob != 1.0:
+                reflected = m[tuple(slice(None, None, -1) for _ in projections)]
+                m = aa_prob * m + (1 - aa_prob) * reflected
+
+        # if we have a mono-allelic SNP
+        elif is_monomorphic_snp(variant):
+            # all-ancestral: place mass at the origin (zero derived alleles in every population)
+            m = np.zeros(self._joint_shape)
+            m[(0,) * len(self._joint_shape)] = 1.0
+        else:
+            # skip other types of sites
+            self._logger.debug(f'Site is not a valid single nucleotide site at {variant.CHROM}:{variant.POS}.')
+            return None
+
+        return m
 
     def _process_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
         """
@@ -1263,17 +1408,33 @@ class Parser(MultiHandler):
 
     def _prepare_samples_mask(self):
         """
-        Prepare the samples mask.
+        Prepare the samples mask, or per-population masks in joint mode.
         """
+        samples = np.array(self._reader.samples)
+
+        # in joint mode, build one boolean mask per population
+        if self.pops is not None:
+            self._pop_masks = []
+
+            for name in self._pop_names:
+                mask = np.isin(samples, self.pops[name])
+
+                if not mask.any():
+                    raise ValueError(f"None of the samples for population '{name}' were found in the VCF file.")
+
+                self._pop_masks.append(mask)
+
+            return
+
         # determine samples to include
         if self.include_samples is None:
-            mask = np.ones(len(self._reader.samples)).astype(bool)
+            mask = np.ones(len(samples)).astype(bool)
         else:
-            mask = np.isin(self._reader.samples, self.include_samples)
+            mask = np.isin(samples, self.include_samples)
 
         # determine samples to exclude
         if self.exclude_samples is not None:
-            mask &= ~np.isin(self._reader.samples, self.exclude_samples)
+            mask &= ~np.isin(samples, self.exclude_samples)
 
         self._samples_mask = mask
 
@@ -1291,11 +1452,12 @@ class Parser(MultiHandler):
         for a in self.annotations:
             a._teardown()
 
-    def parse(self) -> Spectra:
+    def parse(self) -> Spectra | JointSpectra:
         """
         Parse the VCF file.
 
-        :return: The spectra for the different stratifications
+        :return: The spectra for the different stratifications. A :class:`~sfsutils.spectrum.Spectra` for a
+            single-population SFS, or a :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given.
         """
         # set up parser
         self._setup()
@@ -1356,6 +1518,12 @@ class Parser(MultiHandler):
 
         # close VCF reader
         VCFHandler._rewind(self)
+
+        # in joint mode, return a collection of joint spectra keyed by (sorted) type
+        if self.pops is not None:
+            return JointSpectra(
+                {t: JointSFS(self.sfs[t], self._pop_names) for t in sorted(self.sfs)}
+            )
 
         # count target sites
         if self.target_site_counter is not None and self.n_skipped < self.n_sites:

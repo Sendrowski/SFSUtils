@@ -6,10 +6,13 @@ __author__ = "Janek Sendrowski"
 __contact__ = "sendrowski.janek@gmail.com"
 __date__ = "2022-07-24"
 
+import copy
 import logging
-from typing import Dict, List, Union, Iterable, Any, Literal, Sequence
+from abc import ABC, abstractmethod
+from typing import Dict, List, Union, Iterable, Iterator, Any, Literal, Sequence, Tuple, TypeVar
 from numpy.random import Generator
 
+import jsonpickle
 import numpy as np
 import pandas as pd
 from scipy.stats import hypergeom
@@ -40,7 +43,122 @@ def pad(counts: Sequence) -> np.ndarray:
     return np.array([0] + list(counts) + [0])
 
 
-class Spectrum(Iterable):
+#: Type variable bound to :class:`AbstractSpectrum`, so that inherited self-returning methods (``copy``,
+#: ``from_file``, ``from_json``) are typed as the concrete subclass rather than the base.
+_S = TypeVar("_S", bound="AbstractSpectrum")
+
+
+class AbstractSpectrum(ABC):
+    """
+    Abstract base class for site-frequency spectrum containers.
+
+    A concrete spectrum wraps a numpy array in :attr:`data`: the one-dimensional :class:`Spectrum`, the square
+    two-dimensional :class:`SFS2` (and its two-locus specialization :class:`TwoLocusSFS`), and the multi-population
+    :class:`JointSFS`. This base provides the shared array interface (shape, total number of sites, iteration,
+    copying) and JSON serialization; subclasses add their dimension-specific behaviour such as folding and plotting.
+    """
+
+    #: The underlying array holding the spectrum.
+    data: np.ndarray
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        """
+        The shape of the underlying array.
+        """
+        return self.data.shape
+
+    @property
+    def n_sites(self) -> float:
+        """
+        The total number of sites, i.e. the sum of all entries.
+        """
+        return float(np.sum(self.data))
+
+    def __array__(self, dtype=None) -> np.ndarray:
+        """
+        Numpy array interface so the spectrum can be used directly in numpy operations.
+
+        :param dtype: Optional dtype.
+        :return: The underlying array.
+        """
+        return self.data if dtype is None else self.data.astype(dtype)
+
+    def __iter__(self) -> Iterator:
+        """
+        Iterate over the first axis of the spectrum.
+
+        :return: Iterator
+        """
+        return self.data.__iter__()
+
+    def copy(self: _S) -> _S:
+        """
+        Create a deep copy.
+
+        :return: Deep copy.
+        """
+        return copy.deepcopy(self)
+
+    def to_file(self, file: str) -> None:
+        """
+        Save to file (in JSON format).
+
+        :param file: File path.
+        """
+        with open(file, 'w') as f:
+            f.write(self.to_json())
+
+    def to_json(self) -> str:
+        """
+        Convert to a JSON string.
+
+        :return: JSON string
+        """
+        obj = copy.deepcopy(self)
+
+        # convert numpy array to list
+        obj.data = np.asarray(obj.data).tolist()
+
+        return jsonpickle.encode(obj)
+
+    @classmethod
+    def from_file(cls: type[_S], file: str) -> _S:
+        """
+        Load from file.
+
+        :param file: File path.
+        :return: Spectrum
+        """
+        with open(file, 'r') as f:
+            return cls.from_json(f.read())
+
+    @classmethod
+    def from_json(cls: type[_S], json: str) -> _S:
+        """
+        Load from a JSON string.
+
+        :param json: JSON string.
+        :return: Spectrum
+        """
+        obj = jsonpickle.decode(json)
+
+        # convert list back to numpy array
+        obj.data = np.array(obj.data)
+
+        return obj
+
+    @abstractmethod
+    def plot(self, *args, **kwargs) -> 'plt.Axes':
+        """
+        Plot the spectrum.
+
+        :return: Axes.
+        """
+        pass
+
+
+class Spectrum(AbstractSpectrum):
     """
     Class for holding and manipulating a site-frequency spectrum.
     """
@@ -547,7 +665,79 @@ class Spectrum(Iterable):
         return Spectrum(data)
 
 
-class Spectra:
+class AbstractSpectra(ABC):
+    """
+    Abstract base class for a collection of site-frequency spectra keyed by type (for example the SFS stratified
+    into neutral and selected sites). The two concrete backings share this interface but not their storage: the
+    one-dimensional :class:`Spectra` is DataFrame-backed and 1-D-specialized, while the multi-population
+    :class:`JointSpectra` is dict-backed and holds n-dimensional :class:`JointSFS` objects. Consumers that only need
+    the common collection operations (looking up a type, summing to the ``all`` spectrum, iterating types,
+    serializing) can be written against this base regardless of the spectrum's dimensionality.
+    """
+
+    @property
+    @abstractmethod
+    def types(self) -> List[str]:
+        """
+        The types.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def all(self) -> 'AbstractSpectrum':
+        """
+        The ``all`` type, equal to the sum of all spectra.
+        """
+        pass
+
+    @abstractmethod
+    def __getitem__(self, key):
+        """
+        Get the spectrum (or sub-collection) for a given type.
+
+        :param key: Type.
+        """
+        pass
+
+    @abstractmethod
+    def __iter__(self) -> Iterator:
+        """
+        Iterate over the types.
+
+        :return: Iterator
+        """
+        pass
+
+    @abstractmethod
+    def __len__(self) -> int:
+        """
+        The number of types.
+
+        :return: Number of types
+        """
+        pass
+
+    @abstractmethod
+    def to_dict(self) -> dict:
+        """
+        Convert to a dictionary keyed by type.
+
+        :return: Dictionary keyed by type
+        """
+        pass
+
+    @abstractmethod
+    def to_file(self, file: str) -> None:
+        """
+        Save to file.
+
+        :param file: File path.
+        """
+        pass
+
+
+class Spectra(AbstractSpectra):
     """
     Class for holding and manipulating site-frequency spectra of multiple types.
     """
@@ -1156,6 +1346,835 @@ class Spectra:
         :return: Sorted spectra object
         """
         return Spectra.from_dataframe(self.data.sort_index(axis=1))
+
+
+class SFS2(AbstractSpectrum):
+    """
+    A 2-dimensional site-frequency spectrum, i.e. a square matrix whose entry ``(i, j)`` relates the number of
+    derived alleles at a pair of frequency classes ``i`` and ``j`` of a single population (for example the
+    second moment of the SFS). For the joint spectrum *across* populations, which is generally rectangular, see
+    :class:`JointSFS`.
+    """
+
+    def __init__(self, data: np.ndarray | list) -> None:
+        """
+        Construct from a data matrix.
+
+        :param data: A square 2-dimensional array.
+        :raises ValueError: If the data is not a square 2-dimensional array.
+        """
+        data = np.array(data).copy()
+
+        if data.ndim != 2:
+            raise ValueError('Data has to be 2-dimensional.')
+
+        if data.shape[0] != data.shape[1]:
+            raise ValueError('Matrix has to be square.')
+
+        #: The sample size.
+        self.n: int = data.shape[0]
+
+        #: The width of one folded half.
+        self.w: int = self.n // 2 + 1 if self.n % 2 == 1 else self.n // 2
+
+        #: The 2-SFS matrix.
+        self.data: np.ndarray = data
+
+    def is_folded(self) -> bool:
+        """
+        Check if the 2-SFS is folded.
+
+        :return: Whether the 2-SFS is folded.
+        """
+        return np.all(self.data == self.fold().data)
+
+    def __add__(self, other) -> 'SFS2':
+        """
+        Add to the 2-SFS.
+
+        :param other: Another 2-SFS or a scalar or array.
+        :return: 2-SFS
+        """
+        if isinstance(other, SFS2):
+            return self + other.data
+
+        return SFS2(self.data + other)
+
+    def __sub__(self, other) -> 'SFS2':
+        """
+        Subtract from the 2-SFS.
+
+        :param other: Another 2-SFS or a scalar or array.
+        :return: 2-SFS
+        """
+        if isinstance(other, SFS2):
+            return self - other.data
+
+        return SFS2(self.data - other)
+
+    def __mul__(self, other) -> 'SFS2':
+        """
+        Multiply the 2-SFS.
+
+        :param other: Another 2-SFS or a scalar or array.
+        :return: 2-SFS
+        """
+        if isinstance(other, SFS2):
+            return self * other.data
+
+        return SFS2(self.data * other)
+
+    def __floordiv__(self, other) -> 'SFS2':
+        """
+        Floor-divide the 2-SFS.
+
+        :param other: Another 2-SFS or a scalar or array.
+        :return: 2-SFS
+        """
+        if isinstance(other, SFS2):
+            return self // other.data
+
+        return SFS2(self.data // other)
+
+    def __truediv__(self, other) -> 'SFS2':
+        """
+        Divide the 2-SFS.
+
+        :param other: Another 2-SFS or a scalar or array.
+        :return: 2-SFS
+        """
+        if isinstance(other, SFS2):
+            return self / other.data
+
+        return SFS2(self.data / other)
+
+    def __pow__(self, power) -> 'SFS2':
+        """
+        Raise the 2-SFS to a power.
+
+        :param power: Exponent
+        :return: 2-SFS
+        """
+        return SFS2(self.data ** power)
+
+    def fold(self) -> 'SFS2':
+        """
+        Fold the 2-SFS by adding up ``i`` and ``n - i`` for both axes.
+        Note that this only makes sense for counts or frequencies.
+
+        :return: Folded 2-SFS.
+        """
+        data = self.data.copy()
+
+        for _ in range(2):
+            # compute left and right half and merge them
+            left = np.concatenate((data[:self.w], np.zeros((self.n - self.w, self.n))))
+            right = np.concatenate((data[self.w:][::-1], np.zeros((self.w, self.n))))
+
+            # add parts and rotate
+            data = (left + right).T
+
+        return SFS2(data)
+
+    def symmetrize(self) -> 'SFS2':
+        """
+        Symmetrize the 2-SFS so that ``i, j`` and ``j, i`` are the same.
+
+        :return: Symmetric 2-SFS.
+        """
+        return SFS2((self.data + self.data.T) / 2)
+
+    def fill_monomorphic(self, fill_value=np.nan) -> 'SFS2':
+        """
+        Fill the monomorphic entries (first and last row and column) of the 2-SFS.
+
+        :param fill_value: Value to fill the monomorphic entries with.
+        :return: 2-SFS
+        """
+        other = self.copy()
+
+        other.data[:1, :] = fill_value
+        other.data[-1:, :] = fill_value
+        other.data[:, :1] = fill_value
+        other.data[:, -1] = fill_value
+
+        return other
+
+    def plot(
+            self,
+            ax: 'plt.Axes' = None,
+            title: str = None,
+            max_abs: float = None,
+            log_scale: bool = False,
+            cbar_kws: Dict = None,
+            show: bool = True,
+    ) -> 'plt.Axes':
+        """
+        Plot the 2-SFS as a heatmap.
+
+        :param ax: Axes to plot on.
+        :param title: Title of the plot.
+        :param max_abs: Maximum absolute value to plot.
+        :param log_scale: Whether to use a logarithmic scale.
+        :param cbar_kws: Keyword arguments for the color bar.
+        :param show: Whether to show the plot.
+        :return: Axes.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import SymLogNorm
+        import seaborn as sns
+
+        if self.n < 3:
+            logger.warning('Nothing to plot.')
+            return plt.gca()
+
+        if cbar_kws is None:
+            cbar_kws = dict(pad=0.05)
+
+        if max_abs is None:
+            max_abs = self.get_max_abs() or 1
+
+        # remove monomorphic sites
+        data = self.data[1:-1, 1:-1]
+
+        # truncate data if folded
+        if self.is_folded():
+            data = data[:self.w - 1, :self.w - 1]
+
+        # plot heatmap using a symmetric log norm
+        ax = sns.heatmap(
+            data,
+            norm=SymLogNorm(
+                linthresh=max_abs / 10,
+                vmin=-max_abs,
+                vmax=max_abs
+            ),
+            cmap='PuOr_r',
+            cbar_kws=cbar_kws,
+            ax=ax
+        )
+
+        # invert y-axis and remove ticks
+        ax.invert_yaxis()
+        ax.axis('square')
+
+        if log_scale:
+            ax.set_xscale('log', base=1.001)
+            ax.set_yscale('log', base=1.001)
+
+        ax.set_xticks(ax.get_yticks())
+        ax.set_xticklabels([str(int(label + 1)) for label in ax.get_xticks()])
+        ax.set_yticklabels([str(int(label + 1)) for label in ax.get_yticks()])
+
+        # remove confusing color bar ticks
+        ax.collections[0].colorbar.ax.tick_params(size=0)
+
+        # add frame around plot
+        for _, spine in ax.spines.items():
+            spine.set_visible(True)
+            spine.set_edgecolor('grey')
+
+        if title is not None:
+            ax.set_title(title)
+
+        if show:
+            plt.show()
+
+        return ax
+
+    def plot_surface(
+            self,
+            ax: 'plt.Axes' = None,
+            title: str = None,
+            max_abs: float = None,
+            vmin: float = None,
+            vmax: float = None,
+            show: bool = True,
+    ) -> 'plt.Axes':
+        """
+        Plot the 2-SFS as a surface.
+
+        :param ax: Axes to plot on.
+        :param title: Title of the plot.
+        :param max_abs: Maximum absolute value to plot.
+        :param vmin: Minimum value to plot.
+        :param vmax: Maximum value to plot.
+        :param show: Whether to show the plot.
+        :return: Axes.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import SymLogNorm
+
+        if self.n < 3:
+            logger.warning('Nothing to plot.')
+            return plt.gca()
+
+        if max_abs is None:
+            max_abs = self.get_max_abs() or 1
+
+        # remove monomorphic sites
+        data = self.data[1:-1, 1:-1]
+
+        # truncate data if folded
+        if self.is_folded():
+            data = data[:self.w - 1, :self.w - 1]
+
+        x = np.arange(1, data.shape[0] + 1)
+        y = np.arange(1, data.shape[0] + 1)
+
+        x_grid, y_grid = np.meshgrid(x, y)
+
+        if ax is None:
+            _, ax = plt.subplots(subplot_kw={"projection": "3d"})
+
+        # vmin and vmax don't seem to work here
+        ax.plot_surface(
+            x_grid,
+            y_grid,
+            data,
+            cmap='PuOr_r',
+            vmin=vmin,
+            vmax=vmax,
+            norm=SymLogNorm(
+                linthresh=max_abs / 10,
+                vmin=-max_abs,
+                vmax=max_abs
+            )
+        )
+
+        if title is not None:
+            ax.set_title(title)
+
+        if show:
+            plt.show()
+
+        return ax
+
+    def mask_diagonal(self, fill_value=np.nan) -> 'SFS2':
+        """
+        Mask both the primary and secondary diagonal entries of the 2-SFS matrix.
+
+        The primary diagonal runs from the top-left to the bottom-right,
+        and the secondary diagonal runs from the top-right to the bottom-left.
+
+        :param fill_value: The value to fill the diagonal entries with.
+        :return: A new 2-SFS with both diagonals masked.
+        """
+        data = self.data.copy()
+        np.fill_diagonal(data, fill_value)
+
+        data = np.fliplr(data)
+        np.fill_diagonal(data, fill_value)
+        data = np.fliplr(data)
+
+        return SFS2(data)
+
+    def get_max_abs(self) -> float:
+        """
+        Get the maximum absolute entry of the 2-SFS matrix.
+
+        :return: The maximum absolute entry.
+        """
+        return np.nanmax(np.abs(self.data))
+
+    def mask_upper(self, fill_value=np.nan) -> 'SFS2':
+        """
+        Mask the upper triangular entries of the 2-SFS matrix.
+
+        :param fill_value: The value to fill the upper triangular entries with.
+        :return: A new 2-SFS with upper triangular entries masked.
+        """
+        data = self.copy().data
+
+        data[np.tril(np.ones_like(data, dtype=bool), k=-1)] = fill_value
+
+        return SFS2(data)
+
+
+class TwoLocusSFS(SFS2):
+    """
+    The two-locus site-frequency spectrum under recombination: a square matrix whose entry ``(i, j)`` is the
+    expected product of the branch length subtending ``i`` samples at locus 0 and ``j`` samples at locus 1, for two
+    loci separated by a given recombination rate ``r``. It interpolates between the within-tree cross-moment of the
+    SFS at ``r = 0`` (fully linked) and the outer product of the marginal SFS as ``r`` tends to infinity
+    (independent loci). It shares the container machinery of :class:`SFS2` (plotting, folding, arithmetic,
+    serialization).
+    """
+    pass
+
+
+class JointSFS(AbstractSpectrum):
+    """
+    A joint (multi-population) site-frequency spectrum.
+
+    The data is a ``P``-dimensional array of shape ``(n_0 + 1, ..., n_{P-1} + 1)`` where ``P`` is the number of
+    populations and entry ``(k_0, ..., k_{P-1})`` counts sites (or branch length) with ``k_p`` derived alleles in
+    population ``p``. For two populations this is a 2-dimensional array (analogous to but generally rectangular,
+    unlike the square :class:`SFS2`); for three populations it is a 3-dimensional array, and so on.
+    """
+
+    def __init__(self, data: np.ndarray | list, pop_names: List[str] = None) -> None:
+        """
+        Construct from a data array.
+
+        :param data: A ``P``-dimensional array.
+        :param pop_names: Optional names of the ``P`` populations (one per axis), used for plot axis labels. Defaults
+            to ``pop_0, ..., pop_{P-1}`` when not given.
+        :raises ValueError: If the data is not at least 1-dimensional or if the number of population names does not
+            match the number of axes.
+        """
+        data = np.asarray(data)
+
+        if data.ndim < 1:
+            raise ValueError('Data has to be at least 1-dimensional.')
+
+        if pop_names is not None and len(pop_names) != data.ndim:
+            raise ValueError(f'Expected {data.ndim} population names (one per axis), got {len(pop_names)}.')
+
+        #: The joint SFS array.
+        self.data: np.ndarray = data
+
+        #: Names of the populations (one per axis); falls back to ``pop_0, ..., pop_{P-1}`` if not provided.
+        self.pop_names: List[str] = list(pop_names) if pop_names is not None else [f'pop_{i}' for i in range(data.ndim)]
+
+    @property
+    def n_pops(self) -> int:
+        """
+        Number of populations (dimensions of the joint SFS).
+        """
+        return self.data.ndim
+
+    def __getitem__(self, item) -> np.ndarray:
+        """
+        Index into the joint SFS array.
+
+        :param item: Index.
+        :return: Indexed value or sub-array.
+        """
+        return self.data[item]
+
+    def __add__(self, other) -> 'JointSFS':
+        """
+        Add to the joint SFS.
+
+        :param other: Another joint SFS or a scalar or array.
+        :return: Joint SFS.
+        """
+        return JointSFS(self.data + (other.data if isinstance(other, JointSFS) else other), self.pop_names)
+
+    def __sub__(self, other) -> 'JointSFS':
+        """
+        Subtract from the joint SFS.
+
+        :param other: Another joint SFS or a scalar or array.
+        :return: Joint SFS.
+        """
+        return JointSFS(self.data - (other.data if isinstance(other, JointSFS) else other), self.pop_names)
+
+    def __mul__(self, other) -> 'JointSFS':
+        """
+        Multiply the joint SFS.
+
+        :param other: Another joint SFS or a scalar or array.
+        :return: Joint SFS.
+        """
+        return JointSFS(self.data * (other.data if isinstance(other, JointSFS) else other), self.pop_names)
+
+    def __truediv__(self, other) -> 'JointSFS':
+        """
+        Divide the joint SFS.
+
+        :param other: Another joint SFS or a scalar or array.
+        :return: Joint SFS.
+        """
+        return JointSFS(self.data / (other.data if isinstance(other, JointSFS) else other), self.pop_names)
+
+    def __pow__(self, power) -> 'JointSFS':
+        """
+        Raise the joint SFS to a power.
+
+        :param power: Exponent.
+        :return: Joint SFS.
+        """
+        return JointSFS(self.data ** power, self.pop_names)
+
+    def marginalize(self, pops: Sequence[int]) -> 'JointSFS':
+        """
+        Marginalize the joint SFS onto a subset of populations by summing over the other populations. This is useful
+        for example to obtain a 2-dimensional view of a higher-dimensional joint SFS.
+
+        :param pops: The population indices to keep, in the desired axis order.
+        :return: A joint SFS over the specified populations.
+        :raises ValueError: If any population index is out of range.
+        """
+        keep = tuple(int(p) for p in pops)
+
+        if any(p < 0 or p >= self.n_pops for p in keep):
+            raise ValueError(f'Population indices must be in [0, {self.n_pops - 1}].')
+
+        drop = tuple(i for i in range(self.n_pops) if i not in keep)
+
+        data = self.data.sum(axis=drop) if drop else self.data
+
+        # reorder the remaining axes (which are in ascending order) to match the requested order
+        order = [sorted(keep).index(p) for p in keep]
+
+        return JointSFS(np.transpose(data, order), [self.pop_names[p] for p in keep])
+
+    def plot(
+            self,
+            pops: Tuple[int, int] = (0, 1),
+            ax: 'plt.Axes' = None,
+            title: str = None,
+            log_scale: bool = False,
+            mask_monomorphic: bool = True,
+            cbar_kws: Dict = None,
+            show: bool = True,
+    ) -> 'plt.Axes':
+        """
+        Plot the joint SFS as a 2-dimensional heatmap. For more than two populations, the joint SFS is first
+        marginalized onto the two requested populations (summing over the others).
+
+        :param pops: The two population indices to plot (y-axis, x-axis).
+        :param ax: Axes to plot on.
+        :param title: Title of the plot.
+        :param log_scale: Whether to use a logarithmic color scale.
+        :param mask_monomorphic: Whether to mask the monomorphic corners (all-zero and all-derived).
+        :param cbar_kws: Keyword arguments for the color bar.
+        :param show: Whether to show the plot.
+        :return: Axes.
+        :raises ValueError: If not exactly two populations are requested or the marginalized data is not 2-dimensional.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import LogNorm
+        import seaborn as sns
+
+        if len(pops) != 2:
+            raise ValueError('Exactly two populations must be specified for a 2-dimensional plot.')
+
+        # reduce to the two requested populations
+        data = (self.marginalize(pops) if self.n_pops > 2 else self).data.astype(float).copy()
+
+        if data.ndim != 2:
+            raise ValueError('Plotting requires a 2-dimensional (marginalized) joint SFS.')
+
+        if mask_monomorphic:
+            data[0, 0] = np.nan
+            data[-1, -1] = np.nan
+
+        if cbar_kws is None:
+            cbar_kws = dict(pad=0.05)
+
+        # create a fresh 2-D axes if none is given (so we never draw onto a leftover 3-D axes from plot_surface)
+        if ax is None:
+            _, ax = plt.subplots()
+
+        ax = sns.heatmap(
+            data,
+            norm=LogNorm() if log_scale else None,
+            cmap='viridis',
+            cbar_kws=cbar_kws,
+            ax=ax
+        )
+
+        # put the origin at the bottom left
+        ax.invert_yaxis()
+        ax.set_xlabel(f'allele count {self.pop_names[pops[1]]}')
+        ax.set_ylabel(f'allele count {self.pop_names[pops[0]]}')
+
+        # square cells, a grey frame, and unobtrusive color bar ticks (as for the 2-SFS plot)
+        ax.set_aspect('equal')
+        ax.collections[0].colorbar.ax.tick_params(size=0)
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_edgecolor('grey')
+
+        if title is not None:
+            ax.set_title(title)
+
+        if show:
+            plt.show()
+
+        return ax
+
+    def plot_surface(
+            self,
+            pops: Tuple[int, int] = (0, 1),
+            ax: 'plt.Axes' = None,
+            title: str = None,
+            log_scale: bool = False,
+            mask_monomorphic: bool = True,
+            cmap: str = 'viridis',
+            show: bool = True,
+    ) -> 'plt.Axes':
+        """
+        Plot the joint SFS as a 3-dimensional surface. For more than two populations, the joint SFS is first
+        marginalized onto the two requested populations (summing over the others).
+
+        :param pops: The two population indices to plot (y-axis, x-axis).
+        :param ax: Axes to plot on.
+        :param title: Title of the plot.
+        :param log_scale: Whether to use a logarithmic color scale.
+        :param mask_monomorphic: Whether to mask the monomorphic corners (all-zero and all-derived).
+        :param cmap: The colormap.
+        :param show: Whether to show the plot.
+        :return: Axes.
+        :raises ValueError: If not exactly two populations are requested or the marginalized data is not 2-dimensional.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import LogNorm
+
+        if len(pops) != 2:
+            raise ValueError('Exactly two populations must be specified for a surface plot.')
+
+        # reduce to the two requested populations
+        data = (self.marginalize(pops) if self.n_pops > 2 else self).data.astype(float).copy()
+
+        if data.ndim != 2:
+            raise ValueError('Plotting requires a 2-dimensional (marginalized) joint SFS.')
+
+        if mask_monomorphic:
+            data[0, 0] = np.nan
+            data[-1, -1] = np.nan
+
+        # allele-count grid (0..n_p) for each of the two populations
+        x_grid, y_grid = np.meshgrid(np.arange(data.shape[1]), np.arange(data.shape[0]))
+
+        if ax is None:
+            _, ax = plt.subplots(subplot_kw={'projection': '3d'})
+
+        ax.plot_surface(x_grid, y_grid, data, cmap=cmap, norm=LogNorm() if log_scale else None)
+
+        ax.set_xlabel(f'allele count {self.pop_names[pops[1]]}')
+        ax.set_ylabel(f'allele count {self.pop_names[pops[0]]}')
+        ax.set_zlabel('branch length')
+
+        if title is not None:
+            ax.set_title(title)
+
+        if show:
+            plt.show()
+
+        return ax
+
+    def to_file(self, file: str) -> None:
+        """
+        Save to file (in JSON format).
+
+        :param file: File path.
+        """
+        with open(file, 'w') as f:
+            f.write(self.to_json())
+
+    def to_json(self) -> str:
+        """
+        Convert to a JSON string.
+
+        :return: JSON string.
+        """
+        obj = copy.deepcopy(self)
+
+        # convert numpy array to list
+        obj.data = obj.data.tolist()
+
+        return jsonpickle.encode(obj)
+
+    @staticmethod
+    def from_file(file: str) -> 'JointSFS':
+        """
+        Load from file.
+
+        :param file: File path.
+        :return: Joint SFS.
+        """
+        with open(file, 'r') as f:
+            return JointSFS.from_json(f.read())
+
+    @staticmethod
+    def from_json(json: str) -> 'JointSFS':
+        """
+        Load from a JSON string.
+
+        :param json: JSON string.
+        :return: Joint SFS.
+        """
+        obj = jsonpickle.decode(json)
+
+        # convert list back to numpy array
+        obj.data = np.array(obj.data)
+
+        return obj
+
+
+class JointSpectra(AbstractSpectra):
+    """
+    A collection of joint (multi-population) site-frequency spectra keyed by type, the multi-population analogue of
+    :class:`Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the parser is given
+    populations, with one :class:`JointSFS` per stratification type (or a single ``all`` type when no stratifications
+    are used).
+    """
+
+    def __init__(self, data: Dict[str, Union['JointSFS', np.ndarray]], pop_names: List[str] = None) -> None:
+        """
+        Construct from a dictionary of joint spectra.
+
+        :param data: Dictionary of joint spectra (or plain arrays) keyed by type.
+        :param pop_names: Optional names of the populations (one per axis). Only used for entries given as plain
+            arrays; entries already given as :class:`JointSFS` keep their own names.
+        """
+        #: The joint spectra keyed by type.
+        self.data: Dict[str, JointSFS] = {
+            t: v if isinstance(v, JointSFS) else JointSFS(np.asarray(v), pop_names) for t, v in data.items()
+        }
+
+    @property
+    def types(self) -> List[str]:
+        """
+        The types.
+        """
+        return list(self.data.keys())
+
+    @property
+    def pop_names(self) -> List[str]:
+        """
+        Names of the populations (one per axis), taken from the first type.
+
+        :raises ValueError: If the collection is empty.
+        """
+        if not self.data:
+            raise ValueError('Empty JointSpectra has no population names.')
+
+        return next(iter(self.data.values())).pop_names
+
+    @property
+    def n_pops(self) -> int:
+        """
+        Number of populations (dimensions of each joint SFS).
+
+        :raises ValueError: If the collection is empty.
+        """
+        if not self.data:
+            raise ValueError('Empty JointSpectra has no populations.')
+
+        return next(iter(self.data.values())).n_pops
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        """
+        Shape of each joint SFS.
+
+        :raises ValueError: If the collection is empty.
+        """
+        if not self.data:
+            raise ValueError('Empty JointSpectra has no shape.')
+
+        return next(iter(self.data.values())).shape
+
+    @property
+    def all(self) -> 'JointSFS':
+        """
+        The ``all`` type, equal to the sum of all joint spectra.
+
+        :raises ValueError: If the collection is empty.
+        """
+        if not self.data:
+            raise ValueError('Empty JointSpectra has no joint spectra to sum.')
+
+        spectra = list(self.data.values())
+
+        return JointSFS(sum(s.data for s in spectra), spectra[0].pop_names)
+
+    def marginalize(self, pops: Sequence[int]) -> 'JointSpectra':
+        """
+        Marginalize every joint SFS onto a subset of populations (see :meth:`JointSFS.marginalize`).
+
+        :param pops: The population indices to keep, in the desired axis order.
+        :return: Marginalized joint spectra.
+        """
+        return JointSpectra({t: s.marginalize(pops) for t, s in self.data.items()})
+
+    def __getitem__(self, key: str) -> 'JointSFS':
+        """
+        Get the joint SFS for a given type.
+
+        :param key: Type.
+        :return: Joint SFS.
+        """
+        return self.data[key]
+
+    def __iter__(self) -> Iterator:
+        """
+        Iterate over the types.
+
+        :return: Iterator.
+        """
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        """
+        The number of types.
+
+        :return: Number of types.
+        """
+        return len(self.data)
+
+    def to_dict(self) -> Dict[str, JointSFS]:
+        """
+        Get the joint spectra as a dictionary keyed by type.
+
+        :return: Dictionary of joint spectra keyed by type.
+        """
+        return dict(self.data)
+
+    def to_file(self, file: str) -> None:
+        """
+        Save to file (in JSON format).
+
+        :param file: File path.
+        """
+        with open(file, 'w') as f:
+            f.write(self.to_json())
+
+    def to_json(self) -> str:
+        """
+        Convert to a JSON string.
+
+        :return: JSON string.
+        """
+        obj = copy.deepcopy(self)
+
+        # convert each joint SFS array to a list
+        for s in obj.data.values():
+            s.data = s.data.tolist()
+
+        return jsonpickle.encode(obj)
+
+    @staticmethod
+    def from_file(file: str) -> 'JointSpectra':
+        """
+        Load from file.
+
+        :param file: File path.
+        :return: Joint spectra.
+        """
+        with open(file, 'r') as f:
+            return JointSpectra.from_json(f.read())
+
+    @staticmethod
+    def from_json(json: str) -> 'JointSpectra':
+        """
+        Load from a JSON string.
+
+        :param json: JSON string.
+        :return: Joint spectra.
+        """
+        obj = jsonpickle.decode(json)
+
+        # convert each joint SFS list back to a numpy array
+        for s in obj.data.values():
+            s.data = np.array(s.data)
+
+        return obj
 
 
 def parse_polydfe_sfs_config(file: str) -> dict:
