@@ -17,3 +17,7 @@ out/
 .RData
 .coverage
 .coverage.*
+
+# notebook-generated example outputs
+docs/reference/Python/*.vcf.gz
+docs/reference/Python/*.vcf.gz.tbi

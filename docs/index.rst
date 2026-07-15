@@ -48,7 +48,11 @@ Contents
    :caption: Python Reference
 
    reference/Python/installation
+   reference/Python/quickstart
    reference/Python/parser
+   reference/Python/stratifications
+   reference/Python/annotations
+   reference/Python/filtrations
    reference/Python/spectra
 
 .. toctree::
@@ -65,6 +69,7 @@ Contents
    :caption: Miscellaneous
    :maxdepth: 1
 
+   modules/citing
    modules/changelog
 
 References
