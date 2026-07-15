@@ -43,11 +43,16 @@ n = ts.num_samples  # 20 haplotypes
 # exact unfolded SFS (counts per derived-allele count, bins 0..n)
 sfs = ts.allele_frequency_spectrum(polarised=True, span_normalise=False).astype(int)
 
+import gzip
 import os
 os.makedirs(OUT, exist_ok=True)
 ts.dump(f"{OUT}/two_epoch.trees")
 with open(f"{OUT}/two_epoch.vcf", "w") as f:
     ts.write_vcf(f)
+# a placeholder reference over the single contig ("1"), so the TargetSiteCounter has a FASTA to
+# satisfy its genome-length requirement; the bases are irrelevant to target-site accounting
+with gzip.open(f"{OUT}/two_epoch.ref.fasta.gz", "wt") as fa:
+    fa.write(">1\n" + "A" * int(ts.sequence_length) + "\n")
 np.savetxt(f"{OUT}/two_epoch.sfs.txt", sfs, fmt="%d",
            header=f"unfolded SFS (bins 0..{n}) from tskit; two-epoch demography, seed {SEED}")
 
