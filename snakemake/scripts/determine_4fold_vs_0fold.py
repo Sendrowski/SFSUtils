@@ -8,12 +8,9 @@ p = sf.Parser(
     n=20,  # number of individuals not important
     # choose sufficiently many sites since TargetSiteCounter is restricted to the same genomic interval
     max_sites=10000,
-    vcf="https://github.com/Sendrowski/fastDFE/blob/dev/resources/"
-        "genome/betula/biallelic.polarized.subset.50000.vcf.gz?raw=true",
-    fasta="https://github.com/Sendrowski/fastDFE/blob/dev/resources/"
-          "genome/betula/genome.subset.1000.fasta.gz?raw=true",
-    gff="https://github.com/Sendrowski/fastDFE/blob/dev/resources/"
-        "genome/betula/genome.gff.gz?raw=true",
+    vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+    fasta="resources/genome/betula/genome.subset.20.fasta",
+    gff="resources/genome/betula/genome.gff.gz",
     target_site_counter=sf.TargetSiteCounter(
         n_target_sites=100000,  # doesn't matter since we're only interested in the ratio
         n_samples=10000  # choose sufficiently many samples for the ratio to be accurate

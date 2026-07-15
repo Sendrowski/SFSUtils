@@ -639,23 +639,21 @@ class ParserTestCase(TestCase):
 
         np.testing.assert_array_equal(result, expected)
 
-    @requires_network()
+    @requires('resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz',
+              'resources/genome/betula/genome.subset.20.fasta',
+              'resources/genome/betula/genome.gff.gz')
     @staticmethod
     @pytest.mark.slow
     def test_manuscript_example():
         """
         Test the example from the manuscript.
         """
-        basepath = ("https://github.com/Sendrowski/fastDFE/"
-                    "blob/master/resources/genome/betula/")
-
         # instantiate parser
         p = fd.Parser(
             n=8,  # SFS sample size
-            vcf=(basepath + "biallelic.with_outgroups."
-                            "subset.50000.vcf.gz?raw=true"),
-            fasta=basepath + "genome.subset.1000.fasta.gz?raw=true",
-            gff=basepath + "genome.gff.gz?raw=true",
+            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            fasta="resources/genome/betula/genome.subset.20.fasta",
+            gff="resources/genome/betula/genome.gff.gz",
             target_site_counter=fd.TargetSiteCounter(
                 n_target_sites=350000  # total number of target sites
             ),
