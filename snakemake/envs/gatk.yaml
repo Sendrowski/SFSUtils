@@ -1,4 +1,4 @@
-name: gatk-fastdfe
+name: gatk-sfsutils
 channels:
   - bioconda
 dependencies:

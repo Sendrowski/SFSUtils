@@ -1,4 +1,4 @@
-name: snpeff-fastdfe
+name: snpeff-sfsutils
 channels:
   - bioconda
 dependencies:

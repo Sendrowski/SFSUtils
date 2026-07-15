@@ -1,4 +1,4 @@
-name: base-fastdfe
+name: base-sfsutils
 channels:
   - conda-forge
 dependencies:

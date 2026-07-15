@@ -1,4 +1,4 @@
-name: wget-fastdfe
+name: wget-sfsutils
 channels:
   - conda-forge
 dependencies:

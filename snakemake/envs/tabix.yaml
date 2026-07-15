@@ -1,4 +1,4 @@
-name: tabix-fastdfe
+name: tabix-sfsutils
 channels:
   - bioconda
 dependencies:

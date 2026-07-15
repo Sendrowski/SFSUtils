@@ -1,4 +1,4 @@
-name: pip-fastdfe
+name: pip-sfsutils
 channels:
   - conda-forge
 dependencies:

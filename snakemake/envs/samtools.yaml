@@ -1,4 +1,4 @@
-name: samtools-fastdfe
+name: samtools-sfsutils
 channels:
   - bioconda
 dependencies:

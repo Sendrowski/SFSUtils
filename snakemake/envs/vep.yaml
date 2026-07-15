@@ -1,4 +1,4 @@
-name: vep-fastdfe
+name: vep-sfsutils
 channels:
   - bioconda
 dependencies:

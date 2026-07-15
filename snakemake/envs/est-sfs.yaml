@@ -1,4 +1,4 @@
-name: est-sfs-fastdfe
+name: est-sfs-sfsutils
 channels:
   - conda-forge
   - bioconda
