@@ -10,7 +10,7 @@ The SFS condenses population genetic variation by quantifying the number of alle
 
 How it works
 ------------
-``sfsutils`` reads variants directly from VCF files and counts derived-allele frequencies into one or more spectra. Rather than depending on pre-annotated input, it can derive the required site-level information itself. Ancestral alleles may be taken from an existing ``AA`` info tag, or inferred from one or more outgroups either by maximum parsimony or under a maximum-likelihood substitution model; site degeneracy and synonymy are computed directly from FASTA and GFF references. These annotations in turn drive on-the-fly stratification, for instance to contrast putatively neutral and selected sites. A collection of filters excludes sites that violate downstream modelling assumptions, including non-biallelic and non-SNV sites, sites outside coding sequences, CpG sites, and sites affected by GC-biased gene conversion or by deviant outgroups. The resulting spectra are represented by the :class:`~sfsutils.spectrum.Spectrum` and :class:`~sfsutils.spectrum.Spectra` classes, which support folding, polarising, resampling, and visualisation.
+``sfsutils`` reads variants directly from VCF files and counts derived-allele frequencies into one or more spectra. Rather than depending on pre-annotated input, it can derive the required site-level information itself. Ancestral alleles may be taken from an existing ``AA`` info tag, or inferred from one or more outgroups either by maximum parsimony or under a maximum-likelihood substitution model; site degeneracy and synonymy are computed directly from FASTA and GFF references. These annotations in turn drive on-the-fly stratification, for instance to contrast putatively neutral and selected sites. A collection of filters excludes sites that violate downstream modelling assumptions, including non-biallelic and non-SNV sites, sites outside coding sequences, CpG sites, and sites affected by GC-biased gene conversion or by deviant outgroups. Beyond the ordinary one-dimensional spectrum, the same parser derives the joint SFS across several populations and the two-site SFS of linked pairs of sites. The resulting spectra are represented by the :class:`~sfsutils.spectrum.Spectrum`, :class:`~sfsutils.spectrum.Spectra`, :class:`~sfsutils.spectrum.JointSFS`, and :class:`~sfsutils.spectrum.SFS2` classes, which support folding, polarising, resampling, and visualisation. Parsing, filtering, and annotating are also available from the command line (see the :doc:`CLI reference <reference/CLI/usage>`).
 
 Features
 --------
@@ -20,9 +20,11 @@ Features
 **Parsing**: streamlining the extraction of spectra from raw variant data:
 
 - Built-in VCF-to-SFS parser, with support for versatile stratification
+- Joint site-frequency spectra across several populations and two-site spectra of linked pairs of sites
 - Stratification by degeneracy, synonymy, base transition or transversion type, ancestral base, genomic context, contig, and more
 - Utilities to determine the number of mutational target sites when monomorphic sites are not present in the provided VCF file
 - Serialization of spectra and parser configurations
+- A command-line interface for parsing, filtering, and annotating
 - Object-oriented and customizable design
 
 **Annotation**: adding the site-level information required to build meaningful spectra:
@@ -53,7 +55,14 @@ Contents
    reference/Python/stratifications
    reference/Python/annotations
    reference/Python/filtrations
+   reference/Python/joint
+   reference/Python/two_sfs
    reference/Python/spectra
+
+.. toctree::
+   :caption: CLI Reference
+
+   reference/CLI/usage
 
 .. toctree::
    :caption: API Reference
@@ -61,6 +70,8 @@ Contents
 
    modules/spectrum
    modules/spectra
+   modules/jointsfs
+   modules/sfs2
    modules/parser
    modules/annotation
    modules/filtration
