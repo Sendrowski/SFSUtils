@@ -7,6 +7,27 @@ from sfsutils import spectrum, Spectra, Spectrum
 from testing import TestCase
 
 
+def _watterson_theta(data):
+    """Watterson's estimator Theta_W = S / sum(1/i, i=1..n-1), the ground truth for the SFS."""
+    data = np.asarray(data, dtype=float)
+    n = len(data) - 1
+    return data[1:n].sum() / np.sum(1 / np.arange(1, n))
+
+
+def _fold(data):
+    """Fold onto minor-allele counts: folded[i] = data[i] + data[n-i] for i < n-i, the middle bin
+    (even n) counted once, and the upper half set to zero."""
+    data = np.asarray(data, dtype=float)
+    n = len(data) - 1
+    folded = np.zeros_like(data)
+    for i in range(len(data)):
+        if i < n - i:
+            folded[i] = data[i] + data[n - i]
+        elif i == n - i:
+            folded[i] = data[i]
+    return folded
+
+
 class SpectraTestCase(TestCase):
     """
     Test the Spectrum and Spectra classes.
@@ -209,25 +230,22 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_site_wise_wattersons_estimator_spectrum():
-        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
         data = [3434, 6346, 234, 4342, 55, 525, 24, 56, 2, 42, 4]
-        testing.assert_equal(Spectrum(data).theta, dadi.Spectrum(data).Watterson_theta() / sum(data))
+        testing.assert_allclose(Spectrum(data).theta, _watterson_theta(data) / sum(data))
 
     @staticmethod
     def test_wattersons_estimator_spectrum():
-        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
         data = [3434, 6346, 234, 4342, 55, 525, 24, 56, 2, 42, 4]
-        testing.assert_equal(Spectrum(data).Theta, dadi.Spectrum(data).Watterson_theta())
+        testing.assert_allclose(Spectrum(data).Theta, _watterson_theta(data))
 
     @staticmethod
     def test_site_wise_wattersons_estimator_spectra():
-        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
@@ -237,14 +255,13 @@ class SpectraTestCase(TestCase):
         }
         s = Spectra.from_dict(data)
 
-        testing.assert_equal(s.theta.to_list(), [
-            dadi.Spectrum(data['all']).Watterson_theta() / sum(data['all']),
-            dadi.Spectrum(data['sub']).Watterson_theta() / sum(data['sub'])
+        testing.assert_allclose(s.theta.to_list(), [
+            _watterson_theta(data['all']) / sum(data['all']),
+            _watterson_theta(data['sub']) / sum(data['sub'])
         ])
 
     @staticmethod
     def test_wattersons_estimator_spectra():
-        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
@@ -254,9 +271,9 @@ class SpectraTestCase(TestCase):
         }
         s = Spectra.from_dict(data)
 
-        testing.assert_equal(s.Theta.to_list(), [
-            dadi.Spectrum(data['all']).Watterson_theta(),
-            dadi.Spectrum(data['sub']).Watterson_theta()
+        testing.assert_allclose(s.Theta.to_list(), [
+            _watterson_theta(data['all']),
+            _watterson_theta(data['sub'])
         ])
 
     def test_plot_spectrum(self):
@@ -397,7 +414,6 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_fold_spectrum():
-        dadi = pytest.importorskip("dadi")
         """
         Test that the folding of spectra works as expected
         """
@@ -408,7 +424,7 @@ class SpectraTestCase(TestCase):
         ]
 
         for s in spectra:
-            np.testing.assert_array_equal(Spectrum(s).fold().data, dadi.Spectrum(s).fold().data)
+            np.testing.assert_array_equal(Spectrum(s).fold().data, _fold(s))
 
     def test_spectrum_is_folded(self):
         """
