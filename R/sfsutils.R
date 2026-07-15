@@ -1,7 +1,7 @@
 if (getRversion() >= "2.15.1") utils::globalVariables(c(".data"))
 
 # vector of required packages
-required_packages <- c("reticulate", "ggplot2", "cowplot")
+required_packages <- c("reticulate", "ggplot2", "cowplot", "RColorBrewer", "scales")
 
 # install required R packages
 for(package in required_packages){
@@ -251,6 +251,176 @@ load_sfsutils <- function(install = FALSE) {
     }
 
     # Display or save the plot
+    if (show) print(p)
+    if (!is.null(file)) ggplot2::ggsave(file, plot = p)
+
+    return(p)
+  }
+
+
+  # Convert a matrix to a long data frame with 1-based integer x (column) and
+  # y (row) coordinates, suitable for ggplot2::geom_tile. The value column is
+  # filled in column-major order to match R's own matrix layout.
+  #
+  # @param mat Numeric matrix.
+  #
+  # @return A data frame with columns x, y and value.
+  matrix_to_long <- function(mat) {
+    nr <- nrow(mat)
+    nc <- ncol(mat)
+
+    data.frame(
+      y = rep(seq_len(nr), times = nc),
+      x = rep(seq_len(nc), each = nr),
+      value = as.vector(mat)
+    )
+  }
+
+
+  # Plot a 2-SFS (SFS2) as a heatmap.
+  #
+  # Reimplements SFS2.plot using a ggplot2 geom_tile heatmap with a diverging
+  # PuOr palette. The monomorphic first and last rows and columns are dropped,
+  # and if the spectrum is folded only the folded half is shown. Mirrors the
+  # Python backend which uses a symmetric (PuOr_r) colour scale.
+  #
+  # @param self The SFS2 object (passed implicitly as the instance).
+  # @param title Character. Title of the plot. Default is NULL.
+  # @param log_scale Logical. Kept for signature compatibility with the Python
+  #                  backend; currently ignored. Default is FALSE.
+  # @param max_abs Numeric. Maximum absolute value for the colour scale.
+  #                Default is NULL (inferred from the data).
+  # @param show Logical. Whether to show the plot. Default is TRUE.
+  # @param file Character. File path to save plot to. Default is NULL.
+  # @param ... Additional arguments which are ignored.
+  #
+  # @return A ggplot object.
+  sf$SFS2$plot <- function(
+    self,
+    title = NULL,
+    log_scale = FALSE,
+    max_abs = NULL,
+    show = TRUE,
+    file = NULL,
+    ...
+  ) {
+    mat <- as.matrix(self$data)
+    storage.mode(mat) <- "double"
+    n <- nrow(mat)
+
+    if (n < 3) {
+      warning('Nothing to plot.')
+      return(invisible(NULL))
+    }
+
+    # remove monomorphic first and last row and column
+    d <- mat[2:(n - 1), 2:(n - 1), drop = FALSE]
+
+    # truncate to the folded half if the spectrum is folded
+    if (isTRUE(self$is_folded())) {
+      w <- as.integer(self$w)
+      d <- d[1:(w - 1), 1:(w - 1), drop = FALSE]
+    }
+
+    # symmetric colour range around zero
+    if (is.null(max_abs)) {
+      max_abs <- max(abs(d), na.rm = TRUE)
+      if (!is.finite(max_abs) || max_abs == 0) max_abs <- 1
+    }
+
+    df <- matrix_to_long(d)
+
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y, fill = .data$value)) +
+      ggplot2::geom_tile() +
+      ggplot2::coord_fixed() +
+      ggplot2::scale_fill_gradientn(
+        colours = rev(RColorBrewer::brewer.pal(11, 'PuOr')),
+        limits = c(-max_abs, max_abs),
+        na.value = 'white'
+      ) +
+      ggplot2::scale_x_continuous(expand = c(0, 0)) +
+      ggplot2::scale_y_continuous(expand = c(0, 0)) +
+      ggplot2::labs(x = '', y = '', title = title, fill = '') +
+      ggplot2::theme_bw() +
+      ggplot2::theme(panel.grid.major = ggplot2::element_blank(),
+                     panel.grid.minor = ggplot2::element_blank())
+
+    if (show) print(p)
+    if (!is.null(file)) ggplot2::ggsave(file, plot = p)
+
+    return(p)
+  }
+
+
+  # Plot a joint (multi-population) SFS (JointSFS) as a heatmap.
+  #
+  # Reimplements JointSFS.plot using a ggplot2 geom_tile heatmap with a viridis
+  # palette. For more than two populations the joint SFS is first marginalized
+  # onto the two requested populations. The monomorphic corners are masked, and
+  # allele counts are shown on both axes with the origin at the bottom left.
+  #
+  # @param self The JointSFS object (passed implicitly as the instance).
+  # @param pops Numeric vector of length two. The (0-based) population indices to
+  #             plot as (y-axis, x-axis). Default is c(0, 1).
+  # @param title Character. Title of the plot. Default is NULL.
+  # @param log_scale Logical. Whether to use a logarithmic colour scale.
+  #                  Default is FALSE.
+  # @param mask_monomorphic Logical. Whether to mask the monomorphic corners.
+  #                         Default is TRUE.
+  # @param show Logical. Whether to show the plot. Default is TRUE.
+  # @param file Character. File path to save plot to. Default is NULL.
+  # @param ... Additional arguments which are ignored.
+  #
+  # @return A ggplot object.
+  sf$JointSFS$plot <- function(
+    self,
+    pops = c(0, 1),
+    title = NULL,
+    log_scale = FALSE,
+    mask_monomorphic = TRUE,
+    show = TRUE,
+    file = NULL,
+    ...
+  ) {
+    # marginalize onto the two requested populations if needed
+    jsfs <- if (self$n_pops > 2) self$marginalize(as.integer(pops)) else self
+
+    mat <- as.matrix(jsfs$data)
+    storage.mode(mat) <- "double"
+    pop_names <- unlist(jsfs$pop_names)
+
+    # mask the monomorphic corners (all-ancestral and all-derived)
+    if (mask_monomorphic) {
+      mat[1, 1] <- NA
+      mat[nrow(mat), ncol(mat)] <- NA
+    }
+
+    # allele counts are 0-based
+    df <- matrix_to_long(mat)
+    df$x <- df$x - 1
+    df$y <- df$y - 1
+
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y, fill = .data$value)) +
+      ggplot2::geom_tile() +
+      ggplot2::coord_fixed() +
+      ggplot2::labs(
+        x = paste('allele count', pop_names[2]),
+        y = paste('allele count', pop_names[1]),
+        title = title,
+        fill = ''
+      ) +
+      ggplot2::scale_x_continuous(expand = c(0, 0)) +
+      ggplot2::scale_y_continuous(expand = c(0, 0)) +
+      ggplot2::theme_bw() +
+      ggplot2::theme(panel.grid.major = ggplot2::element_blank(),
+                     panel.grid.minor = ggplot2::element_blank())
+
+    if (log_scale) {
+      p <- p + ggplot2::scale_fill_viridis_c(trans = 'log10', na.value = 'white')
+    } else {
+      p <- p + ggplot2::scale_fill_viridis_c(na.value = 'white')
+    }
+
     if (show) print(p)
     if (!is.null(file)) ggplot2::ggsave(file, plot = p)
 

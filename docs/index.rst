@@ -60,6 +60,19 @@ Contents
    reference/Python/spectra
 
 .. toctree::
+   :caption: R Reference
+
+   reference/R/installation
+   reference/R/quickstart
+   reference/R/parser
+   reference/R/stratifications
+   reference/R/annotations
+   reference/R/filtrations
+   reference/R/joint
+   reference/R/two_sfs
+   reference/R/spectra
+
+.. toctree::
    :caption: CLI Reference
 
    reference/CLI/usage
