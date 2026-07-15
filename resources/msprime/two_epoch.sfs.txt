@@ -1,0 +1,22 @@
+# unfolded SFS (bins 0..20) from tskit; two-epoch demography, seed 42
+0
+279
+107
+59
+31
+28
+14
+17
+8
+10
+11
+9
+3
+10
+1
+5
+1
+6
+2
+7
+0

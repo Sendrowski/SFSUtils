@@ -1,0 +1,35 @@
+# Development environment: the package with optional VCF support, the test toolchain,
+# the simulation stack used to (re)generate the msprime SFS-validation fixtures
+# (msprime + tskit), and the Sphinx/myst-nb docs stack for building and re-executing
+# the reference notebooks.
+#
+# Usage:
+#   mamba env create -f envs/dev.yaml
+#   mamba activate sfsutils-dev
+#   pip install -e ".[vcf]"
+name: sfsutils-dev
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - cyvcf2                 # optional VCF backend (the [vcf] extra)
+  # --- simulation / ground-truth SFS for the parser-validation fixtures ---
+  - msprime
+  - tskit
+  # --- testing ---
+  - pytest
+  - pytest-xdist
+  - pytest-cov
+  - pytest-sugar
+  # --- docs (build + re-execute notebooks) ---
+  - nbconvert
+  - sphinx
+  - myst-nb
+  - sphinx-book-theme
+  - sphinx-autodoc-typehints
+  - sphinx-copybutton
+  - sphinxcontrib-bibtex
+  - autodocsumm
+  - pip:
+      - -e ".[vcf]"
