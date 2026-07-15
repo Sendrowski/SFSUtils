@@ -29,6 +29,11 @@ JOINT_VCF = "resources/msprime/two_epoch_joint.vcf"
 JOINT_SFS = "resources/msprime/two_epoch_joint.jsfs.json"
 JOINT_POPS = "resources/msprime/two_epoch_joint.pops.json"
 
+# two-SFS (two-site) fixtures
+TWO_SFS_VCF = "resources/msprime/two_sfs.vcf"
+TWO_SFS_REF = "resources/msprime/two_sfs.sfs2.json"
+TWO_SFS_META = "resources/msprime/two_sfs.meta.json"
+
 pytestmark = pytest.mark.skipif(
     not all(os.path.exists(p) for p in (VCF, SFS, REF)),
     reason="msprime fixtures absent",
@@ -38,6 +43,17 @@ requires_joint = pytest.mark.skipif(
     not all(os.path.exists(p) for p in (JOINT_VCF, JOINT_SFS, JOINT_POPS)),
     reason="joint msprime fixtures absent",
 )
+
+requires_two_sfs = pytest.mark.skipif(
+    not all(os.path.exists(p) for p in (TWO_SFS_VCF, TWO_SFS_REF, TWO_SFS_META)),
+    reason="two-SFS msprime fixtures absent",
+)
+
+
+def _load_two_sfs_meta():
+    """Load the sample size and distance window for the two-SFS fixture."""
+    with open(TWO_SFS_META) as f:
+        return json.load(f)
 
 
 def _load_joint_pops():
@@ -189,3 +205,50 @@ def test_joint_subsample_modes_agree():
     mask = rand > 5
     rel_diff = np.abs(prob[mask] - rand[mask]) / rand[mask]
     assert rel_diff.mean() < 0.3
+
+
+@requires_two_sfs
+def test_parser_reproduces_msprime_two_sfs():
+    """The parsed two-SFS reproduces an independent naive windowed pair count bin for bin.
+
+    At the full sample size with ``random`` subsampling, each site's down-projection is a unit mass at its
+    derived count, so the outer-product accumulation reduces to the exact integer pair count (symmetrized).
+    """
+    Settings.disable_pbar = True
+    meta = _load_two_sfs_meta()
+    ref = np.asarray(sf.SFS2.from_file(TWO_SFS_REF))
+
+    sfs2 = sf.Parser(vcf=TWO_SFS_VCF, n=meta["n"], two_sfs=True, two_sfs_distance=meta["distance"],
+                     two_sfs_offset=meta["offset"], skip_non_polarized=False,
+                     subsample_mode="random").parse()
+
+    assert isinstance(sfs2, sf.SFS2)
+    assert sfs2.data.shape == ref.shape
+    # the matrix is symmetric by construction
+    np.testing.assert_allclose(sfs2.data, sfs2.data.T)
+    np.testing.assert_allclose(np.asarray(sfs2), ref)
+
+
+@requires_two_sfs
+def test_two_sfs_pair_count_is_projection_invariant():
+    """Down-projecting to a smaller sample size preserves the total number of pairs (each pair keeps unit mass)."""
+    Settings.disable_pbar = True
+    meta = _load_two_sfs_meta()
+    ref_total = np.asarray(sf.SFS2.from_file(TWO_SFS_REF)).sum()
+
+    sfs2 = sf.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, two_sfs_distance=meta["distance"],
+                     skip_non_polarized=False, subsample_mode="probabilistic").parse()
+
+    assert sfs2.data.shape == (11, 11)
+    np.testing.assert_allclose(sfs2.data, sfs2.data.T)
+    assert sfs2.n_sites == pytest.approx(ref_total)
+
+
+@requires_two_sfs
+def test_two_sfs_rejects_incompatible_options():
+    """The two-SFS is single-population and unstratified: stratifications and populations must be rejected."""
+    with pytest.raises(NotImplementedError):
+        sf.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, stratifications=[sf.DegeneracyStratification()])
+
+    with pytest.raises(NotImplementedError):
+        sf.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, pops={"A": ["tsk_0"]})

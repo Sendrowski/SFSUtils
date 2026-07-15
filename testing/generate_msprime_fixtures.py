@@ -125,3 +125,67 @@ print(f"joint haplotypes: A={n_per_pop['A']}, B={n_per_pop['B']}")
 print(f"joint segregating sites: {ts_joint.num_sites}")
 print(f"joint SFS shape: {jsfs.shape}, sum: {jsfs.sum()}")
 print(f"wrote joint fixtures to {OUT}/")
+
+
+# --- two-SFS (two-site) fixture -------------------------------------------------------------------
+# A single recombining sequence gives linked pairs of segregating sites; the two-SFS counts pairs
+# within a genomic-distance window. The reference matrix is built here by an independent naive
+# double loop that reads the written VCF back with cyvcf2 (a different code path from the parser's
+# streaming sliding-window accumulation), so the test genuinely validates the parser.
+import cyvcf2
+
+from sfsutils.spectrum import SFS2
+
+TWO_SFS_SEED = 42
+TWO_SFS_DISTANCE = 2_000
+TWO_SFS_OFFSET = 0
+
+ts_two = msprime.sim_ancestry(
+    samples=10,  # -> 20 haplotypes
+    population_size=10_000,
+    sequence_length=2e6,
+    recombination_rate=1e-8,
+    random_seed=TWO_SFS_SEED,
+)
+ts_two = msprime.sim_mutations(ts_two, rate=1.5e-8, random_seed=TWO_SFS_SEED)
+
+non_biallelic_two = [
+    s.id for s in ts_two.sites()
+    if len({s.ancestral_state} | {m.derived_state for m in s.mutations}) != 2
+]
+ts_two = ts_two.delete_sites(non_biallelic_two)
+
+n_two = ts_two.num_samples  # 20 haplotypes
+
+with open(f"{OUT}/two_sfs.vcf", "w") as f:
+    ts_two.write_vcf(f)
+
+# read positions and derived-allele counts back from the VCF (allele 0 = REF = ancestral)
+sites = [
+    (v.POS, sum(a for gt in v.genotypes for a in gt[:2] if a > 0))
+    for v in cyvcf2.VCF(f"{OUT}/two_sfs.vcf")
+]
+
+# reference two-SFS: naive forward-pair count within the window, then symmetrized
+max_distance = TWO_SFS_OFFSET + TWO_SFS_DISTANCE
+ref = np.zeros((n_two + 1, n_two + 1))
+for a in range(len(sites)):
+    pos_a, der_a = sites[a]
+    for b in range(a + 1, len(sites)):
+        distance = sites[b][0] - pos_a
+        if distance > max_distance:
+            break  # positions are sorted, so no later site is closer
+        if TWO_SFS_OFFSET < distance:
+            ref[der_a, sites[b][1]] += 1
+ref = (ref + ref.T) / 2
+
+SFS2(ref).to_file(f"{OUT}/two_sfs.sfs2.json")
+
+with open(f"{OUT}/two_sfs.meta.json", "w") as f:
+    json.dump({"n": n_two, "distance": TWO_SFS_DISTANCE, "offset": TWO_SFS_OFFSET}, f, indent=2)
+
+print()
+print(f"two-SFS haplotypes: {n_two}")
+print(f"two-SFS segregating sites: {ts_two.num_sites}")
+print(f"two-SFS total pairs (window {TWO_SFS_DISTANCE} bp): {int(ref.sum())}")
+print(f"wrote two-SFS fixtures to {OUT}/")

@@ -12,7 +12,7 @@ import itertools
 import logging
 import random
 from abc import ABC, abstractmethod
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from typing import List, Callable, Literal, Optional, Dict, Tuple, Union
 
 import numpy as np
@@ -25,7 +25,7 @@ from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
 from .io_handlers import bases, get_called_bases, FASTAHandler, NoTypeException, \
     DummyVariant, MultiHandler, VCFHandler, is_monomorphic_snp
 from .settings import Settings
-from .spectrum import Spectra, JointSFS, JointSpectra
+from .spectrum import Spectra, SFS2, JointSFS, JointSpectra
 
 # logger
 logger = logging.getLogger('sfsutils')
@@ -959,7 +959,10 @@ class Parser(MultiHandler):
             aliases: Dict[str, List[str]] = {},
             target_site_counter: TargetSiteCounter = None,
             subsample_mode: Literal['random', 'probabilistic'] = 'probabilistic',
-            polarize_probabilistically: bool = False
+            polarize_probabilistically: bool = False,
+            two_sfs: bool = False,
+            two_sfs_distance: int = 1000,
+            two_sfs_offset: int = 0
     ):
         """
         Initialize the parser.
@@ -1010,6 +1013,19 @@ class Parser(MultiHandler):
             the derived allele is ``G``, we assign 0.8 probability mass to the ancestral allele and 0.2 to the
             derived allele. This should enhance accuracy, especially for small datasets. Whenever the ancestral
             probability tag is not present, we assume a probability of 1 for the ancestral allele.
+        :param two_sfs: Whether to parse the two-dimensional (two-site) SFS instead of the ordinary SFS. When
+            ``True``, :meth:`parse` returns a square :class:`~sfsutils.spectrum.SFS2` whose entry ``(i, j)`` counts
+            pairs of segregating sites, on the same contig and within ``two_sfs_distance`` base pairs of one another,
+            where one site has ``i`` and the other ``j`` derived alleles (down-projected to ``n``). Each site's
+            contribution is the outer product of the two per-site down-projection vectors, so it is exact when
+            ``subsample_mode='random'`` at the full sample size and smoother under ``'probabilistic'``. The matrix is
+            symmetrized. Not compatible with ``pops``, ``stratifications``, or ``target_site_counter``.
+        :param two_sfs_distance: The maximum genomic distance (in base pairs) between the two sites of a pair when
+            ``two_sfs=True``. Only sites within this distance on the same contig are paired, which restricts the
+            spectrum to (approximately) linked pairs.
+        :param two_sfs_offset: The minimum genomic distance (in base pairs, exclusive) between the two sites of a
+            pair when ``two_sfs=True``; pairs are formed for separations in ``(two_sfs_offset, two_sfs_offset +
+            two_sfs_distance]``. Defaults to ``0`` (pairs at any separation up to ``two_sfs_distance``).
         """
         MultiHandler.__init__(
             self,
@@ -1130,6 +1146,38 @@ class Parser(MultiHandler):
         #: Whether to probabilistically polarize sites
         self.polarize_probabilistically: bool = polarize_probabilistically
 
+        #: Whether to parse the two-dimensional (two-site) SFS
+        self.two_sfs: bool = two_sfs
+
+        #: Maximum genomic distance (bp) between the two sites of a pair for the two-SFS
+        self.two_sfs_distance: int = int(two_sfs_distance)
+
+        #: Minimum genomic distance (bp, exclusive) between the two sites of a pair for the two-SFS
+        self.two_sfs_offset: int = int(two_sfs_offset)
+
+        if self.two_sfs:
+            if self.pops is not None:
+                raise NotImplementedError("The two-SFS (two_sfs=True) is not supported together with 'pops'.")
+
+            if len(self.stratifications) > 0:
+                raise NotImplementedError("The two-SFS (two_sfs=True) is not supported together with stratifications.")
+
+            if self.target_site_counter is not None:
+                raise NotImplementedError("The two-SFS (two_sfs=True) is not supported together with a "
+                                         "TargetSiteCounter.")
+
+            if self.two_sfs_distance < 1:
+                raise ValueError("two_sfs_distance must be at least 1.")
+
+        #: The accumulating two-SFS matrix of shape ``(n + 1, n + 1)`` (only when ``two_sfs`` is set)
+        self._sfs2: np.ndarray | None = np.zeros((self.n + 1, self.n + 1)) if self.two_sfs else None
+
+        #: Sliding buffer of ``(position, down-projection vector)`` for recent sites on the current contig
+        self._two_sfs_buffer: deque = deque()
+
+        #: The contig currently held in the two-SFS buffer
+        self._two_sfs_contig: str | None = None
+
     def _get_ancestral(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> str:
         """
         Determine the ancestral allele.
@@ -1180,6 +1228,10 @@ class Parser(MultiHandler):
         :param variant: The variant.
         :return: Whether the site was included in the SFS.
         """
+        # the two-SFS pairs each site with nearby sites rather than accumulating a per-type spectrum
+        if self.two_sfs:
+            return self._parse_site_two_sfs(variant)
+
         # compute the down-projected mass for this site (1-D or joint depending on whether populations are given)
         m = self._project_joint(variant) if self.pops is not None else self._project(variant)
 
@@ -1343,6 +1395,46 @@ class Parser(MultiHandler):
 
         return m
 
+    def _parse_site_two_sfs(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+        """
+        Add a single site to the two-SFS by pairing it with the recently seen sites within the distance window.
+
+        The site's down-projection vector is paired (via an outer product) with that of every buffered site on the
+        same contig whose separation falls in ``(two_sfs_offset, two_sfs_offset + two_sfs_distance]``. A sliding
+        buffer keeps only the sites still within reach, so the pass is linear in the number of pairs.
+
+        :param variant: The variant.
+        :return: Whether the site was included (i.e. had a valid down-projection).
+        """
+        m = self._project(variant)
+
+        if m is None:
+            return False
+
+        # reset the buffer when we move to a new contig (pairs never cross contigs)
+        if variant.CHROM != self._two_sfs_contig:
+            self._two_sfs_buffer.clear()
+            self._two_sfs_contig = variant.CHROM
+
+        # the furthest separation at which a pair is still formed
+        max_distance = self.two_sfs_offset + self.two_sfs_distance
+
+        # drop buffered sites that are now too far behind to pair with any future site
+        while self._two_sfs_buffer and variant.POS - self._two_sfs_buffer[0][0] > max_distance:
+            self._two_sfs_buffer.popleft()
+
+        # pair with each buffered site whose separation falls in the window
+        for pos, m_prev in self._two_sfs_buffer:
+            distance = variant.POS - pos
+
+            if self.two_sfs_offset < distance <= max_distance:
+                # accumulate the (forward) pair; the matrix is symmetrized once at the end
+                self._sfs2 += np.multiply.outer(m_prev, m)
+
+        self._two_sfs_buffer.append((variant.POS, m))
+
+        return True
+
     def _process_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
         """
         Handle a single variant.
@@ -1452,12 +1544,13 @@ class Parser(MultiHandler):
         for a in self.annotations:
             a._teardown()
 
-    def parse(self) -> Spectra | JointSpectra:
+    def parse(self) -> Spectra | JointSpectra | SFS2:
         """
         Parse the VCF file.
 
-        :return: The spectra for the different stratifications. A :class:`~sfsutils.spectrum.Spectra` for a
-            single-population SFS, or a :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given.
+        :return: A :class:`~sfsutils.spectrum.Spectra` for a single-population SFS, a
+            :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given, or a square
+            :class:`~sfsutils.spectrum.SFS2` when ``two_sfs`` was set.
         """
         # set up parser
         self._setup()
@@ -1498,7 +1591,7 @@ class Parser(MultiHandler):
         if self.n_no_ancestral > 0:
             self._logger.info(f'Skipped {self.n_no_ancestral} sites without ancestral allele information.')
 
-        if len(self.sfs) == 0:
+        if len(self.sfs) == 0 and not self.two_sfs:
             self._logger.warning(f"No sites were included in the spectra. If this is not expected, "
                                  "please check that all components work as expected. You can also "
                                  "set the log level to DEBUG.")
@@ -1518,6 +1611,12 @@ class Parser(MultiHandler):
 
         # close VCF reader
         VCFHandler._rewind(self)
+
+        # in two-SFS mode, return the symmetrized pair-count matrix
+        if self.two_sfs:
+            self._logger.info(f'Counted {self._sfs2.sum():.0f} site pairs within {self.two_sfs_distance} bp.')
+
+            return SFS2(self._sfs2).symmetrize()
 
         # in joint mode, return a collection of joint spectra keyed by (sorted) type
         if self.pops is not None:
