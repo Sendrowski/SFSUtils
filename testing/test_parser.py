@@ -1,6 +1,5 @@
 import logging
 
-import dadi
 import sfsutils as fd
 import numpy as np
 import pandas as pd
@@ -58,6 +57,7 @@ class ParserTestCase(TestCase):
     @requires('resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz', 'resources/genome/betula/pops_dadi.txt')
     @staticmethod
     def test_parse_sfs_compare_probabilistic_with_dadi():
+        dadi = pytest.importorskip("dadi")
         """
         Compare the parsed sfs with results from dadi.
         """
@@ -88,6 +88,7 @@ class ParserTestCase(TestCase):
     @staticmethod
     @pytest.mark.slow
     def test_compare_sfs_with_dadi_full_set():
+        dadi = pytest.importorskip("dadi")
         """
         Compare the sfs from dadi with the one from the data.
         """

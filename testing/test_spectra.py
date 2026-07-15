@@ -1,4 +1,4 @@
-import dadi
+import pytest
 import numpy as np
 import pandas as pd
 from numpy import testing
@@ -209,6 +209,7 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_site_wise_wattersons_estimator_spectrum():
+        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
@@ -217,6 +218,7 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_wattersons_estimator_spectrum():
+        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
@@ -225,6 +227,7 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_site_wise_wattersons_estimator_spectra():
+        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
@@ -241,6 +244,7 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_wattersons_estimator_spectra():
+        dadi = pytest.importorskip("dadi")
         """
         Test that the wattersons_estimator method works as expected.
         """
@@ -393,6 +397,7 @@ class SpectraTestCase(TestCase):
 
     @staticmethod
     def test_fold_spectrum():
+        dadi = pytest.importorskip("dadi")
         """
         Test that the folding of spectra works as expected
         """
