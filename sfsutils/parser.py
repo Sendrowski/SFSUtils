@@ -1015,14 +1015,18 @@ class Parser(MultiHandler):
             probability tag is not present, we assume a probability of 1 for the ancestral allele.
         :param two_sfs: Whether to parse the two-dimensional (two-site) SFS instead of the ordinary SFS. When
             ``True``, :meth:`parse` returns a square :class:`~sfsutils.spectrum.SFS2` whose entry ``(i, j)`` counts
-            pairs of segregating sites, on the same contig and within ``two_sfs_distance`` base pairs of one another,
-            where one site has ``i`` and the other ``j`` derived alleles (down-projected to ``n``). Each site's
+            pairs of sites, on the same contig and within the distance window of one another, where one site has ``i``
+            and the other ``j`` derived alleles (down-projected to ``n``). As for the one-dimensional SFS, monomorphic
+            sites are retained (contributing to the zero-frequency row and column); add a
+            :class:`~sfsutils.filtration.SNPFiltration` to restrict the spectrum to segregating sites. Each site's
             contribution is the outer product of the two per-site down-projection vectors, so it is exact when
             ``subsample_mode='random'`` at the full sample size and smoother under ``'probabilistic'``. The matrix is
             symmetrized. Not compatible with ``pops``, ``stratifications``, or ``target_site_counter``.
-        :param two_sfs_distance: The maximum genomic distance (in base pairs) between the two sites of a pair when
-            ``two_sfs=True``. Only sites within this distance on the same contig are paired, which restricts the
-            spectrum to (approximately) linked pairs.
+        :param two_sfs_distance: The width (in base pairs) of the distance window over which the two sites of a pair
+            are separated when ``two_sfs=True``. Together with ``two_sfs_offset`` it defines the window
+            ``(two_sfs_offset, two_sfs_offset + two_sfs_distance]``; with the default ``two_sfs_offset=0`` this is
+            simply the maximum separation. Restricting the window restricts the spectrum to (approximately) linked
+            pairs.
         :param two_sfs_offset: The minimum genomic distance (in base pairs, exclusive) between the two sites of a
             pair when ``two_sfs=True``; pairs are formed for separations in ``(two_sfs_offset, two_sfs_offset +
             two_sfs_distance]``. Defaults to ``0`` (pairs at any separation up to ``two_sfs_distance``).

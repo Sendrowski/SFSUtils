@@ -55,6 +55,8 @@ def test_sfs2_fold_is_idempotent_and_conserves_mass():
     folded = s.fold()
     assert folded.is_folded()
     assert folded.n_sites == pytest.approx(s.n_sites)
+    # folding an already-folded spectrum is a no-op
+    np.testing.assert_allclose(folded.fold().data, folded.data)
 
 
 def test_sfs2_arithmetic_and_masks():
@@ -85,9 +87,18 @@ def test_two_locus_sfs_roundtrip_type(tmp_path):
     assert type(sf.TwoLocusSFS.from_file(str(f))) is sf.TwoLocusSFS
 
 
+def test_sfs2_mask_upper_masks_the_upper_triangle():
+    s = sf.SFS2(np.arange(9).reshape(3, 3).astype(float))
+    masked = s.mask_upper(fill_value=-1.0).data
+    # strictly-upper entries are masked; the diagonal and lower triangle are retained
+    assert masked[0, 1] == -1 and masked[0, 2] == -1 and masked[1, 2] == -1
+    assert masked[1, 0] == s.data[1, 0] and masked[2, 0] == s.data[2, 0] and masked[1, 1] == s.data[1, 1]
+
+
 def test_sfs2_plot_smoke():
-    ax = sf.SFS2(np.arange(16).reshape(4, 4).astype(float)).plot(show=False)
-    assert ax is not None
+    s = sf.SFS2(np.arange(16).reshape(4, 4).astype(float))
+    assert s.plot(show=False) is not None
+    s.plot_surface(show=False)
     plt.close('all')
 
 
@@ -149,11 +160,21 @@ def test_jointsfs_roundtrip_and_copy_type(tmp_path):
 def test_jointsfs_plot_smoke():
     j = sf.JointSFS(np.arange(9).reshape(3, 3).astype(float), pop_names=["A", "B"])
     assert j.plot(show=False) is not None
+    j.plot_surface(show=False)
     plt.close('all')
     # 3-D input marginalizes to 2-D before plotting
     j3 = sf.JointSFS(np.arange(27).reshape(3, 3, 3).astype(float))
     assert j3.plot(pops=(0, 1), show=False) is not None
+    j3.plot_surface(pops=(0, 1), show=False)
     plt.close('all')
+
+
+def test_jointsfs_plot_requires_two_pops():
+    j = sf.JointSFS(np.arange(9).reshape(3, 3).astype(float))
+    with pytest.raises(ValueError):
+        j.plot(pops=(0,), show=False)
+    with pytest.raises(ValueError):
+        j.plot_surface(pops=(0, 1, 2), show=False)
 
 
 # --- JointSpectra ---------------------------------------------------------------------------------

@@ -11,6 +11,9 @@ resampling, and plotting.
 .. autosummary::
    :nosignatures:
 
+   ~sfsutils.spectrum.AbstractSpectrum
    ~sfsutils.spectrum.Spectrum
+
+.. autoclass:: sfsutils.spectrum.AbstractSpectrum
 
 .. autoclass:: sfsutils.spectrum.Spectrum

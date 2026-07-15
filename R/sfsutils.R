@@ -1,7 +1,7 @@
 if (getRversion() >= "2.15.1") utils::globalVariables(c(".data"))
 
 # vector of required packages
-required_packages <- c("reticulate", "ggplot2", "cowplot", "RColorBrewer", "scales")
+required_packages <- c("reticulate", "ggplot2", "cowplot", "RColorBrewer")
 
 # install required R packages
 for(package in required_packages){
@@ -277,6 +277,13 @@ load_sfsutils <- function(install = FALSE) {
   }
 
 
+  # CAVEAT (needs verification in an R session): unlike the module-level `viz$...`
+  # overrides above, the two overrides below replace Python *instance* methods by
+  # assigning an R function to a class attribute. Whether reticulate binds the
+  # instance as `self` when calling `obj$plot()` has not been verified here (no R
+  # runtime was available at authoring time). If `self` is not bound, wire these as
+  # standalone functions (e.g. plot_sfs2(x, ...)) or via a py_run_string shim instead.
+  #
   # Plot a 2-SFS (SFS2) as a heatmap.
   #
   # Reimplements SFS2.plot using a ggplot2 geom_tile heatmap with a diverging

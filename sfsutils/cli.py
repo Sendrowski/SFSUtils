@@ -105,13 +105,19 @@ def _build_filtrations(names: List[str], contigs: List[str] | None) -> list:
     from . import (SNPFiltration, SNVFiltration, PolyAllelicFiltration, CodingSequenceFiltration, CpGFiltration,
                    ContigFiltration, NoFiltration, AllFiltration)
 
+    def _contig():
+        if not contigs:
+            raise SystemExit("The 'contig' filtration requires --contigs.")
+
+        return ContigFiltration(contigs=contigs)
+
     factories: Dict[str, Callable[[], object]] = {
         'snp': SNPFiltration,
         'snv': SNVFiltration,
         'poly-allelic': PolyAllelicFiltration,
         'coding-sequence': CodingSequenceFiltration,
         'cpg': CpGFiltration,
-        'contig': lambda: ContigFiltration(contigs=contigs),
+        'contig': _contig,
         'no': NoFiltration,
         'all': AllFiltration,
     }
@@ -188,6 +194,7 @@ def _run_parse(args: argparse.Namespace) -> int:
         subsample_mode=args.subsample_mode,
         two_sfs=args.two_sfs,
         two_sfs_distance=args.two_sfs_distance,
+        two_sfs_offset=args.two_sfs_offset,
     ).parse()
 
     spectra.to_file(args.out)
@@ -313,7 +320,9 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
                    help="Down-sampling mode. Default: probabilistic.")
     p.add_argument("--two-sfs", action="store_true", help="Parse the two-site (2-D) SFS instead.")
     p.add_argument("--two-sfs-distance", type=int, default=1000,
-                   help="Maximum bp distance between paired sites for the two-SFS. Default: 1000.")
+                   help="Width in bp of the distance window for pairing sites in the two-SFS. Default: 1000.")
+    p.add_argument("--two-sfs-offset", dest="two_sfs_offset", type=int, default=0,
+                   help="Minimum bp separation (exclusive) between paired sites for the two-SFS. Default: 0.")
     p.add_argument("--outgroups", type=_split_csv, default=None,
                    help="Outgroup samples (for the maximum-likelihood-ancestral annotation).")
     p.add_argument("--n-ingroups", dest="n_ingroups", type=int, default=11,

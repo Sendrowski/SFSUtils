@@ -96,6 +96,18 @@ def test_build_stratifications():
     assert [type(s).__name__ for s in strat] == ["DegeneracyStratification", "SynonymyStratification"]
 
 
+def test_build_filtrations_contig_requires_contigs():
+    with pytest.raises(SystemExit, match="requires --contigs"):
+        _build_filtrations(["contig"], None)
+    assert type(_build_filtrations(["contig"], ["1"])[0]).__name__ == "ContigFiltration"
+
+
+def test_two_sfs_offset_flag_parsed():
+    ns = build_parser().parse_args(
+        ["parse", "--vcf", "x", "--n", "2", "--out", "o", "--two-sfs", "--two-sfs-offset", "50"])
+    assert ns.two_sfs_offset == 50
+
+
 def test_build_annotations_degeneracy():
     ann = _build_annotations(["degeneracy"], None, 11)
     assert [type(a).__name__ for a in ann] == ["DegeneracyAnnotation"]

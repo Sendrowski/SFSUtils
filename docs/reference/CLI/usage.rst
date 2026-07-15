@@ -59,8 +59,10 @@ spectrum: a single-population SFS is written as CSV, a joint or two-site SFS as 
      - Comma-separated on-the-fly annotations (``degeneracy``, ``maximum-likelihood-ancestral``).
    * - ``--filter``
      - Comma-separated filtrations (``snp``, ``snv``, ``poly-allelic``, ``coding-sequence``, ``cpg``, ``contig``, ``no``, ``all``). Default ``poly-allelic``.
-   * - ``--two-sfs`` / ``--two-sfs-distance``
-     - Parse the two-site SFS, pairing sites within the given number of base pairs (default 1000).
+   * - ``--contigs``
+     - Contigs to keep (required by the ``contig`` stratification and filtration).
+   * - ``--two-sfs`` / ``--two-sfs-distance`` / ``--two-sfs-offset``
+     - Parse the two-site SFS, pairing sites separated by ``(offset, offset + distance]`` base pairs (distance default 1000, offset default 0).
    * - ``--no-skip-non-polarized``
      - Use the reference allele as ancestral where no ancestral tag is available.
    * - ``--subsample-mode``

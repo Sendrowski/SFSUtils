@@ -11,6 +11,9 @@ joint visualisation.
 .. autosummary::
    :nosignatures:
 
+   ~sfsutils.spectrum.AbstractSpectra
    ~sfsutils.spectrum.Spectra
+
+.. autoclass:: sfsutils.spectrum.AbstractSpectra
 
 .. autoclass:: sfsutils.spectrum.Spectra

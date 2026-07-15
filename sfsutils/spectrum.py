@@ -1686,7 +1686,7 @@ class SFS2(AbstractSpectrum):
         """
         data = self.copy().data
 
-        data[np.tril(np.ones_like(data, dtype=bool), k=-1)] = fill_value
+        data[np.triu(np.ones_like(data, dtype=bool), k=1)] = fill_value
 
         return SFS2(data)
 
@@ -1853,7 +1853,9 @@ class JointSFS(AbstractSpectrum):
             raise ValueError('Exactly two populations must be specified for a 2-dimensional plot.')
 
         # reduce to the two requested populations
-        data = (self.marginalize(pops) if self.n_pops > 2 else self).data.astype(float).copy()
+        # marginalize onto the requested populations; for exactly two this still applies the requested
+        # axis order (transposing when pops=(1, 0)), which drawing self untransposed would ignore
+        data = self.marginalize(pops).data.astype(float).copy()
 
         if data.ndim != 2:
             raise ValueError('Plotting requires a 2-dimensional (marginalized) joint SFS.')
@@ -1928,7 +1930,9 @@ class JointSFS(AbstractSpectrum):
             raise ValueError('Exactly two populations must be specified for a surface plot.')
 
         # reduce to the two requested populations
-        data = (self.marginalize(pops) if self.n_pops > 2 else self).data.astype(float).copy()
+        # marginalize onto the requested populations; for exactly two this still applies the requested
+        # axis order (transposing when pops=(1, 0)), which drawing self untransposed would ignore
+        data = self.marginalize(pops).data.astype(float).copy()
 
         if data.ndim != 2:
             raise ValueError('Plotting requires a 2-dimensional (marginalized) joint SFS.')
