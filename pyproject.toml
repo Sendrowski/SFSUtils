@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "sfsutils"
+version = "1.0.0"
+description = "SFS parsing from VCF files with ancestral-allele and site-degeneracy annotation, stratification and filtering."
+authors = ["Sendrowski <sendrowski.janek@gmail.com>"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+packages = [{ include = "sfsutils" }]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+matplotlib = "^3.9"
+seaborn = "^0.13.2"
+numpy = ">=1.24,<3"
+pandas = "^2.2.2"
+jsonpickle = "^3.0.0"
+multiprocess = "^0.70.12"
+tqdm = "^4.60.0"
+biopython = "^1.84"
+requests = ">=2.28"
+scipy = "^1.13"
+
+# Optional cyvcf2 dependency for VCF parsing
+cyvcf2 = { version = "^0.31.0", optional = true }
+
+[tool.poetry.extras]
+vcf = ["cyvcf2"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-xdist = "^3.5"
+urllib3 = "^2.5.0"
+sphinx_book_theme = "^1.1.2"
+sphinx-autodoc-typehints = "^2.1.0"
+sphinx-copybutton = "^0.5.2"
+myst-nb = "^1.1.0"
+sphinx = "^7.3.7"
+pygments = "^2.15.1"
+sphinxcontrib-bibtex = "^2.6.2"
+autodocsumm = "^0.2.15"
+cyvcf2 = "^0.31.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

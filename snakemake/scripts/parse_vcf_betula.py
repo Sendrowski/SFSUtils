@@ -1,0 +1,59 @@
+"""
+Parse betula VCF.
+"""
+
+__author__ = "Janek Sendrowski"
+__contact__ = "sendrowski.janek@gmail.com"
+__date__ = "2023-08-06"
+
+import pandas as pd
+
+try:
+    import sys
+
+    # necessary to import sfsutils locally
+    sys.path.append('..')
+
+    testing = False
+    vcf_file = snakemake.input.vcf
+    fasta = snakemake.input.ref
+    gff = snakemake.input.gff
+    samples_file = snakemake.input.samples
+    n = snakemake.params.n
+    out_csv = snakemake.output.csv
+    out_png = snakemake.output.png
+except NameError:
+
+    # testing
+    testing = True
+    vcf_file = '../resources/genome/betula/all.polarized.vcf.gz'
+    fasta = '../resources/genome/betula/genome.fasta'
+    gff = '../resources/genome/betula/genome.gff.gz'
+    samples_file = '../resources/genome/betula/sample_sets/pendula.args'
+    n = 10
+    out_csv = "scratch/sfs_parsed.csv"
+    out_png = "scratch/sfs_parsed.png"
+
+import sfsutils as sf
+
+p = sf.Parser(
+    vcf=vcf_file,
+    fasta=fasta,
+    gff=gff,
+    n=n,
+    annotations=[sf.DegeneracyAnnotation()],
+    filtrations=[
+        sf.CodingSequenceFiltration(),
+        sf.PolyAllelicFiltration(),
+    ],
+    stratifications=[sf.DegeneracyStratification()],
+    include_samples=pd.read_csv(samples_file).iloc[:, 0].tolist()
+)
+
+sfs = p.parse()
+
+sfs.plot(show=testing, file=out_png)
+
+sfs.to_file(out_csv)
+
+pass

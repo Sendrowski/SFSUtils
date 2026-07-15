@@ -1,0 +1,33 @@
+# Run the fast test suite on every push to master and on pull requests.
+# There is a single fast tier: tests over committed fixtures run; tests that need
+# large, uncommitted genome data are skip-guarded (they skip when the data is absent),
+# so no slow/inference marker is needed. Dependencies are installed with uv (no conda).
+
+name: Run tests
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ['docs/**', '**.md', '**.rst']
+  pull_request:
+    paths-ignore: ['docs/**', '**.md', '**.rst']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: run tests on ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install sfsutils + test deps
+        run: uv pip install --system -e ".[vcf]" pytest pytest-xdist pytest-sugar
+      - name: Run tests
+        run: pytest -n auto testing/

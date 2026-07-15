@@ -1,0 +1,6 @@
+# Number of chunks the betula VCF is split into for parallel SFS parsing.
+n_chunks_vcf: 10
+
+# Whether we run snakemake locally (macOS).
+local: false
+macos: false

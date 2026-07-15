@@ -1,0 +1,485 @@
+"""
+SFSUtils Snakemake pipeline.
+
+SFS-side workflow migrated from fastDFE: VCF -> SFS parsing, ancestral-allele /
+degeneracy / synonymy / polarization annotation, EST-SFS ancestral inference, spectra
+merging and plotting. DFE-inference rules (infer_dfe, polyDFE, SLiM, covariates) live in
+fastDFE and are intentionally not included here.
+"""
+from typing import List
+
+import numpy as np
+
+configfile: "config/config.yaml"
+
+# whether we run snakemake locally
+is_local = config.get('local', False)
+
+# whether we are using macOS
+is_macos = config.get('macos', is_local)
+
+wildcard_constraints:
+    opts=r'[^/]*',# match several optional options not separated by /
+    chr=r'\w+',
+    species="[a-zA-Z_]+",
+    sample_set=r'\w+',
+    stratifications=r'[\w.]+',
+    chunk=r'\d+',
+    n=r'\d+',
+    i=r'\d+',
+    folded='folded|unfolded',
+
+
+rule all:
+    input:
+        (
+            # SFS-side default targets (fill in the species / sample sets you want):
+            # "results/spectra/betula/birch/DegeneracyStratification/20/all.csv",
+            # "results/sfs/betula/birch/20/sfs.csv",
+            # "../resources/genome/betula/all.with_outgroups.subset.10000.polarized.vcf.gz",
+        )
+
+
+# ======================================================================================
+# Fixture-prep infrastructure (indexing, GFF/FASTA (de)compression)
+# ======================================================================================
+
+# create a tbi index for a vcf file
+rule create_tbi_vcf:
+    input:
+        "{path}.vcf.gz"
+    output:
+        "{path}.vcf.gz.tbi"
+    conda:
+        "envs/gatk.yaml"
+    shell:
+        "gatk IndexFeatureFile -I {input}"
+
+# create a tbi index for a gff file
+rule create_tbi_gff:
+    input:
+        "{path}.{ext}.gz"
+    output:
+        "{path}.{ext,gff|gtf|gff3}.gz.tbi"
+    conda:
+        "envs/tabix.yaml"
+    shell:
+        "tabix -p gff {input}"
+
+# index a fasta file using samtools
+rule create_fai:
+    input:
+        "{path}.fasta"
+    output:
+        "{path}.fasta.fai"
+    conda:
+        "envs/samtools.yaml"
+    shell:
+        "samtools faidx {input}"
+
+# create a dict file for a fasta file
+rule create_dict:
+    input:
+        "{path}.fasta"
+    output:
+        "{path}.dict"
+    conda:
+        "envs/gatk.yaml"
+    shell:
+        "gatk CreateSequenceDictionary R={input} O={output}"
+
+# sort GFF
+rule sort_and_compress_gff:
+    input:
+        "{path}.{ext}.gz"
+    output:
+        "{path}.sorted.{ext,gtf|gff|gff3}"
+    conda:
+        "envs/tabix.yaml"
+    shell:
+        """
+        zgrep '^#' {input} > {output}
+        zgrep -v '^#' {input} | sort -V -k1,1 -k4,4n >> {output}
+        """
+
+# sort and recompress GFF
+rule sort_and_recompress_gff:
+    input:
+        "{path}.{ext}.gz"
+    output:
+        "{path}.corrected.{ext,gtf|gff|gff3}.gz"
+    conda:
+        "envs/tabix.yaml"
+    shell:
+        """
+        (zcat < {input} | grep '^#' ; zcat < {input} | grep -v '^#' | sort -V -k1,1 -k4,4n) | bgzip -c > {output}
+        """
+
+# decompress fasta file
+rule decompress_bgzip_fasta:
+    input:
+        "{path}.fasta.gz"
+    output:
+        "{path,.*}.fasta"
+    conda:
+        "envs/tabix.yaml"
+    shell:
+        "bgzip {input} -cd > {output}"
+
+# recompress FASTA file
+rule recompress_bgzip_fasta:
+    input:
+        "{path}.fasta.gz"
+    output:
+        "{path}.recompressed.fasta.gz"
+    conda:
+        "envs/tabix.yaml"
+    shell:
+        "gzip -cd {input} | bgzip -c > {output}"
+
+
+# ======================================================================================
+# Betula VCF preparation: filter by sample set and split into chunks (GATK)
+# ======================================================================================
+
+# filter VCF by sample set
+rule filter_sample_set:
+    input:
+        vcf="../resources/genome/betula/all.vcf.gz",
+        tbi="../resources/genome/betula/all.vcf.gz.tbi",
+        ref="../resources/genome/betula/genome.fasta",
+        index="../resources/genome/betula/genome.fasta.fai",
+        dict="../resources/genome/betula/genome.dict",
+        sample_set="../resources/genome/betula/sample_sets/{sample_set}.args"
+    output:
+        r"results/vcf/betula/{sample_set,\w+}.vcf.gz"
+    params:
+        command="SelectVariants",
+        flags=lambda w: {
+            "-R": "../resources/genome/betula/genome.fasta",
+            "-V": "../resources/genome/betula/all.vcf.gz",
+            "--sample-name": f"../resources/genome/betula/sample_sets/{w.sample_set}.args",
+            "--remove-unused-alternates": True
+        }
+    conda:
+        "envs/gatk.yaml"
+    script:
+        "scripts/run_gatk.py"
+
+# get the interval lists of the chunks to be created
+rule split_intervals:
+    input:
+        ref="../resources/genome/betula/genome.fasta",
+        index="../resources/genome/betula/genome.fasta.fai",
+        vcf="results/vcf/betula/{sample_set}.vcf.gz",
+        tbi="results/vcf/betula/{sample_set}.vcf.gz.tbi"
+    output:
+        [f"results/vcf/betula/{{sample_set}}/interval_lists/{str(i).zfill(4)}-scattered.interval_list" for i
+         in range(config['n_chunks_vcf'])]
+    params:
+        n=config['n_chunks_vcf'],
+        out_prefix='results/vcf/betula/{sample_set}/interval_lists'
+    conda:
+        "envs/gatk.yaml"
+    shell:
+        "gatk SplitIntervals -R {input.ref} -L {input.vcf} --scatter-count {params.n} -O {params.out_prefix}"
+
+# split the VCF file into chunks
+rule split_vcf:
+    input:
+        vcf="results/vcf/betula/{sample_set}.vcf.gz",
+        tbi="results/vcf/betula/{sample_set}.vcf.gz.tbi",
+        ref="../resources/genome/betula/genome.fasta",
+        index="../resources/genome/betula/genome.fasta.fai",
+        dict="../resources/genome/betula/genome.dict",
+        list=lambda w: f"results/vcf/betula/{{sample_set}}/interval_lists/{str(w.i).zfill(4)}-scattered.interval_list"
+    output:
+        "results/vcf/betula/{sample_set}/vcf/{i}.vcf.gz"
+    conda:
+        "envs/gatk.yaml"
+    shell:
+        "gatk SelectVariants -R {input.ref} -V {input.vcf} -L {input.list} -O {output}"
+
+
+# ======================================================================================
+# SFS parsing and spectra merging
+# ======================================================================================
+
+# parse SFS from a chunked VCF
+rule parse_vcf:
+    input:
+        vcf="results/vcf/betula/{sample_set}/vcf/{i}.vcf.gz",
+        ref="../resources/genome/betula/genome.fasta"
+    output:
+        r"results/spectra/betula/{sample_set}/{stratifications}/{n}/{i,\d+}.csv"
+    params:
+        n=lambda w: int(w.n),
+        stratifications=lambda w: w.stratifications.split('.')
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/parse_vcf.py"
+
+# merge per-chunk spectra into one SFS
+rule merge_spectra:
+    input:
+        lambda w: expand("results/spectra/betula/{sample_set}/{stratifications}/{n}/{i}.csv",i=range(
+            config['n_chunks_vcf']),allow_missing=True)
+    output:
+        "results/spectra/betula/{sample_set}/{stratifications}/{n}/all.csv"
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/merge_spectra.py"
+
+# combine spectra from several species
+rule merge_spectra_species:
+    input:
+        lambda w: expand("../resources/polydfe/{s}/spectra/sfs.txt",s=w.species.split('.'))
+    output:
+        "results/spectra/{species}.csv"
+    params:
+        names=lambda w: w.species.split('.')
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/combine_spectra.py"
+
+# parse betula SFS from a pre-polarized VCF
+rule parse_vcf_betula:
+    input:
+        vcf='../resources/genome/betula/all.polarized.vcf.gz',
+        ref='../resources/genome/betula/genome.fasta',
+        gff='../resources/genome/betula/genome.gff.gz',
+        samples='../resources/genome/betula/sample_sets/{sample_set}.args'
+    output:
+        csv="results/sfs/betula/{sample_set}/{n}/sfs.csv",
+        png="results/graphs/sfs/betula/{sample_set}/{n}/sfs.png"
+    params:
+        n=lambda w: int(w.n)
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/parse_vcf_betula.py"
+
+# parse betula SFS, polarizing them on the fly
+rule parse_polarize_vcf_betula:
+    input:
+        vcf='../resources/genome/betula/all.vcf.gz',
+        ref='../resources/genome/betula/genome.fasta',
+        gff='../resources/genome/betula/genome.gff.gz',
+        samples='../resources/genome/betula/sample_sets/{sample_set}.args'
+    output:
+        csv="results/sfs/betula/{sample_set}/{n}/sfs.polarized-on-the-fly.csv",
+        png="results/graphs/sfs/betula/{sample_set}/{n}/sfs.polarized-on-the-fly.png"
+    params:
+        n=lambda w: int(w.n)
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/parse_vcf_betula.py"
+
+
+# ======================================================================================
+# Annotation (degeneracy, synonymy, polarization, VEP, SnpEff)
+# ======================================================================================
+
+# annotate synonymy
+rule annotate_synonymy:
+    input:
+        vcf="../resources/genome/{species}/{name}.vcf.gz",
+        ref="../resources/genome/{species}/genome.fasta",
+        gff="../resources/genome/{species}/genome.gff.gz"
+    output:
+        "results/vcf/{species}/{name}.synonymy.vcf.gz"
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/annotate_synonymy.py"
+
+# annotate degeneracy
+rule annotate_degeneracy:
+    input:
+        vcf="../resources/genome/{species}/{name}.vcf.gz",
+        ref="../resources/genome/{species}/genome.fasta",
+        gff="../resources/genome/{species}/genome.gff.gz"
+    output:
+        "results/vcf/{species}/{name}.degeneracy.vcf.gz"
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/annotate_degeneracy.py"
+
+# annotate polarization (maximum-likelihood ancestral allele)
+rule annotation_polarization_betula:
+    input:
+        vcf="../resources/genome/betula/{name}.vcf.gz"
+    output:
+        "results/vcf/betula/{name}.polarized.vcf.gz"
+    params:
+        outgroups=["ERR2103730"],
+        n_ingroups=20,
+        exclude=["ERR2103731"],
+        confidence_threshold=0
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/annotate_polarization.py"
+
+# predict the variants' effects with VEP (betula)
+rule annotate_vep_betula:
+    input:
+        vcf="../resources/genome/betula/{name}.vcf.gz",
+        ref="../resources/genome/betula/genome.fasta",
+        gff="../resources/genome/betula/genome.gff.gz",
+        tbi="../resources/genome/betula/genome.gff.gz.tbi"
+    output:
+        "results/vcf/betula/{name}.vep.vcf.gz",
+        "results/vcf/betula/{name}.vep.vcf.gz_summary.html"
+    params:
+        species="betula"
+    conda:
+        "envs/vep.yaml"
+    script:
+        "scripts/annotate_vep.py"
+
+# predict the variants' effects with VEP (sapiens)
+rule annotate_vep_sapiens:
+    input:
+        vcf="../resources/genome/sapiens/{name}.vcf.gz",
+        ref="../resources/genome/sapiens/{name}.fasta",
+        gff="../resources/genome/sapiens/{name}.sorted.gff3.gz",
+        tbi="../resources/genome/sapiens/{name}.sorted.gff3.gz.tbi"
+    output:
+        "results/vcf/sapiens/{name,[a-z0-9]+}.vep.vcf.gz",
+        "results/vcf/sapiens/{name}.vep.vcf.gz_summary.html"
+    params:
+        species="homo_sapiens"
+    conda:
+        "envs/vep.yaml"
+    script:
+        "scripts/annotate_vep.py"
+
+# predict the variants' effects with VEP (sapiens, test subset)
+rule annotate_vep_sapiens_test:
+    input:
+        vcf="../resources/genome/sapiens/{name}_test.vcf.gz",
+        ref="../resources/genome/sapiens/{name}.fasta",
+        gff="../resources/genome/sapiens/{name}.sorted.gff3.gz",
+        tbi="../resources/genome/sapiens/{name}.sorted.gff3.gz.tbi"
+    output:
+        "results/vcf/sapiens/{name}_test.vep.vcf.gz",
+        "results/vcf/sapiens/{name}_test.vep.vcf.gz_summary.html"
+    params:
+        species="homo_sapiens"
+    conda:
+        "envs/vep.yaml"
+    script:
+        "scripts/annotate_vep.py"
+
+# predict the variants' effects with SnpEff (sapiens)
+rule annotate_snpeff_sapiens:
+    input:
+        vcf="../resources/genome/sapiens/{name}.vcf.gz"
+    output:
+        "results/vcf/sapiens/{name}.snpeff.vcf.gz"
+    params:
+        species="hg38"  # the name of the SnpEff database for the species
+    conda:
+        "envs/snpeff.yaml"
+    script:
+        "scripts/annotate_snpeff.py"
+
+
+# ======================================================================================
+# Fixture downloads (Homo sapiens reference data)
+# ======================================================================================
+
+# download human chromosome-level VCF
+rule download_vcf_chr_sapiens:
+    output:
+        "../resources/genome/sapiens/{chr}.vcf.gz"
+    params:
+        url="https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/"
+            "20181203_biallelic_SNV/ALL.{chr}.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz"
+    conda:
+        "envs/wget.yaml"
+    shell:
+        "wget -O {output} {params.url}"
+
+# download human chromosome-level FASTA
+rule download_fasta_chr_sapiens:
+    output:
+        "../resources/genome/sapiens/{chr}.fasta.gz"
+    params:
+        url="https://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/{chr}.fa.gz"
+    conda:
+        "envs/wget.yaml"
+    shell:
+        "wget -O {output} {params.url}"
+
+# download human chromosome-level GFF
+rule download_gff_chr_sapiens:
+    output:
+        r"../resources/genome/sapiens/chr{name,\d+}.gff3.gz"
+    params:
+        url="http://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/Homo_sapiens.GRCh38.109.chromosome.{name}.gff3.gz"
+    conda:
+        "envs/wget.yaml"
+    shell:
+        "wget -O {output} {params.url}"
+
+
+# ======================================================================================
+# EST-SFS ancestral-allele inference (scatter/gather module)
+# ======================================================================================
+
+module est_sfs:
+    snakefile:
+        "rules/est-sfs.smk"
+    config:
+        {
+            'vcf_in': "../resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            'vcf_out': "../resources/genome/betula/all.with_outgroups.subset.10000.polarized.vcf.gz",
+            'wildcards': {},
+            'ingroups': "../resources/genome/betula/sample_sets/birch.args",
+            'outgroups': "../resources/genome/betula/sample_sets/outgroups.args",
+            'basepath': "results/est-sfs/",
+            'basepath_vcf': "results/est-sfs/",
+            'max_sites': 1000000,
+            'n_samples': 50,
+            'n_outgroup': 3,
+            'model': 1,
+            'nrandom': 10,
+            'log_level': 20
+        }
+
+# load all rules from the EST-SFS module
+use rule * from est_sfs as *
+
+
+# ======================================================================================
+# VCF subsetting helper module (fixture creation)
+# ======================================================================================
+
+module subset_vcf:
+    snakefile:
+        "rules/subset_vcf.smk"
+
+use rule * from subset_vcf
+
+
+# ======================================================================================
+# Spectra plotting
+# ======================================================================================
+
+# plot an SFS from a serialized spectra CSV
+rule plot_spectra:
+    input:
+        "results/{path}/sfs.csv"
+    output:
+        "results/graphs/spectra/{path}/sfs.png"
+    conda:
+        "envs/base.yaml"
+    script:
+        "scripts/plot_spectra.py"

@@ -1,0 +1,23 @@
+name: Upload Coverage to Codecov
+
+# Coverage is generated locally and committed as coverage.xml.
+# This only uploads to Codecov when that committed report actually changes.
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'coverage.xml'
+
+jobs:
+  upload-coverage:
+    name: Upload Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
