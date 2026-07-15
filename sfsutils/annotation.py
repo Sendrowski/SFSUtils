@@ -948,7 +948,7 @@ class SubstitutionModel(ABC):
         :param fixed_params: The fixed parameters. Parameters that are not fixed are optimized using MLE.
         """
         #: The logger.
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logger.getChild(self.__class__.__name__)
 
         # validate bounds
         self.validate_bounds(bounds)
@@ -2143,9 +2143,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         import sfsutils as sf
 
         ann = sf.Annotator(
-            vcf="https://github.com/Sendrowski/fastDFE/"
-                "blob/dev/resources/genome/betula/all."
-                "with_outgroups.subset.10000.vcf.gz?raw=true",
+            vcf="path/to/variants.with_outgroups.vcf.gz",
             annotations=[sf.MaximumLikelihoodAncestralAnnotation(
                 outgroups=["ERR2103730"],
                 n_ingroups=15

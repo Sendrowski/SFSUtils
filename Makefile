@@ -6,7 +6,7 @@
 #
 # The slow tier (marked `slow` in the tests) is the end-to-end VCF parsing/annotation and
 # est-sfs binary comparisons; many of its tests also skip when their large fixtures are
-# absent. Tests are meant to run in the `dev-fastdfe` conda env (shared with fastDFE).
+# absent. Tests are meant to run in the `sfsutils-dev` conda env (see envs/dev.yaml).
 
 PYTEST ?= pytest
 
