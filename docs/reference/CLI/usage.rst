@@ -5,7 +5,8 @@ Command-line interface
 
 Installing ``sfsutils`` provides the ``sfsutils`` command, a thin wrapper around the Python API with three
 subcommands: ``parse`` derives a spectrum from a VCF, a VCF-Zarr store, or a tskit tree sequence, while
-``filter`` and ``annotate`` write a transformed VCF.
+``filter`` and ``annotate`` write a transformed dataset whose format follows the output file's extension (a
+VCF, a VCF-Zarr store, or, from a tree-sequence input, a tree sequence).
 
 .. code-block:: bash
 
@@ -81,7 +82,10 @@ two-site SFS as JSON.
 filter
 ------
 
-Write a VCF containing only the sites that pass the given filtrations.
+Write only the sites that pass the given filtrations. The output format follows the ``--out`` extension: a VCF
+(``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store
+can be written from any input; a tree sequence only from a tree-sequence input (the surviving sites are kept via
+``delete_sites``), since a genealogy cannot be reconstructed from genotype data.
 
 .. code-block:: bash
 
@@ -89,14 +93,23 @@ Write a VCF containing only the sites that pass the given filtrations.
    sfsutils filter --vcf variants.vcf.gz --filter snp,coding-sequence \
        --gff genome.gff.gz --out coding.vcf.gz
 
+   # the same, writing a VCF-Zarr store instead
+   sfsutils filter --vcf variants.vcf.gz --filter snp,coding-sequence \
+       --gff genome.gff.gz --out coding.vcz
+
+   # subset a tree sequence to its SNP sites, keeping the genealogy
+   sfsutils filter --trees ancestry.trees --filter snp --out coding.trees
+
 .. list-table::
    :header-rows: 1
    :widths: 26 74
 
    * - Option
      - Description
-   * - ``--vcf`` / ``--out``
-     - Input VCF and output VCF (gzipped supported). Required.
+   * - ``--vcf`` / ``--zarr`` / ``--trees``
+     - Input source (VCF, VCF-Zarr store, or tree sequence). Exactly one is required.
+   * - ``--out``
+     - Output path; its extension selects the format (``.vcf``/``.vcf.gz``, ``.vcz``/``.zarr``, ``.trees``). Required.
    * - ``--filter``
      - Comma-separated filtrations (see ``parse``). Required.
    * - ``--fasta`` / ``--gff``

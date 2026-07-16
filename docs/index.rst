@@ -51,6 +51,7 @@ Contents
 
    reference/Python/installation
    reference/Python/quickstart
+   reference/Python/input_output
    reference/Python/parser
    reference/Python/stratifications
    reference/Python/annotations
@@ -88,6 +89,7 @@ Contents
    modules/parser
    modules/annotation
    modules/filtration
+   modules/io
 
 .. toctree::
    :caption: Miscellaneous

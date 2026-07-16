@@ -3,7 +3,7 @@
 Citing sfsutils
 ===============
 
-``sfsutils`` was created as part of the ``fastdfe`` project. If you use ``sfsutils`` in your research, please cite the following paper:
+``sfsutils`` was created as part of the ``fastdfe`` project. If you use ``sfsutils`` in your research, you are welcome to cite the following paper:
 
 .. code-block:: bibtex
 
