@@ -95,6 +95,34 @@ def test_sfs2_mask_upper_masks_the_upper_triangle():
     assert masked[1, 0] == s.data[1, 0] and masked[2, 0] == s.data[2, 0] and masked[1, 1] == s.data[1, 1]
 
 
+def test_sfs2_interior_covariance_correlation_and_monomorphic_invariance():
+    """covariance()/correlation() use only the segregating interior (both derived counts in 1..n-1), so they ignore
+    the monomorphic first/last row and column: an independent (product-form) interior gives zero covariance and
+    correlation, a diagonal (perfectly linked) interior gives correlation 1, and adding arbitrary mass to the
+    monomorphic bins changes neither. A single segregating class has no interior variance, so correlation raises."""
+    m = np.array([1.0, 3.0, 2.0])  # a marginal over the three segregating classes (sample size n = 4)
+
+    # independent sites: P(i, j) = p_i p_j -> zero covariance and correlation
+    indep = np.zeros((5, 5)); indep[1:4, 1:4] = np.outer(m, m)
+    assert su.TwoSFS(indep).covariance() == pytest.approx(0.0, abs=1e-12)
+    assert su.TwoSFS(indep).correlation() == pytest.approx(0.0, abs=1e-12)
+
+    # perfectly linked (diagonal) interior: the two frequencies are identical -> correlation 1
+    diag = np.zeros((5, 5)); diag[1:4, 1:4] = np.diag(m)
+    assert su.TwoSFS(diag).correlation() == pytest.approx(1.0)
+
+    # the monomorphic first/last row and column are ignored entirely
+    for base in (indep, diag):
+        mono = base.copy()
+        mono[0, :] += 7.0; mono[:, 0] += 7.0; mono[-1, :] += 5.0; mono[:, -1] += 5.0
+        assert su.TwoSFS(mono).covariance() == pytest.approx(su.TwoSFS(base).covariance())
+        assert su.TwoSFS(mono).correlation() == pytest.approx(su.TwoSFS(base).correlation())
+
+    # a spectrum with a single segregating class has no interior variance -> correlation is undefined
+    with pytest.raises(ValueError, match="segregating"):
+        su.TwoSFS(np.ones((3, 3))).correlation()
+
+
 def test_sfs2_plot_smoke():
     s = su.TwoSFS(np.arange(16).reshape(4, 4).astype(float))
     assert s.plot(show=False) is not None

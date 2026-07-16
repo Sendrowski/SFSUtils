@@ -1488,6 +1488,78 @@ class TwoSFS(AbstractSpectrum):
         """
         return TwoSFS((self.data + self.data.T) / 2)
 
+    def _frequencies(self) -> np.ndarray:
+        """
+        The derived-allele frequency ``i / n`` of each segregating class ``i = 1, ..., n - 1``.
+
+        :return: The segregating-class frequencies.
+        """
+        sample_size = self.n - 1
+
+        return np.arange(1, sample_size) / sample_size
+
+    def interior(self, normalize: bool = False) -> np.ndarray:
+        """
+        The interior (segregating) block of the 2-SFS: pairs for which both sites carry between ``1`` and ``n - 1``
+        derived alleles, i.e. both are polymorphic. The two monomorphic bins (all-ancestral and all-derived) are
+        excluded, matching the polymorphic block of the standard site-frequency spectrum.
+
+        :param normalize: If ``True``, return the conditional joint distribution ``P(i, j | both polymorphic)``
+            instead of the raw pair counts.
+        :return: The ``(n - 1) x (n - 1)`` interior block, or its normalization.
+        :raises ValueError: If ``normalize`` is requested but the interior is empty.
+        """
+        interior = self.data[1:-1, 1:-1].astype(float)
+
+        if not normalize:
+            return interior
+
+        total = interior.sum()
+
+        if total == 0:
+            raise ValueError('The interior (segregating) block of the 2-SFS is empty; cannot normalize.')
+
+        return interior / total
+
+    def covariance(self) -> float:
+        """
+        The covariance of the derived-allele frequency between two linked sites, conditional on both being
+        polymorphic. It is computed from the interior block alone (see :meth:`interior`), so it is independent of
+        the monomorphic sites and of any :class:`~sfsutils.parser.TargetSiteCounter` used to obtain the spectrum:
+        only the two-locus branch-length correlation among segregating sites enters it.
+
+        :return: The covariance of the derived-allele frequency.
+        """
+        p = self.interior(normalize=True)
+        x = self._frequencies()
+
+        return float(x @ p @ x - (x @ p.sum(axis=1)) * (x @ p.sum(axis=0)))
+
+    def correlation(self) -> float:
+        """
+        The Pearson correlation of the derived-allele frequency between two linked sites, conditional on both being
+        polymorphic. Like :meth:`covariance`, it uses only the interior block and is therefore independent of the
+        monomorphic sites and of any target-site count.
+
+        :return: The correlation coefficient in ``[-1, 1]``.
+        :raises ValueError: If either marginal has zero variance (fewer than two segregating classes).
+        """
+        p = self.interior(normalize=True)
+        x = self._frequencies()
+
+        p_row, p_col = p.sum(axis=1), p.sum(axis=0)
+        mean_row, mean_col = x @ p_row, x @ p_col
+
+        cov = x @ p @ x - mean_row * mean_col
+        var_row = x ** 2 @ p_row - mean_row ** 2
+        var_col = x ** 2 @ p_col - mean_col ** 2
+
+        if var_row <= 0 or var_col <= 0:
+            raise ValueError('Cannot compute a correlation: a marginal has zero variance '
+                             '(at least two segregating classes are required).')
+
+        return float(cov / np.sqrt(var_row * var_col))
+
     def fill_monomorphic(self, fill_value=np.nan) -> 'TwoSFS':
         """
         Fill the monomorphic entries (first and last row and column) of the 2-SFS.
