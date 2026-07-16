@@ -315,18 +315,15 @@ def test_two_sfs_pair_count_is_projection_invariant():
 
 @requires_two_sfs
 def test_two_sfs_rejects_incompatible_options():
-    """The two-SFS is single-population: populations must be rejected. A TargetSiteCounter is supported for the
-    unstratified two-SFS (analytic monomorphic-pair extrapolation) but not with stratifications, whose per-stratum
-    monomorphic density is not modelled."""
+    """The two-SFS is single-population: populations must be rejected. A TargetSiteCounter is supported both for the
+    unstratified two-SFS (analytic monomorphic-pair extrapolation) and the stratified two-SFS (per-stratum
+    extrapolation, sampling to estimate the stratum distribution)."""
     with pytest.raises(NotImplementedError):
         su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, pops={"A": ["tsk_0"]})
 
-    # a TargetSiteCounter with stratifications is rejected
-    with pytest.raises(NotImplementedError):
-        su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True,
-                  stratifications=[su.ContigStratification()],
-                  target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100))
-
-    # but the unstratified two-SFS with a TargetSiteCounter is allowed (no error at construction)
+    # a TargetSiteCounter is allowed with and without stratifications (no error at construction)
     su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True,
+              target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100))
+    su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True,
+              stratifications=[su.ContigStratification()],
               target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100))
