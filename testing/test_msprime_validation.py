@@ -315,15 +315,14 @@ def test_two_sfs_pair_count_is_projection_invariant():
 
 @requires_two_sfs
 def test_two_sfs_rejects_incompatible_options():
-    """The two-SFS is single-population: populations must be rejected. A TargetSiteCounter is supported both for the
-    unstratified two-SFS (analytic monomorphic-pair extrapolation) and the stratified two-SFS (per-stratum
-    extrapolation, sampling to estimate the stratum distribution)."""
+    """The two-SFS is single-population, so populations are rejected at construction; and it does not support a
+    TargetSiteCounter (its covariance/correlation require the real monomorphic sites of an all-sites input, which a
+    target-site extrapolation cannot supply), so combining the two raises at parse time, with and without
+    stratifications."""
     with pytest.raises(NotImplementedError):
         su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, pops={"A": ["tsk_0"]})
 
-    # a TargetSiteCounter is allowed with and without stratifications (no error at construction)
-    su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True,
-              target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100))
-    su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True,
-              stratifications=[su.ContigStratification()],
-              target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100))
+    for extra in ({}, dict(stratifications=[su.ContigStratification()])):
+        with pytest.raises(NotImplementedError, match="two_sfs"):
+            su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, skip_non_polarized=False, **extra,
+                      target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100)).parse()

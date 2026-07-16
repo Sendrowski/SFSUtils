@@ -3,6 +3,7 @@ Unit tests for the two-SFS distance window and contig handling, on a tiny hand-c
 pair counts can be verified by hand. This exercises the sliding-window offset boundary and the per-contig reset,
 which the msprime fixtures (single contig, offset 0) do not cover.
 """
+import logging
 import textwrap
 
 import numpy as np
@@ -10,6 +11,28 @@ import pytest
 
 import sfsutils as su
 from sfsutils.settings import Settings
+
+
+class _ListHandler(logging.Handler):
+    """Collect emitted log messages; the ``sfsutils`` logger does not propagate to root, so caplog cannot see it."""
+
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+
+def _capture_sfsutils_logs(fn):
+    handler = _ListHandler()
+    log = logging.getLogger("sfsutils")
+    log.addHandler(handler)
+    try:
+        fn()
+    finally:
+        log.removeHandler(handler)
+    return handler.messages
 
 # one diploid sample (n = 2 haplotypes), all heterozygous -> every site has derived count 1 (index 1).
 # three sites on contig "1" at 10/20/30 and one on contig "2" at 15.
@@ -104,6 +127,44 @@ def test_two_sfs_includes_monomorphic_sites(tmp_path):
     # the monomorphic sites must contribute: the (0, .) row carries mass
     assert sfs2.data[0].sum() > 0
     assert sfs2.data[0, 0] == 1  # the single (pos 10, pos 40) monomorphic-monomorphic pair
+
+
+# --- monomorphic-missing warning ------------------------------------------------------------------
+# the covariance/correlation need the monomorphic sites to anchor the marginal; if the input carries
+# (almost) none, parsing must warn (mirroring the AAA monomorphic-sites warning).
+_MONO_WARNING = "monomorphic sites is unusually low"
+
+
+def _all_sites_vcf(n_mono, n_poly, spacing=10):
+    """Build an all-sites VCF string with ``n_mono`` monomorphic (0/0) then ``n_poly`` heterozygous (0/1) sites."""
+    header = ("##fileformat=VCFv4.2\n##contig=<ID=1>\n"
+              "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n")
+    rows, pos = [], spacing
+    for _ in range(n_mono):
+        rows.append(f"1\t{pos}\t.\tA\t.\t.\t.\t.\tGT\t0/0")
+        pos += spacing
+    for _ in range(n_poly):
+        rows.append(f"1\t{pos}\t.\tA\tT\t.\t.\t.\tGT\t0/1")
+        pos += spacing
+    return header + "\n".join(rows) + "\n"
+
+
+def test_two_sfs_warns_when_monomorphic_sites_missing(vcf_path):
+    # the tiny VCF is all heterozygous (no monomorphic sites at all) -> warn.
+    Settings.disable_pbar = True
+    messages = _capture_sfsutils_logs(lambda: _two_sfs(vcf_path, distance=15))
+    assert any(_MONO_WARNING in m for m in messages)
+
+
+def test_two_sfs_no_warning_with_all_sites_input(tmp_path):
+    # 40 monomorphic + 1 polymorphic site (~98% monomorphic) -> no warning.
+    p = tmp_path / "all_sites.vcf"
+    p.write_text(_all_sites_vcf(n_mono=40, n_poly=1))
+    Settings.disable_pbar = True
+    messages = _capture_sfsutils_logs(lambda: su.Parser(
+        vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+        skip_non_polarized=False, subsample_mode="random").parse())
+    assert not any(_MONO_WARNING in m for m in messages)
 
 
 # --- within-stratum pairing -----------------------------------------------------------------------
