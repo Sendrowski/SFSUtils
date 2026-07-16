@@ -5,8 +5,13 @@
 
 import datetime
 import sys
+import warnings
 
 sys.path.append('..')
+
+# sphinx_autodoc_typehints itself calls a Sphinx API removed in Sphinx 10; the deprecation comes from
+# the extension, not from this project, so silence it to keep the build output clean.
+warnings.filterwarnings('ignore', message=r'.*set_application.*is deprecated.*')
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -40,6 +45,12 @@ bibtex_bibfiles = ['refs.bib']
 
 typehints_use_signature = True
 typehints_fully_qualified = False
+
+# The plotting methods return the lazily-imported ``plt.Axes`` (matplotlib is imported inside the
+# methods to avoid selecting a backend at import time), and many signatures reference the optional
+# ``cyvcf2.Variant`` backend. Neither name is importable at documentation time, so sphinx_autodoc_typehints
+# cannot resolve these forward references; the warning is cosmetic, so suppress that subtype.
+suppress_warnings = ['sphinx_autodoc_typehints.forward_reference']
 
 pygments_style = 'default'
 
