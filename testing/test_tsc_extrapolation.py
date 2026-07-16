@@ -193,6 +193,50 @@ def test_two_sfs_target_site_counter_leaves_polymorphic_block_unchanged(tmp_path
     assert with_tsc.data[0, 0] > 0  # but the monomorphic corner is now populated
 
 
+def _interior_covariance(matrix):
+    """Covariance of the derived-allele frequency between two linked *polymorphic* sites, from the interior block
+    (both derived counts >= 1), normalized by the polymorphic-polymorphic pair count. Uses only observed pairs, so
+    it needs no monomorphic sites and no target-site count."""
+    interior = matrix[1:, 1:].astype(float)
+    p_joint = interior / interior.sum()          # P(i, j | both polymorphic)
+    p_marg = p_joint.sum(axis=1)                 # P(i | polymorphic)
+    n = matrix.shape[0] - 1
+    x = np.arange(1, n + 1) / n                   # derived frequency of each polymorphic class
+    cov = p_joint - np.outer(p_marg, p_marg)
+    return x @ cov @ x, cov
+
+
+def test_two_sfs_interior_correlation_recovered_and_target_invariant(tmp_path):
+    """The correlation of the interior (two linked polymorphic sites) is recovered exactly from the observed pairs:
+    it equals the full-site ground truth and is invariant to the target-site count, since no monomorphic-involving
+    pair enters it. (The monomorphic-involving covariances are neither recoverable nor wanted here.)"""
+    Settings.disable_pbar = True
+    rng = np.random.default_rng(7)
+    poly_pos, poly_der, mono_pos = _make_dataset(rng, length=50_000, n_poly=80, n_mono=3_000, homogeneous=False)
+
+    positions = np.concatenate([poly_pos, mono_pos])
+    derived = np.concatenate([poly_der, np.zeros(mono_pos.size, dtype=int)])
+    order = np.argsort(positions)
+    truth = _windowed_two_sfs(derived[order], positions[order], n=2, distance=1_000)
+    truth_cov, _ = _interior_covariance(truth)
+
+    vcf = tmp_path / "poly.vcf"
+    _write_vcf(vcf, poly_pos, poly_der)
+    kw = dict(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
+              subsample_mode="random")
+
+    # across no counter and two very different target-site counts, the interior covariance is identical, exact
+    covs = [_interior_covariance(su.Parser(**kw, **extra).parse().data)[0] for extra in (
+        {},
+        dict(target_site_counter=su.TargetSiteCounter(n_target_sites=poly_pos.size + mono_pos.size)),
+        dict(target_site_counter=su.TargetSiteCounter(n_target_sites=poly_pos.size + 10 * mono_pos.size)),
+    )]
+
+    for c in covs:
+        assert c == pytest.approx(truth_cov, rel=1e-12)  # recovered exactly from the observed polymorphic pairs
+    assert covs[0] == pytest.approx(covs[1]) == pytest.approx(covs[2])  # invariant to the target-site count
+
+
 # --- joint SFS: the monomorphic corner is fixed exactly by the target-site count -------------------
 
 REF = "resources/msprime/two_epoch.ref.fasta.gz"
