@@ -8,6 +8,7 @@ only touches the monomorphic row and column), and the monomorphic-involving pair
 tolerance of the uniform-density approximation. For the joint SFS the monomorphic corner is fixed exactly by the
 target-site count.
 """
+import importlib.util
 import os
 import textwrap
 from collections import defaultdict
@@ -17,6 +18,8 @@ import pytest
 
 import sfsutils as su
 from sfsutils.settings import Settings
+
+_has_tskit = importlib.util.find_spec("tskit") is not None
 
 
 class _ParityStratification(su.Stratification):
@@ -353,3 +356,38 @@ def test_stratified_two_sfs_target_site_counter_includes_monomorphic_only_stratu
     odd = result["odd"].data
     assert odd[1:, 1:].sum() == 0
     assert odd[0, 0] > 0
+
+
+# --- tree-sequence region length -------------------------------------------------------------------
+
+@pytest.mark.skipif(not _has_tskit, reason="tskit is absent")
+def test_two_sfs_target_site_counter_uses_tree_sequence_length(tmp_path):
+    """For a tree-sequence source the region length is the genome length, not the span of the observed
+    polymorphic sites (which never reach the ends). This corrects the monomorphic density used to extrapolate
+    the two-SFS: a shorter, sites-only span would overestimate it."""
+    import tskit
+
+    Settings.disable_pbar = True
+    length = 5_000
+
+    # polymorphic sites confined to the middle of the genome; their span (1000) is well short of the length
+    tables = tskit.TableCollection(sequence_length=length)
+    tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0)
+    tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0)
+    root = tables.nodes.add_row(flags=0, time=1)
+    tables.edges.add_row(left=0, right=length, parent=root, child=0)
+    tables.edges.add_row(left=0, right=length, parent=root, child=1)
+    for pos in (2_000, 2_500, 3_000):
+        s = tables.sites.add_row(position=pos, ancestral_state="A")
+        tables.mutations.add_row(site=s, node=0, derived_state="T")
+    tables.sort()
+    ts = tables.tree_sequence()
+
+    parser = su.Parser(vcf=ts, n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
+                       subsample_mode="random",
+                       target_site_counter=su.TargetSiteCounter(n_target_sites=5_000))
+    result = parser.parse()
+
+    # the region length is the full genome, not the 1000 bp span of the polymorphic sites
+    assert parser._region_length() == float(length)
+    assert result.data[0, 0] > 0  # the monomorphic corner was populated using that length

@@ -1585,12 +1585,17 @@ class Parser(MultiHandler):
 
     def _region_length(self) -> float:
         """
-        The total length (bp) spanned by the parsed variants, summed over contigs. This estimates the region over
-        which sites are distributed when extrapolating the monomorphic pairs of the two-SFS from a
-        :class:`TargetSiteCounter`.
+        The length (bp) of the region over which sites are distributed, used when extrapolating the monomorphic
+        pairs of the two-SFS from a :class:`TargetSiteCounter`. When the source reports its own length (a tree
+        sequence does), that is used, since the observed polymorphic sites never reach the ends and their span
+        underestimates the region. Otherwise the summed per-contig span of the parsed variants is used.
 
-        :return: The summed per-contig span of the parsed variants.
+        :return: The region length.
         """
+        sequence_length = getattr(self._reader, 'sequence_length', None)
+        if sequence_length is not None:
+            return float(sequence_length)
+
         return float(sum(
             high - low for low, high in self._contig_bounds.values()
             if np.isfinite(low) and np.isfinite(high) and high > low

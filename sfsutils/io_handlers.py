@@ -1013,6 +1013,18 @@ class VariantReader(Iterable, ABC):
         """
         pass
 
+    @property
+    def sequence_length(self) -> Optional[float]:
+        """
+        The total length (bp) of the source region, when the source knows it (as a tree sequence does).
+        Used to estimate the site density when extrapolating monomorphic pairs of the two-SFS from a
+        target-site count. Returns ``None`` when no reliable length is available (e.g. a VCF-Zarr store),
+        in which case the observed variant span is used instead.
+
+        :return: The sequence length, or ``None``.
+        """
+        return None
+
     def add_info_to_header(self, data: dict):
         """
         Declare an INFO field. On-the-fly annotations that write to :attr:`Variant.INFO` call this to
@@ -1104,6 +1116,16 @@ class TskitVariantReader(VariantReader):
         :return: The tree sequence.
         """
         return self._ts
+
+    @property
+    def sequence_length(self) -> float:
+        """
+        The length of the tree-sequence genome, i.e. the region over which sites are distributed. This is the
+        true extent even when the observed (polymorphic) sites do not reach the ends.
+
+        :return: The sequence length.
+        """
+        return float(self._ts.sequence_length)
 
     def count_sites(self) -> int:
         """
