@@ -1,0 +1,14 @@
+{
+    "source": "bio2zarr-0.1.7",
+    "vcf_meta_information": [
+        [
+            "fileformat",
+            "VCFv4.2"
+        ],
+        [
+            "source",
+            "tskit 1.0.3"
+        ]
+    ],
+    "vcf_zarr_version": "0.4"
+}

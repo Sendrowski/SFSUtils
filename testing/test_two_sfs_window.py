@@ -8,7 +8,7 @@ import textwrap
 import numpy as np
 import pytest
 
-import sfsutils as sf
+import sfsutils as su
 from sfsutils.settings import Settings
 
 # one diploid sample (n = 2 haplotypes), all heterozygous -> every site has derived count 1 (index 1).
@@ -34,7 +34,7 @@ def vcf_path(tmp_path):
 
 def _two_sfs(vcf_path, distance, offset=0):
     Settings.disable_pbar = True
-    return sf.Parser(vcf=vcf_path, n=2, two_sfs=True, two_sfs_distance=distance, two_sfs_offset=offset,
+    return su.Parser(vcf=vcf_path, n=2, two_sfs=True, two_sfs_distance=distance, two_sfs_offset=offset,
                      skip_non_polarized=False, subsample_mode="random").parse()
 
 
@@ -59,3 +59,95 @@ def test_offset_shifts_window_upper_bound(vcf_path):
     sfs2 = _two_sfs(vcf_path, distance=15, offset=5)
     assert sfs2.data[1, 1] == 3
     assert sfs2.data.sum() == 3
+
+
+# --- monomorphic-inclusive ground truth -----------------------------------------------------------
+# one diploid sample (n = 2); an all-sites contig with monomorphic (0/0 -> 0 derived), heterozygous
+# (0/1 -> 1) and homozygous-alternate (1/1 -> 2) sites. The two-SFS must place the monomorphic sites at
+# derived-count 0, anchoring the (0, .) row/column, which the segregating-sites-only msprime fixture
+# cannot test.
+ALL_SITES_VCF = textwrap.dedent("""\
+    ##fileformat=VCFv4.2
+    ##contig=<ID=1>
+    #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1
+    1\t10\t.\tA\t.\t.\t.\t.\tGT\t0/0
+    1\t20\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    1\t30\t.\tA\tT\t.\t.\t.\tGT\t1/1
+    1\t40\t.\tA\t.\t.\t.\t.\tGT\t0/0
+    """)
+
+
+def _naive_two_sfs(derived, positions, n, distance, offset=0):
+    """Independent reference: forward-pair every pair of (all) sites within the window, then symmetrize."""
+    ref = np.zeros((n + 1, n + 1))
+    max_distance = offset + distance
+    for a in range(len(positions)):
+        for b in range(a + 1, len(positions)):
+            sep = positions[b] - positions[a]
+            if offset < sep <= max_distance:
+                ref[derived[a], derived[b]] += 1
+    return (ref + ref.T) / 2
+
+
+def test_two_sfs_includes_monomorphic_sites(tmp_path):
+    p = tmp_path / "all_sites.vcf"
+    p.write_text(ALL_SITES_VCF)
+    Settings.disable_pbar = True
+
+    sfs2 = su.Parser(vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+                     skip_non_polarized=False, subsample_mode="random").parse()
+
+    # derived counts: 0 (monomorphic), 1 (het), 2 (hom-alt), 0 (monomorphic)
+    expected = _naive_two_sfs(derived=[0, 1, 2, 0], positions=[10, 20, 30, 40], n=2, distance=100)
+
+    np.testing.assert_allclose(sfs2.data, expected)
+    # the monomorphic sites must contribute: the (0, .) row carries mass
+    assert sfs2.data[0].sum() > 0
+    assert sfs2.data[0, 0] == 1  # the single (pos 10, pos 40) monomorphic-monomorphic pair
+
+
+# --- within-stratum pairing -----------------------------------------------------------------------
+
+class _ParityStratification(su.Stratification):
+    """Minimal stratification assigning each site a type from the parity of its position (for testing)."""
+
+    def get_type(self, variant):
+        return "even" if variant.POS % 2 == 0 else "odd"
+
+    def get_types(self):
+        return ["even", "odd"]
+
+
+# four heterozygous sites on one contig at positions chosen so parity splits them: 10, 12 (even) and
+# 15, 17 (odd). Within a wide window all six forward pairs qualify, but only same-parity pairs are counted.
+PARITY_VCF = textwrap.dedent("""\
+    ##fileformat=VCFv4.2
+    ##contig=<ID=1>
+    #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1
+    1\t10\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    1\t12\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    1\t15\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    1\t17\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    """)
+
+
+def test_stratified_two_sfs_counts_only_within_stratum_pairs(tmp_path):
+    p = tmp_path / "parity.vcf"
+    p.write_text(PARITY_VCF)
+    Settings.disable_pbar = True
+
+    result = su.Parser(vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+                       skip_non_polarized=False, subsample_mode="random",
+                       stratifications=[_ParityStratification()]).parse()
+
+    assert isinstance(result, su.TwoSpectra)
+    assert sorted(result.types) == ["even", "odd"]
+
+    # every site is heterozygous (derived count 1); one within-stratum pair per parity: (10,12) and (15,17)
+    for t in ("even", "odd"):
+        assert result[t].data[1, 1] == 1
+        assert result[t].data.sum() == 1
+
+    # cross-parity pairs (four of the six) are not counted, so the pooled total is 2, not 6
+    assert result.all.data.sum() == 2
+

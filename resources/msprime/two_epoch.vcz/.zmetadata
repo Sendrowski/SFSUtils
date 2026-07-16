@@ -1,0 +1,518 @@
+{
+    "metadata": {
+        ".zattrs": {
+            "source": "bio2zarr-0.1.7",
+            "vcf_meta_information": [
+                [
+                    "fileformat",
+                    "VCFv4.2"
+                ],
+                [
+                    "source",
+                    "tskit 1.0.3"
+                ]
+            ],
+            "vcf_zarr_version": "0.4"
+        },
+        ".zgroup": {
+            "zarr_format": 2
+        },
+        "call_genotype/.zarray": {
+            "chunks": [
+                608,
+                10,
+                2
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 2
+            },
+            "dimension_separator": "/",
+            "dtype": "|i1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608,
+                10,
+                2
+            ],
+            "zarr_format": 2
+        },
+        "call_genotype/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants",
+                "samples",
+                "ploidy"
+            ],
+            "description": ""
+        },
+        "call_genotype_mask/.zarray": {
+            "chunks": [
+                608,
+                10,
+                2
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 2
+            },
+            "dimension_separator": "/",
+            "dtype": "|b1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608,
+                10,
+                2
+            ],
+            "zarr_format": 2
+        },
+        "call_genotype_mask/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants",
+                "samples",
+                "ploidy"
+            ],
+            "description": ""
+        },
+        "call_genotype_phased/.zarray": {
+            "chunks": [
+                608,
+                10
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 2
+            },
+            "dimension_separator": "/",
+            "dtype": "|b1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608,
+                10
+            ],
+            "zarr_format": 2
+        },
+        "call_genotype_phased/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants",
+                "samples"
+            ],
+            "description": ""
+        },
+        "contig_id/.zarray": {
+            "chunks": [
+                1
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "|O",
+            "fill_value": 0,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                1
+            ],
+            "zarr_format": 2
+        },
+        "contig_id/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "contigs"
+            ]
+        },
+        "contig_length/.zarray": {
+            "chunks": [
+                1
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<i8",
+            "fill_value": 0,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                1
+            ],
+            "zarr_format": 2
+        },
+        "contig_length/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "contigs"
+            ]
+        },
+        "filter_description/.zarray": {
+            "chunks": [
+                1
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "|O",
+            "fill_value": 0,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                1
+            ],
+            "zarr_format": 2
+        },
+        "filter_description/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "filters"
+            ]
+        },
+        "filter_id/.zarray": {
+            "chunks": [
+                1
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "|O",
+            "fill_value": 0,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                1
+            ],
+            "zarr_format": 2
+        },
+        "filter_id/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "filters"
+            ]
+        },
+        "region_index/.zarray": {
+            "chunks": [
+                1,
+                6
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 9,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 0
+            },
+            "dimension_separator": "/",
+            "dtype": "<i4",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                1,
+                6
+            ],
+            "zarr_format": 2
+        },
+        "region_index/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "region_index_values",
+                "region_index_fields"
+            ]
+        },
+        "sample_id/.zarray": {
+            "chunks": [
+                10
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "|O",
+            "fill_value": 0,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                10
+            ],
+            "zarr_format": 2
+        },
+        "sample_id/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "samples"
+            ]
+        },
+        "variant_allele/.zarray": {
+            "chunks": [
+                608,
+                2
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dimension_separator": "/",
+            "dtype": "|O",
+            "fill_value": null,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                608,
+                2
+            ],
+            "zarr_format": 2
+        },
+        "variant_allele/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants",
+                "alleles"
+            ],
+            "description": "List of the reference and alternate alleles"
+        },
+        "variant_contig/.zarray": {
+            "chunks": [
+                608
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dimension_separator": "/",
+            "dtype": "|i1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608
+            ],
+            "zarr_format": 2
+        },
+        "variant_contig/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants"
+            ],
+            "description": "An identifier from the reference genome or an angle-bracketed ID string pointing to a contig in the assembly file"
+        },
+        "variant_filter/.zarray": {
+            "chunks": [
+                608,
+                1
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 2
+            },
+            "dimension_separator": "/",
+            "dtype": "|b1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608,
+                1
+            ],
+            "zarr_format": 2
+        },
+        "variant_filter/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants",
+                "filters"
+            ],
+            "description": "Filter status of the variant"
+        },
+        "variant_id/.zarray": {
+            "chunks": [
+                608
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dimension_separator": "/",
+            "dtype": "|O",
+            "fill_value": null,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                608
+            ],
+            "zarr_format": 2
+        },
+        "variant_id/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants"
+            ],
+            "description": "List of unique identifiers where applicable"
+        },
+        "variant_id_mask/.zarray": {
+            "chunks": [
+                608
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 2
+            },
+            "dimension_separator": "/",
+            "dtype": "|b1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608
+            ],
+            "zarr_format": 2
+        },
+        "variant_id_mask/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants"
+            ],
+            "description": ""
+        },
+        "variant_length/.zarray": {
+            "chunks": [
+                608
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dimension_separator": "/",
+            "dtype": "|i1",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608
+            ],
+            "zarr_format": 2
+        },
+        "variant_length/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants"
+            ],
+            "description": "The length of the variant measured in bases"
+        },
+        "variant_position/.zarray": {
+            "chunks": [
+                608
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dimension_separator": "/",
+            "dtype": "<i4",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608
+            ],
+            "zarr_format": 2
+        },
+        "variant_position/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants"
+            ],
+            "description": "The reference position"
+        },
+        "variant_quality/.zarray": {
+            "chunks": [
+                608
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 7,
+                "cname": "zstd",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dimension_separator": "/",
+            "dtype": "<f4",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                608
+            ],
+            "zarr_format": 2
+        },
+        "variant_quality/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "variants"
+            ],
+            "description": "Phred-scaled quality score"
+        }
+    },
+    "zarr_consolidated_format": 1
+}

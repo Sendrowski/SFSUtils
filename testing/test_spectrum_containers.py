@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-import sfsutils as sf
+import sfsutils as su
 from sfsutils.spectrum import AbstractSpectrum, AbstractSpectra
 
 
@@ -23,26 +23,26 @@ def test_abstract_bases_not_instantiable():
 
 
 def test_hierarchy():
-    assert issubclass(sf.Spectrum, AbstractSpectrum)
-    assert issubclass(sf.TwoSFS, AbstractSpectrum)
-    assert issubclass(sf.TwoLocusSFS, sf.TwoSFS)
-    assert issubclass(sf.JointSFS, AbstractSpectrum)
-    assert issubclass(sf.Spectra, AbstractSpectra)
-    assert issubclass(sf.JointSpectra, AbstractSpectra)
+    assert issubclass(su.Spectrum, AbstractSpectrum)
+    assert issubclass(su.TwoSFS, AbstractSpectrum)
+    assert issubclass(su.TwoLocusSFS, su.TwoSFS)
+    assert issubclass(su.JointSFS, AbstractSpectrum)
+    assert issubclass(su.Spectra, AbstractSpectra)
+    assert issubclass(su.JointSpectra, AbstractSpectra)
 
 
 # --- TwoSFS -----------------------------------------------------------------------------------------
 
 def test_sfs2_validation():
     with pytest.raises(ValueError):
-        sf.TwoSFS(np.arange(8))  # not 2-D
+        su.TwoSFS(np.arange(8))  # not 2-D
     with pytest.raises(ValueError):
-        sf.TwoSFS(np.arange(6).reshape(2, 3))  # not square
+        su.TwoSFS(np.arange(6).reshape(2, 3))  # not square
 
 
 def test_sfs2_shape_and_totals():
     data = np.arange(16).reshape(4, 4).astype(float)
-    s = sf.TwoSFS(data)
+    s = su.TwoSFS(data)
     assert s.n == 4 and s.w == 2
     assert s.shape == (4, 4)
     assert s.n_sites == data.sum()
@@ -51,7 +51,7 @@ def test_sfs2_shape_and_totals():
 
 def test_sfs2_fold_is_idempotent_and_conserves_mass():
     rng = np.random.default_rng(0)
-    s = sf.TwoSFS(rng.integers(0, 10, size=(5, 5)).astype(float))
+    s = su.TwoSFS(rng.integers(0, 10, size=(5, 5)).astype(float))
     folded = s.fold()
     assert folded.is_folded()
     assert folded.n_sites == pytest.approx(s.n_sites)
@@ -60,35 +60,35 @@ def test_sfs2_fold_is_idempotent_and_conserves_mass():
 
 
 def test_sfs2_arithmetic_and_masks():
-    s = sf.TwoSFS(np.ones((4, 4)))
+    s = su.TwoSFS(np.ones((4, 4)))
     assert ((s + s).data == 2).all()
     assert ((s * 3).data == 3).all()
-    assert ((s - sf.TwoSFS(np.ones((4, 4)))).data == 0).all()
+    assert ((s - su.TwoSFS(np.ones((4, 4)))).data == 0).all()
     assert np.isnan(s.symmetrize().mask_diagonal().data).any()
     assert np.isnan(s.fill_monomorphic().data[0]).all()
     assert s.get_max_abs() == 1
 
 
 def test_sfs2_roundtrip_and_copy_type(tmp_path):
-    s = sf.TwoSFS(np.arange(9).reshape(3, 3).astype(float))
+    s = su.TwoSFS(np.arange(9).reshape(3, 3).astype(float))
     f = tmp_path / "two_sfs.json"
     s.to_file(str(f))
-    loaded = sf.TwoSFS.from_file(str(f))
-    assert type(loaded) is sf.TwoSFS
+    loaded = su.TwoSFS.from_file(str(f))
+    assert type(loaded) is su.TwoSFS
     assert np.array_equal(loaded.data, s.data)
-    assert type(s.copy()) is sf.TwoSFS
+    assert type(s.copy()) is su.TwoSFS
 
 
 def test_two_locus_sfs_roundtrip_type(tmp_path):
-    t = sf.TwoLocusSFS(np.arange(9).reshape(3, 3).astype(float))
-    assert isinstance(t, sf.TwoSFS)
+    t = su.TwoLocusSFS(np.arange(9).reshape(3, 3).astype(float))
+    assert isinstance(t, su.TwoSFS)
     f = tmp_path / "two_locus.json"
     t.to_file(str(f))
-    assert type(sf.TwoLocusSFS.from_file(str(f))) is sf.TwoLocusSFS
+    assert type(su.TwoLocusSFS.from_file(str(f))) is su.TwoLocusSFS
 
 
 def test_sfs2_mask_upper_masks_the_upper_triangle():
-    s = sf.TwoSFS(np.arange(9).reshape(3, 3).astype(float))
+    s = su.TwoSFS(np.arange(9).reshape(3, 3).astype(float))
     masked = s.mask_upper(fill_value=-1.0).data
     # strictly-upper entries are masked; the diagonal and lower triangle are retained
     assert masked[0, 1] == -1 and masked[0, 2] == -1 and masked[1, 2] == -1
@@ -96,7 +96,7 @@ def test_sfs2_mask_upper_masks_the_upper_triangle():
 
 
 def test_sfs2_plot_smoke():
-    s = sf.TwoSFS(np.arange(16).reshape(4, 4).astype(float))
+    s = su.TwoSFS(np.arange(16).reshape(4, 4).astype(float))
     assert s.plot(show=False) is not None
     s.plot_surface(show=False)
     plt.close('all')
@@ -106,32 +106,32 @@ def test_sfs2_plot_smoke():
 
 def test_jointsfs_validation():
     with pytest.raises(ValueError):
-        sf.JointSFS(np.arange(6).reshape(2, 3), pop_names=["only_one"])
+        su.JointSFS(np.arange(6).reshape(2, 3), pop_names=["only_one"])
 
 
 def test_jointsfs_basics():
     data = np.arange(12).reshape(3, 4)
-    j = sf.JointSFS(data, pop_names=["A", "B"])
+    j = su.JointSFS(data, pop_names=["A", "B"])
     assert j.n_pops == 2 and j.shape == (3, 4)
     assert j.n_sites == float(data.sum())
     assert j.pop_names == ["A", "B"]
     assert np.array_equal(np.asarray(j), data)
     assert j[1, 2] == data[1, 2]
     # default population names
-    assert sf.JointSFS(data).pop_names == ["pop_0", "pop_1"]
+    assert su.JointSFS(data).pop_names == ["pop_0", "pop_1"]
 
 
 def test_jointsfs_arithmetic_preserves_pop_names():
-    j = sf.JointSFS(np.ones((2, 3)), pop_names=["A", "B"])
+    j = su.JointSFS(np.ones((2, 3)), pop_names=["A", "B"])
     assert (j + j).pop_names == ["A", "B"]
     assert ((j * 2).data == 2).all()
     assert ((j - j).data == 0).all()
-    assert type((j ** 2)) is sf.JointSFS
+    assert type((j ** 2)) is su.JointSFS
 
 
 def test_jointsfs_marginalize():
     data = np.arange(24).reshape(2, 3, 4)
-    j = sf.JointSFS(data, pop_names=["A", "B", "C"])
+    j = su.JointSFS(data, pop_names=["A", "B", "C"])
 
     # marginalizing onto one axis sums over the others
     assert np.array_equal(j.marginalize([0]).data, data.sum(axis=(1, 2)))
@@ -148,29 +148,29 @@ def test_jointsfs_marginalize():
 
 
 def test_jointsfs_roundtrip_and_copy_type(tmp_path):
-    j = sf.JointSFS(np.arange(6).reshape(2, 3), pop_names=["A", "B"])
+    j = su.JointSFS(np.arange(6).reshape(2, 3), pop_names=["A", "B"])
     f = tmp_path / "jsfs.json"
     j.to_file(str(f))
-    loaded = sf.JointSFS.from_file(str(f))
-    assert type(loaded) is sf.JointSFS
+    loaded = su.JointSFS.from_file(str(f))
+    assert type(loaded) is su.JointSFS
     assert np.array_equal(loaded.data, j.data) and loaded.pop_names == ["A", "B"]
-    assert type(j.copy()) is sf.JointSFS
+    assert type(j.copy()) is su.JointSFS
 
 
 def test_jointsfs_plot_smoke():
-    j = sf.JointSFS(np.arange(9).reshape(3, 3).astype(float), pop_names=["A", "B"])
+    j = su.JointSFS(np.arange(9).reshape(3, 3).astype(float), pop_names=["A", "B"])
     assert j.plot(show=False) is not None
     j.plot_surface(show=False)
     plt.close('all')
     # 3-D input marginalizes to 2-D before plotting
-    j3 = sf.JointSFS(np.arange(27).reshape(3, 3, 3).astype(float))
+    j3 = su.JointSFS(np.arange(27).reshape(3, 3, 3).astype(float))
     assert j3.plot(pops=(0, 1), show=False) is not None
     j3.plot_surface(pops=(0, 1), show=False)
     plt.close('all')
 
 
 def test_jointsfs_plot_requires_two_pops():
-    j = sf.JointSFS(np.arange(9).reshape(3, 3).astype(float))
+    j = su.JointSFS(np.arange(9).reshape(3, 3).astype(float))
     with pytest.raises(ValueError):
         j.plot(pops=(0,), show=False)
     with pytest.raises(ValueError):
@@ -181,7 +181,7 @@ def test_jointsfs_plot_requires_two_pops():
 
 def test_jointspectra_collection():
     a = np.arange(6).reshape(2, 3)
-    js = sf.JointSpectra({"neutral": a, "selected": a * 2}, pop_names=["A", "B"])
+    js = su.JointSpectra({"neutral": a, "selected": a * 2}, pop_names=["A", "B"])
 
     assert js.types == ["neutral", "selected"]
     assert js.n_pops == 2 and js.shape == (2, 3)
@@ -195,7 +195,7 @@ def test_jointspectra_collection():
 
 def test_jointspectra_marginalize():
     a = np.arange(24).reshape(2, 3, 4)
-    js = sf.JointSpectra({"neutral": a, "selected": a * 2})
+    js = su.JointSpectra({"neutral": a, "selected": a * 2})
     marg = js.marginalize([0, 1])
     assert marg.shape == (2, 3)
     assert np.array_equal(marg["selected"].data, (a * 2).sum(axis=2))
@@ -203,19 +203,58 @@ def test_jointspectra_marginalize():
 
 def test_jointspectra_roundtrip(tmp_path):
     a = np.arange(6).reshape(2, 3)
-    js = sf.JointSpectra({"neutral": a, "selected": a * 2}, pop_names=["A", "B"])
+    js = su.JointSpectra({"neutral": a, "selected": a * 2}, pop_names=["A", "B"])
     f = tmp_path / "jspectra.json"
     js.to_file(str(f))
-    loaded = sf.JointSpectra.from_file(str(f))
-    assert type(loaded) is sf.JointSpectra
+    loaded = su.JointSpectra.from_file(str(f))
+    assert type(loaded) is su.JointSpectra
     assert loaded.types == ["neutral", "selected"]
     assert np.array_equal(loaded["selected"].data, a * 2)
     assert loaded.pop_names == ["A", "B"]
 
 
 def test_jointspectra_empty_raises():
-    empty = sf.JointSpectra({})
+    empty = su.JointSpectra({})
     for accessor in ("pop_names", "n_pops", "shape"):
+        with pytest.raises(ValueError):
+            getattr(empty, accessor)
+    with pytest.raises(ValueError):
+        _ = empty.all
+
+
+# --- TwoSpectra -----------------------------------------------------------------------------------
+
+def test_twospectra_collection():
+    a = np.arange(9).reshape(3, 3).astype(float)
+    ts = su.TwoSpectra({"neutral": a, "selected": a * 2})
+
+    assert issubclass(su.TwoSpectra, AbstractSpectra)
+    assert ts.types == ["neutral", "selected"]
+    assert ts.shape == (3, 3)
+    assert len(ts) == 2
+    assert set(iter(ts)) == {"neutral", "selected"}
+    assert isinstance(ts["neutral"], su.TwoSFS)
+    assert np.array_equal(ts["neutral"].data, a)
+    # `all` pools the per-type (within-stratum) spectra
+    assert np.array_equal(ts.all.data, a * 3)
+    assert set(ts.to_dict()) == {"neutral", "selected"}
+
+
+def test_twospectra_roundtrip(tmp_path):
+    a = np.arange(9).reshape(3, 3).astype(float)
+    ts = su.TwoSpectra({"neutral": a, "selected": a * 2})
+    f = tmp_path / "twospectra.json"
+    ts.to_file(str(f))
+    loaded = su.TwoSpectra.from_file(str(f))
+    assert type(loaded) is su.TwoSpectra
+    assert loaded.types == ["neutral", "selected"]
+    assert type(loaded["selected"]) is su.TwoSFS
+    assert np.array_equal(loaded["selected"].data, a * 2)
+
+
+def test_twospectra_empty_raises():
+    empty = su.TwoSpectra({})
+    for accessor in ("shape",):
         with pytest.raises(ValueError):
             getattr(empty, accessor)
     with pytest.raises(ValueError):

@@ -8,7 +8,7 @@ import os
 import numpy as np
 import pytest
 
-import sfsutils as sf
+import sfsutils as su
 from sfsutils.settings import Settings
 from sfsutils.cli import (build_parser, run, _split_csv, _parse_pops, _lookup,
                           _build_filtrations, _build_stratifications, _build_annotations)
@@ -132,7 +132,7 @@ def test_run_parse_one_dimensional(tmp_path):
     assert code == 0 and out.exists()
     # at full sample size the CLI must reproduce the tskit ground-truth SFS bin for bin
     expected = np.loadtxt(GROUND_TRUTH_SFS, dtype=int)
-    parsed = np.array(sf.Spectra.from_file(str(out)).all.to_list()).astype(int)
+    parsed = np.array(su.Spectra.from_file(str(out)).all.to_list()).astype(int)
     np.testing.assert_array_equal(parsed[1:20], expected[1:20])
     assert parsed[1:20].sum() > 0
 
@@ -145,10 +145,10 @@ def test_run_parse_joint(tmp_path):
                 "--pops", "A=tsk_0,tsk_1,tsk_2,tsk_3;B=tsk_4,tsk_5,tsk_6",
                 "--no-skip-non-polarized", "--subsample-mode", "random", "--out", str(out)])
     assert code == 0 and out.exists()
-    loaded = sf.JointSpectra.from_file(str(out))
+    loaded = su.JointSpectra.from_file(str(out))
     assert loaded.types == ["all"] and loaded.n_pops == 2
     # the CLI must produce the same joint spectrum as the equivalent Parser call (shared default seed)
-    direct = sf.Parser(vcf=JOINT_VCF, n=6, pops={"A": ["tsk_0", "tsk_1", "tsk_2", "tsk_3"],
+    direct = su.Parser(vcf=JOINT_VCF, n=6, pops={"A": ["tsk_0", "tsk_1", "tsk_2", "tsk_3"],
                                                  "B": ["tsk_4", "tsk_5", "tsk_6"]},
                        skip_non_polarized=False, subsample_mode="random").parse()
     np.testing.assert_array_equal(np.asarray(loaded["all"]), np.asarray(direct["all"]))
@@ -162,11 +162,11 @@ def test_run_parse_two_sfs(tmp_path):
                 "--two-sfs-distance", "1000", "--no-skip-non-polarized",
                 "--subsample-mode", "random", "--out", str(out)])
     assert code == 0 and out.exists()
-    sfs2 = sf.TwoSFS.from_file(str(out))
+    sfs2 = su.TwoSFS.from_file(str(out))
     assert sfs2.data.shape == (21, 21)
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
     # the CLI must produce the same two-SFS as the equivalent Parser call
-    direct = sf.Parser(vcf=TWO_SFS_VCF, n=20, two_sfs=True, two_sfs_distance=1000,
+    direct = su.Parser(vcf=TWO_SFS_VCF, n=20, two_sfs=True, two_sfs_distance=1000,
                        skip_non_polarized=False, subsample_mode="random").parse()
     np.testing.assert_array_equal(sfs2.data, direct.data)
     assert sfs2.data.sum() > 0

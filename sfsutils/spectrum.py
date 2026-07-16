@@ -2181,6 +2181,142 @@ class JointSpectra(AbstractSpectra):
         return obj
 
 
+class TwoSpectra(AbstractSpectra):
+    """
+    A collection of two-site (two-locus) site-frequency spectra keyed by type, the two-dimensional analogue of
+    :class:`Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the two-SFS is parsed
+    with stratifications, holding one :class:`TwoSFS` per stratification type. Because the two-SFS pairs sites,
+    stratified parsing counts only within-stratum pairs, so summing the per-type spectra does not in general recover
+    the unstratified two-SFS (cross-stratum pairs are not counted).
+    """
+
+    def __init__(self, data: Dict[str, Union['TwoSFS', np.ndarray]]) -> None:
+        """
+        Construct from a dictionary of two-site spectra.
+
+        :param data: Dictionary of two-site spectra (or plain square arrays) keyed by type.
+        """
+        #: The two-site spectra keyed by type.
+        self.data: Dict[str, TwoSFS] = {
+            t: v if isinstance(v, TwoSFS) else TwoSFS(np.asarray(v)) for t, v in data.items()
+        }
+
+    @property
+    def types(self) -> List[str]:
+        """
+        The types.
+        """
+        return list(self.data.keys())
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        """
+        Shape of each two-site SFS.
+
+        :raises ValueError: If the collection is empty.
+        """
+        if not self.data:
+            raise ValueError('Empty TwoSpectra has no shape.')
+
+        return next(iter(self.data.values())).shape
+
+    @property
+    def all(self) -> 'TwoSFS':
+        """
+        The ``all`` type, equal to the sum of the per-type two-site spectra (the within-stratum pairs pooled over
+        strata; cross-stratum pairs remain uncounted).
+
+        :raises ValueError: If the collection is empty.
+        """
+        if not self.data:
+            raise ValueError('Empty TwoSpectra has no spectra to sum.')
+
+        return TwoSFS(sum(s.data for s in self.data.values()))
+
+    def __getitem__(self, key: str) -> 'TwoSFS':
+        """
+        Get the two-site SFS for a given type.
+
+        :param key: Type.
+        :return: Two-site SFS.
+        """
+        return self.data[key]
+
+    def __iter__(self) -> Iterator:
+        """
+        Iterate over the types.
+
+        :return: Iterator.
+        """
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        """
+        The number of types.
+
+        :return: Number of types.
+        """
+        return len(self.data)
+
+    def to_dict(self) -> Dict[str, 'TwoSFS']:
+        """
+        Get the two-site spectra as a dictionary keyed by type.
+
+        :return: Dictionary of two-site spectra keyed by type.
+        """
+        return dict(self.data)
+
+    def to_file(self, file: str) -> None:
+        """
+        Save to file (in JSON format).
+
+        :param file: File path.
+        """
+        with open(file, 'w') as f:
+            f.write(self.to_json())
+
+    def to_json(self) -> str:
+        """
+        Convert to a JSON string.
+
+        :return: JSON string.
+        """
+        obj = copy.deepcopy(self)
+
+        # convert each two-site SFS array to a list
+        for s in obj.data.values():
+            s.data = s.data.tolist()
+
+        return jsonpickle.encode(obj)
+
+    @staticmethod
+    def from_file(file: str) -> 'TwoSpectra':
+        """
+        Load from file.
+
+        :param file: File path.
+        :return: Two-site spectra.
+        """
+        with open(file, 'r') as f:
+            return TwoSpectra.from_json(f.read())
+
+    @staticmethod
+    def from_json(json: str) -> 'TwoSpectra':
+        """
+        Load from a JSON string.
+
+        :param json: JSON string.
+        :return: Two-site spectra.
+        """
+        obj = jsonpickle.decode(json)
+
+        # convert each two-site SFS list back to a numpy array
+        for s in obj.data.values():
+            s.data = np.array(s.data)
+
+        return obj
+
+
 def parse_polydfe_sfs_config(file: str) -> dict:
     """
     Parse frequency spectra and mutational target site from

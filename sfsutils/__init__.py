@@ -113,7 +113,7 @@ logger.addHandler(handler)
 # load classes from modules
 from .settings import Settings
 from .spectrum import AbstractSpectrum, Spectrum, TwoSFS, TwoLocusSFS, JointSFS, \
-    AbstractSpectra, Spectra, JointSpectra
+    AbstractSpectra, Spectra, JointSpectra, TwoSpectra
 from .parser import Parser, Stratification, BaseTransitionStratification, BaseContextStratification, \
     DegeneracyStratification, TransitionTransversionStratification, AncestralBaseStratification, \
     SynonymyStratification, VEPStratification, SnpEffStratification, ContigStratification, ChunkedStratification, \
@@ -136,6 +136,7 @@ __all__ = [
     'AbstractSpectra',
     'Spectra',
     'JointSpectra',
+    'TwoSpectra',
     'Parser',
     'FileHandler',
     'VCFHandler',

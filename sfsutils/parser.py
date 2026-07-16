@@ -25,7 +25,7 @@ from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
 from .io_handlers import bases, get_called_bases, FASTAHandler, NoTypeException, \
     DummyVariant, MultiHandler, VCFHandler, is_monomorphic_snp
 from .settings import Settings
-from .spectrum import Spectra, TwoSFS, JointSFS, JointSpectra
+from .spectrum import Spectra, TwoSFS, TwoSpectra, JointSFS, JointSpectra
 
 # logger
 logger = logging.getLogger('sfsutils')
@@ -967,7 +967,10 @@ class Parser(MultiHandler):
         """
         Initialize the parser.
 
-        :param vcf: The path to the VCF file, can be gzipped or a URL.
+        :param vcf: The variant source: a path to a VCF file (gzipped or a URL), a path to a VCF-Zarr store
+            (a ``.vcz`` or ``.zarr`` directory), a path to a tskit tree sequence (a ``.trees`` file) or an
+            in-memory ``tskit.TreeSequence``, or an iterable of variants. VCF-Zarr requires the optional
+            ``zarr`` package and tree sequences the optional ``tskit`` package.
         :param gff: The path to the GFF file, possibly gzipped or a URL. This file is optional and depends on
             the stratifications, annotations and filtrations that are used.
         :param fasta: The path to the FASTA file, possibly gzipped or a URL. This file is optional and depends on
@@ -1163,9 +1166,6 @@ class Parser(MultiHandler):
             if self.pops is not None:
                 raise NotImplementedError("The two-SFS (two_sfs=True) is not supported together with 'pops'.")
 
-            if len(self.stratifications) > 0:
-                raise NotImplementedError("The two-SFS (two_sfs=True) is not supported together with stratifications.")
-
             if self.target_site_counter is not None:
                 raise NotImplementedError("The two-SFS (two_sfs=True) is not supported together with a "
                                          "TargetSiteCounter.")
@@ -1173,10 +1173,11 @@ class Parser(MultiHandler):
             if self.two_sfs_distance < 1:
                 raise ValueError("two_sfs_distance must be at least 1.")
 
-        #: The accumulating two-SFS matrix of shape ``(n + 1, n + 1)`` (only when ``two_sfs`` is set)
-        self._two_sfs_matrix: np.ndarray | None = np.zeros((self.n + 1, self.n + 1)) if self.two_sfs else None
+        #: The accumulating two-SFS matrices of shape ``(n + 1, n + 1)`` keyed by stratification type. Stratified
+        #: parsing counts only within-stratum pairs, so each type accumulates independently (only when ``two_sfs``).
+        self._two_sfs_matrices: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros((self.n + 1, self.n + 1)))
 
-        #: Sliding buffer of ``(position, down-projection vector)`` for recent sites on the current contig
+        #: Sliding buffer of ``(position, down-projection vector, type)`` for recent sites on the current contig
         self._two_sfs_buffer: deque = deque()
 
         #: The contig currently held in the two-SFS buffer
@@ -1405,14 +1406,22 @@ class Parser(MultiHandler):
 
         The site's down-projection vector is paired (via an outer product) with that of every buffered site on the
         same contig whose separation falls in ``(two_sfs_offset, two_sfs_offset + two_sfs_distance]``. A sliding
-        buffer keeps only the sites still within reach, so the pass is linear in the number of pairs.
+        buffer keeps only the sites still within reach, so the pass is linear in the number of pairs. When
+        stratifications are used, only pairs of sites of the same type are counted, into that type's matrix.
 
         :param variant: The variant.
-        :return: Whether the site was included (i.e. had a valid down-projection).
+        :return: Whether the site was included (i.e. had a valid down-projection and, if stratified, a type).
         """
         m = self._project(variant)
 
         if m is None:
+            return False
+
+        # determine the site's stratification type; a site without a type is skipped (as in the ordinary SFS)
+        try:
+            t = '.'.join([s.get_type(variant) for s in self.stratifications]) or 'all'
+        except NoTypeException as e:
+            self._logger.debug(e)
             return False
 
         # reset the buffer when we move to a new contig (pairs never cross contigs)
@@ -1427,15 +1436,15 @@ class Parser(MultiHandler):
         while self._two_sfs_buffer and variant.POS - self._two_sfs_buffer[0][0] > max_distance:
             self._two_sfs_buffer.popleft()
 
-        # pair with each buffered site whose separation falls in the window
-        for pos, m_prev in self._two_sfs_buffer:
+        # pair with each buffered site of the same type whose separation falls in the window
+        for pos, m_prev, t_prev in self._two_sfs_buffer:
             distance = variant.POS - pos
 
-            if self.two_sfs_offset < distance <= max_distance:
-                # accumulate the (forward) pair; the matrix is symmetrized once at the end
-                self._two_sfs_matrix += np.multiply.outer(m_prev, m)
+            if self.two_sfs_offset < distance <= max_distance and t_prev == t:
+                # accumulate the (forward) within-stratum pair; the matrix is symmetrized once at the end
+                self._two_sfs_matrices[t] += np.multiply.outer(m_prev, m)
 
-        self._two_sfs_buffer.append((variant.POS, m))
+        self._two_sfs_buffer.append((variant.POS, m, t))
 
         return True
 
@@ -1548,13 +1557,14 @@ class Parser(MultiHandler):
         for a in self.annotations:
             a._teardown()
 
-    def parse(self) -> Spectra | JointSpectra | TwoSFS:
+    def parse(self) -> Spectra | JointSpectra | TwoSFS | TwoSpectra:
         """
-        Parse the VCF file.
+        Parse the site-frequency spectrum from the configured source (VCF, VCF-Zarr, or tree sequence).
 
         :return: A :class:`~sfsutils.spectrum.Spectra` for a single-population SFS, a
-            :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given, or a square
-            :class:`~sfsutils.spectrum.TwoSFS` when ``two_sfs`` was set.
+            :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given, a square
+            :class:`~sfsutils.spectrum.TwoSFS` when ``two_sfs`` was set, or a
+            :class:`~sfsutils.spectrum.TwoSpectra` when ``two_sfs`` was set together with stratifications.
         """
         # set up parser
         self._setup()
@@ -1616,11 +1626,19 @@ class Parser(MultiHandler):
         # close VCF reader
         VCFHandler._rewind(self)
 
-        # in two-SFS mode, return the symmetrized pair-count matrix
+        # in two-SFS mode, return the symmetrized pair-count matrix (or a collection thereof when stratified)
         if self.two_sfs:
-            self._logger.info(f'Counted {self._two_sfs_matrix.sum():.0f} site pairs within {self.two_sfs_distance} bp.')
+            total = sum(matrix.sum() for matrix in self._two_sfs_matrices.values())
+            self._logger.info(f'Counted {total:.0f} site pairs within {self.two_sfs_distance} bp.')
 
-            return TwoSFS(self._two_sfs_matrix).symmetrize()
+            # without stratifications, return the single symmetrized two-SFS
+            if len(self.stratifications) == 0:
+                return TwoSFS(self._two_sfs_matrices['all']).symmetrize()
+
+            # with stratifications, return one symmetrized two-SFS per (within-stratum) type
+            return TwoSpectra(
+                {t: TwoSFS(self._two_sfs_matrices[t]).symmetrize() for t in sorted(self._two_sfs_matrices)}
+            )
 
         # in joint mode, return a collection of joint spectra keyed by (sorted) type
         if self.pops is not None:

@@ -2,9 +2,10 @@
 Command-line interface for ``sfsutils``.
 
 Three subcommands mirror the package's main operations: ``parse`` derives a (one-dimensional, joint, or
-two-site) site-frequency spectrum from a VCF, ``filter`` writes a filtered VCF, and ``annotate`` writes an
-annotated VCF. Each subcommand instantiates the corresponding class and calls its method; short option names
-map to the underlying stratification, annotation, and filtration classes.
+two-site) site-frequency spectrum from a VCF, a VCF-Zarr store, or a tskit tree sequence; ``filter`` writes a
+filtered VCF; and ``annotate`` writes an annotated VCF. Each subcommand instantiates the corresponding class
+and calls its method; short option names map to the underlying stratification, annotation, and filtration
+classes.
 """
 
 __author__ = "Janek Sendrowski"
@@ -179,7 +180,7 @@ def _run_parse(args: argparse.Namespace) -> int:
     from . import Parser
 
     spectra = Parser(
-        vcf=args.vcf,
+        vcf=_input_source(args),
         n=args.n,
         pops=_parse_pops(args.pops) if args.pops else None,
         gff=args.gff,
@@ -255,13 +256,36 @@ def _run_annotate(args: argparse.Namespace) -> int:
 
 def _add_common_io(p: argparse.ArgumentParser, out_help: str) -> None:
     """
-    Add the ``--vcf`` and ``--out`` options shared by every subcommand.
+    Add the ``--vcf`` and ``--out`` options shared by the VCF-writing subcommands.
 
     :param p: The subparser.
     :param out_help: Help text for ``--out``.
     """
     p.add_argument("--vcf", required=True, help="Input VCF file (may be gzipped or a URL).")
     p.add_argument("--out", required=True, help=out_help)
+
+
+def _add_input_source(p: argparse.ArgumentParser) -> None:
+    """
+    Add a mutually exclusive, required input-source group accepting a VCF, a VCF-Zarr store, or a tskit
+    tree sequence. The three map to the same underlying source; they are distinct flags for clarity.
+
+    :param p: The subparser.
+    """
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("--vcf", help="Input VCF file (may be gzipped or a URL).")
+    source.add_argument("--zarr", help="Input VCF-Zarr store (a .vcz or .zarr directory).")
+    source.add_argument("--trees", help="Input tskit tree sequence (a .trees file).")
+
+
+def _input_source(args: argparse.Namespace) -> str:
+    """
+    Resolve the selected input source from a VCF, VCF-Zarr, or tree-sequence flag.
+
+    :param args: Parsed arguments.
+    :return: The input source path.
+    """
+    return args.vcf or args.zarr or args.trees
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -297,9 +321,12 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
 
     :param sub: The subparsers action.
     """
-    p = sub.add_parser("parse", help="Derive an SFS from a VCF and write it to file.",
-                       description="Derive a one-dimensional, joint (multi-population), or two-site SFS from a VCF.")
-    _add_common_io(p, "Output spectrum file (CSV for a single-population SFS, JSON for a joint or two-site SFS).")
+    p = sub.add_parser("parse", help="Derive an SFS from a VCF, VCF-Zarr store, or tree sequence.",
+                       description="Derive a one-dimensional, joint (multi-population), or two-site SFS from a VCF, "
+                                   "VCF-Zarr store, or tskit tree sequence.")
+    _add_input_source(p)
+    p.add_argument("--out", required=True,
+                   help="Output spectrum file (CSV for a single-population SFS, JSON for a joint or two-site SFS).")
 
     p.add_argument("--n", type=int, required=True,
                    help="SFS sample size (per population for a joint SFS).")

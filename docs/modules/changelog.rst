@@ -6,7 +6,8 @@ Changelog
 [Unreleased]
 ^^^^^^^^^^^^
 - Joint (multi-population) site-frequency spectra via the ``pops`` argument of :class:`~sfsutils.parser.Parser`, returned as a :class:`~sfsutils.spectrum.JointSpectra` of :class:`~sfsutils.spectrum.JointSFS`.
-- Two-site (two-locus) site-frequency spectra via ``two_sfs``, returned as a :class:`~sfsutils.spectrum.TwoSFS`.
+- Two-site (two-locus) site-frequency spectra via ``two_sfs``, returned as a :class:`~sfsutils.spectrum.TwoSFS`. Stratified two-site parsing counts only within-stratum pairs, returned as a :class:`~sfsutils.spectrum.TwoSpectra`.
+- Reading variants from VCF-Zarr stores (optional ``zarr`` extra) and tskit tree sequences / ARGs (optional ``tskit`` extra), in addition to VCF, through a common streamed site interface. The ``parse`` CLI subcommand accepts ``--vcf`` / ``--zarr`` / ``--trees``.
 - Abstract base classes :class:`~sfsutils.spectrum.AbstractSpectrum` and :class:`~sfsutils.spectrum.AbstractSpectra` for the spectrum and spectra containers.
 - Command-line interface: ``sfsutils parse`` / ``filter`` / ``annotate``.
 - R plotting for :class:`~sfsutils.spectrum.TwoSFS` and :class:`~sfsutils.spectrum.JointSFS`, and a mirrored R documentation reference.

@@ -16,13 +16,18 @@ Global options ``-v``/``--verbose`` and ``-q``/``--quiet`` adjust logging; ``--v
 parse
 -----
 
-Derive a one-dimensional, joint (multi-population), or two-site SFS from a VCF. The output format follows the
-spectrum: a single-population SFS is written as CSV, a joint or two-site SFS as JSON.
+Derive a one-dimensional, joint (multi-population), or two-site SFS from a VCF, a VCF-Zarr store, or a tskit
+tree sequence. The output format follows the spectrum: a single-population SFS is written as CSV, a joint or
+two-site SFS as JSON.
 
 .. code-block:: bash
 
    # one-dimensional SFS, projected to 20 haplotypes
    sfsutils parse --vcf variants.vcf.gz --n 20 --out sfs.csv
+
+   # the same, reading a VCF-Zarr store or a tree sequence instead
+   sfsutils parse --zarr variants.vcz --n 20 --out sfs.csv
+   sfsutils parse --trees ancestry.trees --n 20 --out sfs.csv
 
    # neutral vs selected SFS, annotating and stratifying by degeneracy
    sfsutils parse --vcf variants.vcf.gz --n 20 \
@@ -43,8 +48,8 @@ spectrum: a single-population SFS is written as CSV, a joint or two-site SFS as 
 
    * - Option
      - Description
-   * - ``--vcf``
-     - Input VCF (gzipped or a URL). Required.
+   * - ``--vcf`` / ``--zarr`` / ``--trees``
+     - Input source: a VCF (gzipped or a URL), a VCF-Zarr store (``.vcz`` / ``.zarr``), or a tskit tree sequence (``.trees``). Exactly one is required.
    * - ``--out``
      - Output spectrum (CSV for one population, JSON for a joint or two-site SFS). Required.
    * - ``--n``

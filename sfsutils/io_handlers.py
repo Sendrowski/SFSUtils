@@ -13,9 +13,10 @@ import os
 import shutil
 import tempfile
 import warnings
+from abc import ABC, abstractmethod
 from collections import Counter
 from functools import cached_property
-from typing import List, Iterable, TextIO, Dict, Optional, Tuple, Union, Sequence
+from typing import List, Iterable, Iterator, TextIO, Dict, Optional, Tuple, Union, Sequence
 from urllib.parse import urlparse
 
 import numpy as np
@@ -593,7 +594,7 @@ class VCFHandler(FileHandler):
         """
         Create a new VCF instance.
 
-        :param vcf: The path to the VCF file or an iterable of variants, can be gzipped, urls are also supported
+        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a tskit tree sequence (.trees) or TreeSequence, or an iterable of variants
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
         :param max_sites: Maximum number of sites to consider
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
@@ -618,21 +619,82 @@ class VCFHandler(FileHandler):
         self.rng = np.random.default_rng(seed=seed)
 
     @cached_property
-    def _reader(self) -> 'cyvcf2.VCF':
+    def _reader(self):
         """
-        Get the VCF reader.
+        Get the variant reader for the configured source (VCF, VCF-Zarr, or tree sequence).
 
-        :return: The VCF reader.
+        :return: The variant reader.
         """
-        return self.load_vcf()
+        return self._open_reader()
 
     def _rewind(self):
         """
-        Rewind the VCF iterator.
+        Rewind the variant iterator.
         """
         if hasattr(self, '_reader'):
             # noinspection all
             del self._reader
+
+    @staticmethod
+    def _is_tree_sequence(source) -> bool:
+        """
+        Whether the source is a tskit tree sequence (a ``TreeSequence`` object or a ``.trees`` path).
+
+        :param source: The variant source.
+        :return: Whether it is a tree sequence.
+        """
+        if isinstance(source, str):
+            return source.endswith('.trees')
+
+        return type(source).__name__ == 'TreeSequence' and type(source).__module__.split('.')[0] == 'tskit'
+
+    @staticmethod
+    def _is_zarr_store(source) -> bool:
+        """
+        Whether the source is a VCF-Zarr store path (a ``.vcz`` or ``.zarr`` directory).
+
+        :param source: The variant source.
+        :return: Whether it is a VCF-Zarr store.
+        """
+        return isinstance(source, str) and source.rstrip('/').endswith(('.vcz', '.zarr'))
+
+    def _open_reader(self):
+        """
+        Open the appropriate variant reader for the configured source. A tskit tree sequence and a
+        VCF-Zarr store are read through :class:`TskitVariantReader` and :class:`ZarrVariantReader`;
+        everything else is read from VCF via cyvcf2.
+
+        :return: The variant reader.
+        """
+        if self._is_tree_sequence(self.vcf):
+            return TskitVariantReader(self._load_tree_sequence(self.vcf))
+
+        if self._is_zarr_store(self.vcf):
+            return ZarrVariantReader(self.vcf, info_ancestral=self.info_ancestral)
+
+        return self.load_vcf()
+
+    @staticmethod
+    def _load_tree_sequence(source):
+        """
+        Resolve a tree-sequence source (a ``TreeSequence`` object or a ``.trees`` path) to a loaded
+        tree sequence.
+
+        :param source: The tree-sequence source.
+        :return: The loaded tree sequence.
+        """
+        if not isinstance(source, str):
+            return source
+
+        try:
+            import tskit
+        except ImportError:
+            raise ImportError(
+                "Reading tree sequences in sfsutils requires the optional 'tskit' package. "
+                "Please install sfsutils with the 'arg' extra: pip install sfsutils[arg]"
+            )
+
+        return tskit.load(source)
 
     def load_vcf(self) -> 'cyvcf2.VCF':
         """
@@ -663,10 +725,14 @@ class VCFHandler(FileHandler):
 
     def count_sites(self) -> int:
         """
-        Count the number of sites in the VCF.
+        Count the number of sites in the source.
 
         :return: Number of sites
         """
+        # tree sequences and VCF-Zarr stores expose their site count directly
+        if self._is_tree_sequence(self.vcf) or self._is_zarr_store(self.vcf):
+            return int(min(self._reader.count_sites(), self.max_sites))
+
         return count_sites(
             vcf=self.download_if_url(self.vcf),
             max_sites=self.max_sites,
@@ -707,7 +773,7 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
         """
         Create a new MultiHandler instance.
 
-        :param vcf: The path to the VCF file or an iterable of variants, can be gzipped, urls are also supported
+        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a tskit tree sequence (.trees) or TreeSequence, or an iterable of variants
         :param fasta: The path to the FASTA file.
         :param gff: The path to the GFF file.
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
@@ -776,9 +842,13 @@ class NoTypeException(BaseException):
     pass
 
 
-class DummyVariant:
+class Variant:
     """
-    Dummy variant class to emulate a mono-allelic site.
+    Minimal duck-typed stand-in for a :class:`cyvcf2.Variant`, exposing the subset of its interface that
+    the parser, filtrations, annotations and stratifications rely on: ``CHROM``, ``POS``, ``REF``,
+    ``ALT``, ``INFO``, the ``is_*`` type flags and the per-sample ``gt_bases``. Non-VCF backends (tree
+    sequences, VCF-Zarr stores) emit these objects so they feed the same streaming site interface as
+    cyvcf2, without sfsutils having to special-case the input format downstream.
     """
 
     #: Whether the variant is an SNP
@@ -795,6 +865,59 @@ class DummyVariant:
 
     #: Whether the variant is a structural variant
     is_sv = False
+
+    def __init__(
+            self,
+            ref: str,
+            pos: int,
+            chrom: str,
+            gt_bases: Sequence[str] | np.ndarray | None = None,
+            alt: Sequence[str] | None = None,
+            is_snp: bool = False,
+            is_mnp: bool = False,
+            info: Dict[str, object] | None = None,
+    ):
+        """
+        Initialize the variant.
+
+        :param ref: The reference allele.
+        :param pos: The position.
+        :param chrom: The contig.
+        :param gt_bases: The per-sample genotype strings (e.g. ``"A/T"``), as for ``cyvcf2.Variant.gt_bases``.
+        :param alt: The alternate alleles.
+        :param is_snp: Whether the site is a single-nucleotide polymorphism.
+        :param is_mnp: Whether the site is a multi-nucleotide polymorphism.
+        :param info: The INFO field.
+        """
+        #: The reference allele
+        self.REF: str = ref
+
+        #: The position
+        self.POS: int = int(pos)
+
+        #: The contig
+        self.CHROM: str = chrom
+
+        #: The alternate alleles
+        self.ALT: List[str] = list(alt) if alt is not None else []
+
+        #: The per-sample genotype strings
+        self.gt_bases: np.ndarray = np.asarray(gt_bases) if gt_bases is not None else np.array([], dtype=object)
+
+        #: Whether the site is an SNP
+        self.is_snp: bool = is_snp
+
+        #: Whether the site is an MNP
+        self.is_mnp: bool = is_mnp
+
+        #: Info field
+        self.INFO: Dict[str, object] = dict(info) if info else {}
+
+
+class DummyVariant(Variant):
+    """
+    Dummy variant class to emulate a mono-allelic site.
+    """
 
     #: The alternate alleles
     ALT = []
@@ -818,3 +941,259 @@ class DummyVariant:
 
         #: Info field
         self.INFO = {}
+
+
+class VariantReader(Iterable, ABC):
+    """
+    Common streaming interface over a variant source. Concrete readers wrap a VCF-Zarr store or a tskit
+    tree sequence and yield :class:`Variant` objects in file order, so the parser can consume any input
+    format through a single ``for variant in reader`` loop. Readers are re-iterable: each ``iter(reader)``
+    starts a fresh pass over the source.
+    """
+
+    @property
+    @abstractmethod
+    def samples(self) -> List[str]:
+        """
+        The sample names, in genotype-column order.
+
+        :return: The sample names.
+        """
+        pass
+
+    @abstractmethod
+    def __iter__(self) -> Iterator[Variant]:
+        """
+        Iterate over the sites of the source.
+
+        :return: An iterator over variants.
+        """
+        pass
+
+    def count_sites(self) -> int:
+        """
+        Count the number of sites in the source.
+
+        :return: The number of sites.
+        """
+        return sum(1 for _ in self)
+
+    def close(self):
+        """
+        Release any resources held by the reader.
+        """
+        pass
+
+
+class TskitVariantReader(VariantReader):
+    """
+    Stream variants from a tskit tree sequence (e.g. an inferred ARG or an msprime simulation). Sample
+    haplotype nodes are grouped into diploid (or higher-ploidy) samples by individual, exactly as
+    :meth:`tskit.TreeSequence.write_vcf` does, so parsing a ``.trees`` file yields the same spectrum as
+    parsing the VCF written from it. tskit stores the ancestral state as allele ``0``, which becomes the
+    reference allele, so the parser recovers the correct polarisation with ``skip_non_polarized=False``.
+    """
+
+    def __init__(self, ts: 'tskit.TreeSequence', contig: str = '1'):
+        """
+        Initialize the reader.
+
+        :param ts: The tree sequence.
+        :param contig: The contig name to report (tree sequences have no contig concept).
+        """
+        #: The tree sequence
+        self._ts = ts
+
+        #: The reported contig name
+        self._contig = str(contig)
+
+        sample_nodes = list(int(n) for n in ts.samples())
+
+        #: Genotype-column index for each sample node
+        self._node_col = {node: i for i, node in enumerate(sample_nodes)}
+
+        sample_set = set(sample_nodes)
+
+        # group sample nodes into VCF-style samples by individual (matching write_vcf); fall back to one
+        # haploid sample per node when the tree sequence has no individuals
+        individuals = [ind for ind in ts.individuals() if sample_set.intersection(int(n) for n in ind.nodes)]
+
+        if individuals:
+            self._sample_names = [f"tsk_{ind.id}" for ind in individuals]
+            self._groups = [[int(n) for n in ind.nodes if int(n) in sample_set] for ind in individuals]
+        else:
+            self._sample_names = [f"tsk_{i}" for i in range(len(sample_nodes))]
+            self._groups = [[node] for node in sample_nodes]
+
+    @property
+    def samples(self) -> List[str]:
+        """
+        The sample names.
+
+        :return: The sample names.
+        """
+        return list(self._sample_names)
+
+    def count_sites(self) -> int:
+        """
+        The number of sites in the tree sequence.
+
+        :return: The number of sites.
+        """
+        return int(self._ts.num_sites)
+
+    def __iter__(self) -> Iterator[Variant]:
+        """
+        Iterate over the sites of the tree sequence.
+
+        :return: An iterator over variants.
+        """
+        for var in self._ts.variants():
+            alleles = var.alleles
+            genotypes = var.genotypes
+
+            gt_bases = np.array([
+                "/".join(
+                    alleles[genotypes[self._node_col[node]]]
+                    if genotypes[self._node_col[node]] >= 0 and alleles[genotypes[self._node_col[node]]]
+                    else "."
+                    for node in group
+                )
+                for group in self._groups
+            ], dtype=object)
+
+            observed = [a for a in alleles if a]
+            is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
+
+            yield Variant(
+                ref=alleles[0],
+                pos=int(var.site.position) + 1,  # tskit positions are 0-based, VCF POS is 1-based
+                chrom=self._contig,
+                gt_bases=gt_bases,
+                alt=[a for a in alleles[1:] if a],
+                is_snp=is_snp,
+            )
+
+
+class ZarrVariantReader(VariantReader):
+    """
+    Stream variants from a VCF-Zarr store in the `vcf2zarr <https://sgkit-dev.github.io/bio2zarr>`_ (VCZ)
+    layout. Genotypes are read in variant chunks to bound memory. An ancestral-allele INFO field, if
+    encoded as a ``variant_<tag>`` array, is surfaced under ``INFO`` so the usual polarisation logic
+    applies.
+    """
+
+    def __init__(self, path: str, info_ancestral: str = 'AA', chunk_size: int = 1000):
+        """
+        Initialize the reader.
+
+        :param path: The path to the VCF-Zarr store.
+        :param info_ancestral: The INFO tag holding the ancestral allele.
+        :param chunk_size: The number of variants read per chunk.
+        """
+        try:
+            import zarr
+        except ImportError:
+            raise ImportError(
+                "VCF-Zarr support in sfsutils requires the optional 'zarr' package. "
+                "Please install sfsutils with the 'zarr' extra: pip install sfsutils[zarr]"
+            )
+
+        #: The Zarr store root
+        self._root = zarr.open(path, mode='r')
+
+        #: The INFO tag holding the ancestral allele
+        self._info_ancestral = info_ancestral
+
+        #: The number of variants read per chunk
+        self._chunk_size = int(chunk_size)
+
+        #: The sample names
+        self._sample_ids = [self._decode(s) for s in self._root['sample_id'][:]]
+
+        #: The contig names
+        self._contig_ids = [self._decode(c) for c in self._root['contig_id'][:]]
+
+    @staticmethod
+    def _decode(value) -> str:
+        """
+        Decode a Zarr string scalar (bytes or str) to ``str``.
+
+        :param value: The value.
+        :return: The decoded string.
+        """
+        return value.decode() if isinstance(value, bytes) else str(value)
+
+    @property
+    def samples(self) -> List[str]:
+        """
+        The sample names.
+
+        :return: The sample names.
+        """
+        return list(self._sample_ids)
+
+    def count_sites(self) -> int:
+        """
+        The number of sites in the store.
+
+        :return: The number of sites.
+        """
+        return int(self._root['variant_position'].shape[0])
+
+    def __iter__(self) -> Iterator[Variant]:
+        """
+        Iterate over the sites of the store.
+
+        :return: An iterator over variants.
+        """
+        root = self._root
+        position = root['variant_position']
+        allele = root['variant_allele']
+        contig = root['variant_contig']
+        genotype = root['call_genotype']
+        phased = root['call_genotype_phased'] if 'call_genotype_phased' in list(root.array_keys()) else None
+        aa_key = f'variant_{self._info_ancestral}'
+        aa = root[aa_key] if aa_key in list(root.array_keys()) else None
+
+        n = position.shape[0]
+
+        for start in range(0, n, self._chunk_size):
+            end = min(start + self._chunk_size, n)
+
+            pos_batch = position[start:end]
+            allele_batch = allele[start:end]
+            contig_batch = contig[start:end]
+            gt_batch = np.asarray(genotype[start:end])
+            phased_batch = np.asarray(phased[start:end]) if phased is not None else None
+            aa_batch = aa[start:end] if aa is not None else None
+
+            for i in range(end - start):
+                site_alleles = [a for a in (self._decode(x) for x in allele_batch[i]) if a not in ('', '.')]
+
+                rows = gt_batch[i]
+                seps = phased_batch[i] if phased_batch is not None else None
+
+                gt_bases = np.array([
+                    ('|' if seps is not None and seps[s] else '/').join(
+                        site_alleles[a] if 0 <= a < len(site_alleles) else '.' for a in rows[s]
+                    )
+                    for s in range(rows.shape[0])
+                ], dtype=object)
+
+                observed = [a for a in site_alleles if a]
+                is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
+
+                info = {}
+                if aa_batch is not None:
+                    info[self._info_ancestral] = self._decode(aa_batch[i])
+
+                yield Variant(
+                    ref=site_alleles[0] if site_alleles else '.',
+                    pos=int(pos_batch[i]),  # vcf2zarr stores the 1-based VCF position
+                    chrom=self._contig_ids[int(contig_batch[i])],
+                    gt_bases=gt_bases,
+                    alt=site_alleles[1:],
+                    is_snp=is_snp,
+                    info=info,
+                )

@@ -20,14 +20,18 @@ biopython = "^1.84"
 requests = ">=2.28"
 scipy = "^1.13"
 
-# Optional cyvcf2 dependency for VCF parsing
+# Optional backends: cyvcf2 for VCF, zarr for VCF-Zarr stores, tskit for tree sequences (ARGs)
 cyvcf2 = { version = "^0.31.0", optional = true }
+zarr = { version = ">=2.17,<3", optional = true }
+tskit = { version = ">=0.5", optional = true }
 
 [tool.poetry.scripts]
 sfsutils = "sfsutils.cli:main"
 
 [tool.poetry.extras]
 vcf = ["cyvcf2"]
+zarr = ["zarr"]
+arg = ["tskit"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0"
@@ -42,6 +46,8 @@ pygments = "^2.15.1"
 sphinxcontrib-bibtex = "^2.6.2"
 autodocsumm = "^0.2.15"
 cyvcf2 = "^0.31.0"
+zarr = ">=2.17,<3"
+tskit = ">=0.5"
 
 [build-system]
 requires = ["poetry-core"]
