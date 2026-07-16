@@ -112,3 +112,68 @@ def test_two_sfs_cov_corr_match_phasegen_branch_length(name):
     # the covariance matches PhaseGen up to a single positive scale (the mutational constant is not recoverable)
     scale = float(np.sum(ecov * pcov) / np.sum(ecov * ecov))
     assert np.abs(scale * ecov - pcov).max() / np.abs(pcov).max() < 0.15
+
+
+def _phasegen_branch_length_at(rho):
+    """PhaseGen's exact interior Kingman branch-length covariance and correlation at recombination rate ``rho``."""
+    import phasegen as pg
+
+    m2 = np.asarray(pg.Coalescent(n=N, loci=2, recombination_rate=rho).sfs2.mean.data)
+    m1 = np.asarray(pg.Coalescent(n=N).sfs.mean.data)
+    cov = (m2 - np.outer(m1, m1))[1:-1, 1:-1]
+
+    return cov, _cov2corr(cov)
+
+
+def _empirical_recombining_all_sites(offset, width, ne, r, mu, seq_len, reps, seed):
+    """The all-sites windowed two-SFS of a recombining sequence, pooled over replicates. Each discrete position
+    carries its derived-allele count (zero for monomorphic sites), and positions are paired over separations in
+    ``(offset, offset + width]`` — exactly the all-sites windowed two-SFS the parser builds, done directly here for
+    speed. The sequence genuinely recombines, so pairs at this separation span many distinct genealogies."""
+    import msprime
+
+    S = np.zeros((N + 1, N + 1))
+    trees = msprime.sim_ancestry(samples=N, ploidy=1, population_size=ne, sequence_length=seq_len,
+                                 recombination_rate=r, num_replicates=reps, random_seed=seed)
+
+    for i, ts in enumerate(trees):
+        mts = msprime.sim_mutations(ts, rate=mu, discrete_genome=True, random_seed=seed + 1 + i)
+        der = np.zeros(seq_len, dtype=np.int64)
+        pos = mts.tables.sites.position.astype(int)
+        dc = mts.genotype_matrix().sum(axis=1)
+        keep = (dc <= N) & (pos < seq_len)  # drop any recurrent/multi-allelic overflow and out-of-range positions
+        der[pos[keep]] = dc[keep]
+        for delta in range(offset + 1, offset + width + 1):
+            idx = der[:-delta] * (N + 1) + der[delta:]
+            S += np.bincount(idx, minlength=(N + 1) ** 2).reshape(N + 1, N + 1)
+
+    return su.TwoSFS(S + S.T)
+
+
+@pytest.mark.slow
+def test_two_sfs_cov_corr_match_phasegen_with_recombination():
+    """A branch-length validation that is NOT based on a single genealogy. An all-sites recombining sequence is
+    pooled over pairs of sites at a fixed genetic distance ``d``; its two-SFS covariance/correlation must match
+    PhaseGen at the corresponding recombination rate ``rho = Ne * r * d``, and be far closer to that rho than to the
+    fully linked ``rho = 0`` limit (recombination has decorrelated the two loci)."""
+    ne, r, mu, seq_len, reps, seed = 1.0, 1e-3, 3e-3, 40_000, 400, 7
+    offset, width = 800, 400
+    rho = ne * r * (offset + width / 2)  # = 1.0 for pairs in this window
+
+    emp = _empirical_recombining_all_sites(offset, width, ne, r, mu, seq_len, reps, seed)
+    ecov = emp.cov().data[1:-1, 1:-1]
+    ecorr = emp.corr().data[1:-1, 1:-1]
+
+    rho_cov, rho_corr = _phasegen_branch_length_at(rho)
+    _, zero_corr = _phasegen_branch_length_at(0.0)
+
+    # matches PhaseGen at the recombination rate implied by the genetic distance
+    assert np.corrcoef(ecorr.ravel(), rho_corr.ravel())[0, 1] > 0.99
+    assert np.abs(ecorr - rho_corr).max() < 0.06
+    scale = float(np.sum(ecov * rho_cov) / np.sum(ecov * ecov))
+    assert np.abs(scale * ecov - rho_cov).max() / np.abs(rho_cov).max() < 0.12
+
+    # a real recombination signal, not the single-tree limit: much closer to its own rho than to rho = 0
+    to_rho = np.abs(ecorr - rho_corr).max()
+    to_zero = np.abs(ecorr - zero_corr).max()
+    assert to_rho < 0.4 * to_zero
