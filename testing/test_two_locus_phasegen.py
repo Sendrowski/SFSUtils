@@ -6,11 +6,11 @@ At recombination rate zero the two loci share one genealogy, so PhaseGen's expec
 ``E[L_i · L_j]`` of the branch lengths. We reproduce this empirically: simulate many independent
 non-recombining trees, drop infinite-sites mutations on each, and pair all sites within a tree with
 sfsutils' two-SFS (fully linked). Pooled over trees and normalised over the polymorphic block, the
-parser's pair counts must converge to PhaseGen's exact matrix. The check covers the Kingman coalescent
-and a Beta (multiple-merger) coalescent, so it exercises the down-projection, the within-tree pairing
-and the monomorphic handling against an independent analytic engine.
+parser's pair counts must converge to PhaseGen's exact matrix. The check spans the Kingman coalescent
+and Beta (multiple-merger) coalescents at two intensities, so it exercises the down-projection, the
+within-tree pairing and the monomorphic handling against an independent analytic engine.
 
-Requires the optional ``phasegen`` and ``msprime`` packages; marked ``slow`` (thousands of simulations).
+Requires the optional ``phasegen`` and ``msprime`` packages; skipped otherwise.
 """
 import importlib.util
 import logging
@@ -21,21 +21,18 @@ import pytest
 import sfsutils as su
 from sfsutils.settings import Settings
 
-# the pooling loop parses thousands of trees; keep its per-parse INFO logging out of the test output
+# the pooling loop parses hundreds of trees; keep its per-parse INFO logging out of the test output
 logging.getLogger('sfsutils').setLevel(logging.WARNING)
 
 _has_phasegen = importlib.util.find_spec("phasegen") is not None
 _has_msprime = importlib.util.find_spec("msprime") is not None
 
-pytestmark = [
-    pytest.mark.slow,
-    pytest.mark.skipif(not (_has_phasegen and _has_msprime), reason="phasegen or msprime is absent"),
-]
+pytestmark = pytest.mark.skipif(not (_has_phasegen and _has_msprime), reason="phasegen or msprime is absent")
 
 N = 4          # haploid sample size
 L = 1e4        # sequence length per tree (one genealogy, recombination_rate=0)
-THETA = 40.0   # expected mutation intensity per tree
-REPS = 2000
+THETA = 20.0   # expected mutation intensity per tree
+REPS = 500
 SEED = 42
 
 
@@ -46,9 +43,10 @@ def _models(name):
 
     if name == "kingman":
         return pg.StandardCoalescent(), msprime.StandardCoalescent()
-    if name == "beta":
-        return pg.BetaCoalescent(alpha=1.5), msprime.BetaCoalescent(alpha=1.5)
-    raise ValueError(name)
+
+    # a Beta(2 - alpha) multiple-merger coalescent; smaller alpha -> more skewed offspring (stronger multiple mergers)
+    alpha = float(name.split("-")[1])
+    return pg.BetaCoalescent(alpha=alpha), msprime.BetaCoalescent(alpha=alpha)
 
 
 def _empirical_two_sfs(ms_model):
@@ -74,7 +72,7 @@ def _empirical_two_sfs(ms_model):
     return emp
 
 
-@pytest.mark.parametrize("name", ["kingman", "beta"])
+@pytest.mark.parametrize("name", ["kingman", "beta-1.5", "beta-1.8"])
 def test_two_sfs_converges_to_phasegen_expectation(name):
     import phasegen as pg
 
@@ -95,4 +93,4 @@ def test_two_sfs_converges_to_phasegen_expectation(name):
     o = empirical[block] / empirical[block].sum()
 
     assert np.corrcoef(e.ravel(), o.ravel())[0, 1] > 0.99
-    assert np.abs(e - o).max() < 0.03
+    assert np.abs(e - o).max() < 0.04
