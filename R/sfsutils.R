@@ -277,12 +277,9 @@ load_sfsutils <- function(install = FALSE) {
   }
 
 
-  # CAVEAT (needs verification in an R session): unlike the module-level `viz$...`
-  # overrides above, the two overrides below replace Python *instance* methods by
-  # assigning an R function to a class attribute. Whether reticulate binds the
-  # instance as `self` when calling `obj$plot()` has not been verified here (no R
-  # runtime was available at authoring time). If `self` is not bound, wire these as
-  # standalone functions (e.g. plot_sfs2(x, ...)) or via a py_run_string shim instead.
+  # The two overrides below replace Python *instance* methods by assigning an R function to a class
+  # attribute. Both call styles work (verified against the tests/testthat suite): `obj$plot()` binds the
+  # instance as `self`, and `sf$TwoSFS$plot(obj)` passes it explicitly (as in the fastdfe wrapper).
   #
   # Plot a 2-SFS (TwoSFS) as a heatmap.
   #

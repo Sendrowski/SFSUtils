@@ -1,11 +1,11 @@
 # Development environment: the simulation stack used to (re)generate the msprime SFS-validation
-# fixtures (msprime + tskit), the test toolchain, and the Sphinx/myst-nb docs stack for building
-# and re-executing the reference notebooks.
+# fixtures (msprime + tskit), the analytic two-locus ground truth (phasegen), the test toolchain,
+# and the Sphinx/myst-nb docs stack for building and re-executing the reference notebooks.
 #
-# Create the env, then install the package editable with the optional cyvcf2 VCF backend (from
-# PyPI, since cyvcf2 is not on conda-forge), run from the repository root:
+# Create the env, then install the package editable with the optional backends (cyvcf2 comes from
+# PyPI, since it is not on conda-forge), run from the repository root:
 #   mamba env create -f envs/dev.yaml
-#   mamba run -n sfsutils-dev pip install -e ".[vcf]"
+#   mamba run -n sfsutils-dev pip install -e ".[vcf,zarr,arg]" bio2zarr phasegen
 #   mamba activate sfsutils-dev
 name: sfsutils-dev
 channels:
@@ -16,6 +16,8 @@ dependencies:
   # --- simulation / ground-truth SFS for the parser-validation fixtures ---
   - msprime
   - tskit
+  # --- optional VCF-Zarr backend ---
+  - zarr
   # --- testing ---
   - pytest
   - pytest-xdist

@@ -14,12 +14,13 @@ PYTEST ?= pytest
 # or disable with `make test XDIST=""` for a serial run (useful when debugging).
 XDIST ?= -n auto
 
-.PHONY: help test test-full docs clean
+.PHONY: help test test-full test-r docs clean
 
 help:
 	@echo "Targets:"
 	@echo "  make test       # fast tier (default: -m 'not slow'); what CI runs"
 	@echo "  make test-full  # entire suite incl. the slow tier"
+	@echo "  make test-r     # R wrapper plotting tests (needs the r-sfsutils env; see envs/r.yaml)"
 	@echo "  make docs       # rebuild HTML docs from scratch (clean + html)"
 	@echo "  make clean      # remove the built docs"
 
@@ -28,6 +29,12 @@ test:
 
 test-full:
 	$(PYTEST) $(XDIST) -m "slow or not slow"
+
+# R wrapper tests via reticulate. Point RETICULATE_PYTHON at a Python with sfsutils installed
+# (e.g. the sfsutils-dev env) and install the R package first (`R CMD INSTALL .`); see envs/r.yaml.
+RETICULATE_PYTHON ?= $(shell which python)
+test-r:
+	RETICULATE_PYTHON=$(RETICULATE_PYTHON) Rscript -e 'testthat::test_dir("tests/testthat")'
 
 # --- docs (Sphinx + myst-nb; notebooks are not executed, nb_execution_mode='off') ---
 docs:

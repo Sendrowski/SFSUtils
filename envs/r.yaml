@@ -1,0 +1,21 @@
+# R environment for the reticulate wrapper (R/sfsutils.R) and its testthat plotting tests. reticulate
+# is pointed at the sfsutils-dev Python, which has sfsutils and its backends installed. From the
+# repository root:
+#   mamba env create -f envs/r.yaml
+#   export RETICULATE_PYTHON=$(mamba run -n sfsutils-dev which python)
+#   mamba run -n r-sfsutils R CMD INSTALL .
+#   mamba run -n r-sfsutils Rscript tests/testthat.R
+# (or `make test-r RETICULATE_PYTHON=$RETICULATE_PYTHON` once the package is installed).
+name: r-sfsutils
+channels:
+  - conda-forge
+dependencies:
+  - r-base
+  - r-reticulate
+  - r-testthat
+  # --- plotting dependencies of the R wrapper ---
+  - r-ggplot2
+  - r-cowplot
+  - r-rcolorbrewer
+  # --- IRkernel for executing the R reference notebooks ---
+  - r-irkernel
