@@ -653,15 +653,9 @@ class TargetSiteCounter:
         also for monomorphic sites sampled from the FASTA file.
 
     .. note::
-        For the stratified two-SFS the monomorphic sites are apportioned across strata assuming each stratum's sites
-        are uniformly distributed at their own density. This is exact for interspersed strata but only approximate
-        for spatially clustered ones (for example coding versus non-coding).
-
-    .. note::
-        The two-SFS monomorphic extrapolation assumes each site sees a full pairing window of monomorphic partners,
-        which biases the estimate upward near contig ends. The bias is negligible for regions long relative to the
-        two-SFS distance, but becomes substantial when contigs are of a length comparable to it (as pairs never cross
-        contig boundaries).
+        This counter is not supported together with the two-SFS (``two_sfs=True``). The two-SFS covariance and
+        correlation require the real monomorphic sites to anchor the marginal to the site-frequency spectrum; an
+        all-sites input must be provided rather than extrapolating the monomorphic pairs from a target-site count.
     """
 
     def __init__(
@@ -700,11 +694,17 @@ class TargetSiteCounter:
         """
         self.parser = parser
 
-        # the unstratified two-SFS extrapolation is fully analytic and needs no FASTA; every other combination
-        # samples monomorphic sites from the FASTA (the ordinary and joint SFS, and the stratified two-SFS, which
-        # samples only to estimate the per-stratum monomorphic distribution)
-        if not (self.parser.two_sfs and len(self.parser.stratifications) == 0):
-            self.parser._require_fasta(self.__class__.__name__)
+        # the two-SFS covariance/correlation require the real monomorphic sites (an all-sites input) to anchor the
+        # marginal to the site-frequency spectrum; a target-site extrapolation cannot recover the branch-length
+        # covariance, so a TargetSiteCounter is not supported together with the two-SFS
+        if self.parser.two_sfs:
+            raise NotImplementedError(
+                "TargetSiteCounter is not supported together with the two-SFS (two_sfs=True). The two-SFS "
+                "covariance/correlation require the monomorphic sites to be present; parse an all-sites input with "
+                "the monomorphic (invariant) sites specified instead of extrapolating from a target-site count."
+            )
+
+        self.parser._require_fasta(self.__class__.__name__)
 
         # check if we have a SNPFiltration
         if not any([isinstance(f, SNPFiltration) for f in self.parser.filtrations]):
@@ -925,64 +925,6 @@ class TargetSiteCounter:
 
         return updated
 
-    def _extrapolate_two_sfs(
-            self,
-            two_sfs: np.ndarray,
-            marginal: np.ndarray,
-            region_length: float,
-            distance: int,
-            n_monomorphic: float | None = None
-    ) -> np.ndarray:
-        """
-        Add the monomorphic-involving pairs to a two-SFS by extrapolating from the target-site count.
-
-        The observed matrix holds only the polymorphic-polymorphic pairs (the input VCF has no monomorphic sites).
-        Under a uniform site density, a window of width ``distance`` holds on average ``rho_m * distance``
-        monomorphic sites, where ``rho_m = n_monomorphic / region_length`` and ``n_monomorphic = n_target_sites -
-        n_polymorphic``. Each polymorphic site with derived count ``j`` therefore pairs with ``rho_m * distance``
-        monomorphic sites, contributing to the ``(0, j)`` and ``(j, 0)`` entries, and each monomorphic site pairs
-        with ``rho_m * distance`` others, contributing to ``(0, 0)``. The forward-pair-then-symmetrize bookkeeping
-        leaves these symmetric contributions as ``marginal[j] * rho_m * distance`` and ``n_monomorphic * rho_m *
-        distance`` respectively. The window offset drops out: a band of width ``distance`` holds the same expected
-        number of sites regardless of where it starts.
-
-        :param two_sfs: The symmetrized polymorphic-polymorphic two-SFS.
-        :param marginal: The one-dimensional marginal (summed down-projection) of the polymorphic sites.
-        :param region_length: The length (bp) over which the sites are distributed.
-        :param distance: The two-SFS distance window width (bp).
-        :param n_monomorphic: The number of monomorphic sites (of this stratum). If ``None``, it is derived from the
-            target-site count as ``n_target_sites - n_polymorphic``; a stratified two-SFS passes a per-stratum count.
-        :return: The two-SFS with the monomorphic-involving pairs added.
-        """
-        two_sfs = np.array(two_sfs, dtype=float)
-
-        n_polymorphic = float(marginal[1:].sum())
-        if n_monomorphic is None:
-            n_monomorphic = self.n_target_sites - n_polymorphic
-
-        if n_monomorphic <= 0:
-            self._logger.warning(f"The number of target sites ({self.n_target_sites}) does not exceed the number of "
-                                 f"polymorphic sites ({n_polymorphic:.0f}); the two-SFS is left unchanged.")
-            return two_sfs
-
-        if region_length <= 0:
-            self._logger.warning("The region length is zero; cannot extrapolate the monomorphic pairs of the two-SFS.")
-            return two_sfs
-
-        rho_m = n_monomorphic / region_length
-
-        # monomorphic-polymorphic pairs: each polymorphic site of derived count j has rho_m * distance
-        # monomorphic partners within the window
-        contribution = marginal * rho_m * distance
-        contribution[0] = 0.0
-        two_sfs[0, :] += contribution
-        two_sfs[:, 0] += contribution
-
-        # monomorphic-monomorphic pairs
-        two_sfs[0, 0] += n_monomorphic * rho_m * distance
-
-        return two_sfs
-
 
 class Parser(MultiHandler):
     """
@@ -1127,9 +1069,9 @@ class Parser(MultiHandler):
             This is used to match the contig names in the VCF file with the contig names in the FASTA file and GFF file.
         :param target_site_counter: The target site counter, used to recover the number of monomorphic sites when the
             input contains only polymorphic sites. If ``None``, no target sites are added. It applies to the
-            one-dimensional SFS (sampling monomorphic sites from the FASTA), the joint SFS (scaling the all-ancestral
-            corner to the target-site count), and the two-SFS (extrapolating the monomorphic-involving pairs
-            analytically, apportioning them across strata by sampling when stratifications are used).
+            one-dimensional SFS (sampling monomorphic sites from the FASTA) and the joint SFS (scaling the
+            all-ancestral corner to the target-site count). It is not supported together with the two-SFS
+            (``two_sfs=True``), whose covariance/correlation require the real monomorphic sites of an all-sites input.
         :param subsample_mode: The subsampling mode. For ``random``, we draw once without replacement from the set of
             all available genotypes per site. For ``probabilistic``, we add up the hypergeometric distribution for all
             sites. This will produce a smoother SFS, especially when a small number of sites is considered.
@@ -1148,10 +1090,11 @@ class Parser(MultiHandler):
             contribution is the outer product of the two per-site down-projection vectors, so it is exact when
             ``subsample_mode='random'`` at the full sample size and smoother under ``'probabilistic'``. The matrix is
             symmetrized. Not compatible with ``pops``. Stratifications are supported (counting only within-stratum
-            pairs, into a :class:`~sfsutils.spectrum.TwoSpectra`). A ``target_site_counter`` is supported: the
-            monomorphic-involving pairs are extrapolated analytically from the target-site count assuming a uniform
-            site density, and when stratifications are used the monomorphic sites are apportioned across strata by
-            sampling from the FASTA.
+            pairs, into a :class:`~sfsutils.spectrum.TwoSpectra`). A ``target_site_counter`` is not supported here:
+            the two-SFS covariance/correlation (:meth:`~sfsutils.spectrum.TwoSFS.cov` /
+            :meth:`~sfsutils.spectrum.TwoSFS.corr`) require the real monomorphic sites, so provide an all-sites
+            input (monomorphic sites retained, contributing to the zero-frequency row and column) rather than a
+            :class:`~sfsutils.filtration.SNPFiltration`.
         :param two_sfs_distance: The width (in base pairs) of the distance window over which the two sites of a pair
             are separated when ``two_sfs=True``. Together with ``two_sfs_offset`` it defines the window
             ``(two_sfs_offset, two_sfs_offset + two_sfs_distance]``; with the default ``two_sfs_offset=0`` this is
@@ -1297,16 +1240,9 @@ class Parser(MultiHandler):
         #: parsing counts only within-stratum pairs, so each type accumulates independently (only when ``two_sfs``).
         self._two_sfs_matrices: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros((self.n + 1, self.n + 1)))
 
-        #: The accumulating one-dimensional marginal (summed down-projection) per type, used to extrapolate the
-        #: monomorphic-involving pairs when a ``TargetSiteCounter`` is combined with the two-SFS.
+        #: The accumulating one-dimensional marginal (summed down-projection) per type, i.e. the site-frequency
+        #: spectrum including the monomorphic bins; used to warn when the monomorphic sites appear to be missing.
         self._two_sfs_marginal: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros(self.n + 1))
-
-        #: When ``True``, the two-SFS site handler only counts monomorphic sites per stratum (no pairing); used by
-        #: the ``TargetSiteCounter`` to estimate the per-stratum monomorphic distribution for a stratified two-SFS.
-        self._two_sfs_counting: bool = False
-
-        #: The per-stratum count of sampled monomorphic sites (filled during the counting pass).
-        self._two_sfs_mono_counts: Dict[str, int] = defaultdict(int)
 
         #: Sliding buffer of ``(position, down-projection vector, type)`` for recent sites on the current contig
         self._two_sfs_buffer: deque = deque()
@@ -1555,15 +1491,10 @@ class Parser(MultiHandler):
             self._logger.debug(e)
             return False
 
-        # counting pass: only tally the (monomorphic) site's stratum, without pairing it or buffering it
-        if self._two_sfs_counting:
-            self._two_sfs_mono_counts[t] += 1
-            return True
-
         # register the stratum so it appears in the output even if it never forms a within-window pair
         _ = self._two_sfs_matrices[t]
 
-        # accumulate the one-dimensional marginal (used to extrapolate monomorphic pairs under a TargetSiteCounter)
+        # accumulate the one-dimensional marginal (the site-frequency spectrum, incl. the monomorphic bins)
         self._two_sfs_marginal[t] += m
 
         # reset the buffer when we move to a new contig (pairs never cross contigs)
@@ -1590,68 +1521,22 @@ class Parser(MultiHandler):
 
         return True
 
-    def _region_length(self) -> float:
+    def _warn_if_monomorphic_missing(self):
         """
-        The length (bp) of the region over which sites are distributed, used when extrapolating the monomorphic
-        pairs of the two-SFS from a :class:`TargetSiteCounter`. When the source reports its own length (a tree
-        sequence does), that is used, since the observed polymorphic sites never reach the ends and their span
-        underestimates the region. Otherwise the summed per-contig span of the parsed variants is used.
-
-        :return: The region length.
+        Warn when the parsed two-SFS appears to carry (almost) no monomorphic sites. The two-SFS covariance and
+        correlation (:meth:`~sfsutils.spectrum.TwoSFS.cov` / :meth:`~sfsutils.spectrum.TwoSFS.corr`) require the
+        monomorphic sites to anchor the marginal to the site-frequency spectrum, so an all-sites input is needed.
         """
-        sequence_length = getattr(self._reader, 'sequence_length', None)
-        if sequence_length is not None:
-            return float(sequence_length)
+        marginal = sum(self._two_sfs_marginal.values(), np.zeros(self.n + 1))
+        n_sites = float(marginal.sum())
+        n_monomorphic = float(marginal[0] + marginal[-1])
 
-        return float(sum(
-            high - low for low, high in self._contig_bounds.values()
-            if np.isfinite(low) and np.isfinite(high) and high > low
-        ))
-
-    def _parse_two_sfs_stratified_with_target_sites(self) -> 'TwoSpectra':
-        """
-        Assemble the stratified two-SFS with a :class:`TargetSiteCounter`. The polymorphic-polymorphic pairs are
-        already accumulated per stratum. Here the per-stratum monomorphic distribution is estimated by sampling
-        sites from the FASTA and tallying their stratum (counting only, without pairing), the monomorphic budget
-        implied by the target-site count is split across strata in that proportion, and the monomorphic-involving
-        pairs of each stratum are extrapolated analytically under a uniform per-stratum density.
-
-        :return: The stratified two-SFS with monomorphic pairs extrapolated per stratum.
-        """
-        # sample monomorphic sites and tally them per stratum (no pairing)
-        self._two_sfs_mono_counts = defaultdict(int)
-        self._two_sfs_counting = True
-        self.target_site_counter.count()
-        self._two_sfs_counting = False
-
-        counts = self._two_sfs_mono_counts
-        total_sampled = sum(counts.values())
-
-        # the monomorphic budget from the target-site count, split across strata by the sampled proportions
-        total_polymorphic = sum(float(self._two_sfs_marginal[t][1:].sum()) for t in self._two_sfs_matrices)
-        total_monomorphic = self.target_site_counter.n_target_sites - total_polymorphic
-        region_length = self._region_length()
-
-        # every sampled stratum receives a share of the monomorphic budget, including strata that carry
-        # target sites but no polymorphic pairs (their two-SFS is a pure monomorphic corner)
-        strata = set(self._two_sfs_matrices) | set(counts)
-
-        result = {}
-        for t in sorted(strata):
-            matrix = TwoSFS(self._two_sfs_matrices[t]).symmetrize().data
-
-            if total_monomorphic > 0 and total_sampled > 0:
-                matrix = self.target_site_counter._extrapolate_two_sfs(
-                    two_sfs=matrix,
-                    marginal=self._two_sfs_marginal[t],
-                    region_length=region_length,
-                    distance=self.two_sfs_distance,
-                    n_monomorphic=total_monomorphic * counts.get(t, 0) / total_sampled
-                )
-
-            result[t] = TwoSFS(matrix)
-
-        return TwoSpectra(result)
+        if n_sites > 0 and n_monomorphic / n_sites < 0.95:
+            self._logger.warning(
+                "The number of monomorphic sites is unusually low. Including monomorphic sites is necessary for a "
+                "meaningful two-SFS covariance/correlation (they anchor the marginal to the site-frequency "
+                "spectrum). If your dataset does not contain monomorphic sites, provide an all-sites input."
+            )
 
     def _process_site(self, variant: Site) -> bool:
         """
@@ -1836,26 +1721,13 @@ class Parser(MultiHandler):
             total = sum(matrix.sum() for matrix in self._two_sfs_matrices.values())
             self._logger.info(f'Counted {total:.0f} site pairs within {self.two_sfs_distance} bp.')
 
+            self._warn_if_monomorphic_missing()
+
             # without stratifications, return the single symmetrized two-SFS
             if len(self.stratifications) == 0:
-                matrix = TwoSFS(self._two_sfs_matrices['all']).symmetrize().data
+                return TwoSFS(self._two_sfs_matrices['all']).symmetrize()
 
-                # extrapolate the monomorphic-involving pairs from the target-site count
-                if self.target_site_counter is not None:
-                    matrix = self.target_site_counter._extrapolate_two_sfs(
-                        two_sfs=matrix,
-                        marginal=self._two_sfs_marginal['all'],
-                        region_length=self._region_length(),
-                        distance=self.two_sfs_distance
-                    )
-
-                return TwoSFS(matrix)
-
-            # with stratifications, extrapolate per stratum when a target-site counter is used
-            if self.target_site_counter is not None and self.n_skipped < self.n_sites:
-                return self._parse_two_sfs_stratified_with_target_sites()
-
-            # otherwise return one symmetrized two-SFS per (within-stratum) type
+            # one symmetrized two-SFS per (within-stratum) type
             return TwoSpectra(
                 {t: TwoSFS(self._two_sfs_matrices[t]).symmetrize() for t in sorted(self._two_sfs_matrices)}
             )
