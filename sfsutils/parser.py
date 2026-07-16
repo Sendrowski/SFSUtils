@@ -651,6 +651,11 @@ class TargetSiteCounter:
         info tags when sampling from the FASTA file, and are thus ignored by the stratifications. However, using the
         ``annotations`` argument of the parser, the info tags the stratifications are based on are added on-the-fly,
         also for monomorphic sites sampled from the FASTA file.
+
+    .. note::
+        For the stratified two-SFS the monomorphic sites are apportioned across strata assuming each stratum's sites
+        are uniformly distributed at their own density. This is exact for interspersed strata but only approximate
+        for spatially clustered ones (for example coding versus non-coding).
     """
 
     def __init__(
