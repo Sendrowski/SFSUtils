@@ -1,103 +1,20 @@
 """
-Ground-truth tests for the TargetSiteCounter extrapolation of monomorphic sites into the two-site and joint SFS.
+Ground-truth tests for the TargetSiteCounter extrapolation of monomorphic sites into the joint SFS, and for its
+refusal to combine with the two-SFS.
 
-For the two-SFS the reference is a full site list (polymorphic sites plus monomorphic sites laid out at a known
-density) whose windowed two-SFS is computed directly; stripping the monomorphic sites and running the parser with
-a TargetSiteCounter must recover it. The polymorphic-polymorphic block is reproduced exactly (the extrapolation
-only touches the monomorphic row and column), and the monomorphic-involving pairs match to within the edge-effect
-tolerance of the uniform-density approximation. For the joint SFS the monomorphic corner is fixed exactly by the
-target-site count.
+For the joint SFS the monomorphic corner is fixed exactly by the target-site count. The two-SFS is different: its
+covariance/correlation require the real monomorphic sites (an all-sites input), so a TargetSiteCounter is not
+supported together with ``two_sfs=True`` and must raise. The two-SFS branch-length covariance/correlation are
+validated against PhaseGen in ``test_two_locus_phasegen.py``.
 """
-import importlib.util
 import os
 import textwrap
-from collections import defaultdict
 
 import numpy as np
 import pytest
 
 import sfsutils as su
 from sfsutils.settings import Settings
-
-_has_tskit = importlib.util.find_spec("tskit") is not None
-
-
-class _ParityStratification(su.Stratification):
-    """Assign each site a type from the parity of its position (position-based, so it needs no FASTA base)."""
-
-    def get_type(self, variant):
-        return "even" if variant.POS % 2 == 0 else "odd"
-
-    def get_types(self):
-        return ["even", "odd"]
-
-
-def _windowed_two_sfs(derived, positions, n, distance, offset=0):
-    """Forward-pair every pair of sites within (offset, offset + distance] and symmetrize (independent reference)."""
-    ref = np.zeros((n + 1, n + 1))
-    lo, hi = offset, offset + distance
-    for a in range(len(positions)):
-        b = a + 1
-        while b < len(positions) and positions[b] - positions[a] <= hi:
-            if positions[b] - positions[a] > lo:
-                ref[derived[a], derived[b]] += 1
-            b += 1
-    return (ref + ref.T) / 2
-
-
-def _windowed_two_sfs_by_type(derived, positions, types, n, distance, offset=0):
-    """Per-stratum windowed two-SFS, counting only within-stratum pairs (matches the parser's stratified two-SFS)."""
-    refs = defaultdict(lambda: np.zeros((n + 1, n + 1)))
-    lo, hi = offset, offset + distance
-    for a in range(len(positions)):
-        b = a + 1
-        while b < len(positions) and positions[b] - positions[a] <= hi:
-            if positions[b] - positions[a] > lo and types[a] == types[b]:
-                refs[types[a]][derived[a], derived[b]] += 1
-            b += 1
-    return {t: (r + r.T) / 2 for t, r in refs.items()}
-
-
-def _make_dataset(rng, length, n_poly, n_mono, homogeneous):
-    """Lay out polymorphic (derived 1 or 2) and monomorphic sites over [3, length - 2], either on a regular grid
-    (homogeneous density) or at random positions (clustered), anchoring the span at both ends."""
-    if homogeneous:
-        poly_pos = np.unique(np.linspace(3, length - 2, n_poly).astype(int))
-    else:
-        poly_pos = np.sort(rng.choice(np.arange(3, length - 2), size=n_poly, replace=False))
-    poly_pos[0], poly_pos[-1] = 3, length - 2
-    poly_der = rng.integers(1, 3, size=poly_pos.size)
-
-    if homogeneous:
-        mono_pos = np.unique(np.linspace(4, length - 3, n_mono).astype(int))
-    else:
-        mono_pos = np.sort(rng.choice(np.arange(3, length - 2), size=n_mono, replace=False))
-    mono_pos = np.array(sorted(set(mono_pos.tolist()) - set(poly_pos.tolist())))
-
-    return poly_pos, poly_der, mono_pos
-
-
-def _compare(tmp_path, poly_pos, poly_der, mono_pos, distance, rtol):
-    """Build the ground-truth windowed two-SFS over all sites, then check the parser (polymorphic sites only,
-    monomorphic pairs extrapolated from the target-site count) reproduces the polymorphic block exactly and the
-    monomorphic-involving pairs within ``rtol``."""
-    positions = np.concatenate([poly_pos, mono_pos])
-    derived = np.concatenate([poly_der, np.zeros(mono_pos.size, dtype=int)])
-    order = np.argsort(positions)
-    truth = _windowed_two_sfs(derived[order], positions[order], n=2, distance=distance)
-
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, poly_pos, poly_der)
-    sfs2 = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=distance, skip_non_polarized=False,
-                     subsample_mode="random",
-                     target_site_counter=su.TargetSiteCounter(
-                         n_target_sites=poly_pos.size + mono_pos.size)).parse()
-
-    np.testing.assert_array_equal(sfs2.data[1:, 1:], truth[1:, 1:])
-    assert sfs2.data[0, 0] == pytest.approx(truth[0, 0], rel=rtol)
-    assert sfs2.data[0, 1:].sum() == pytest.approx(truth[0, 1:].sum(), rel=rtol)
-    np.testing.assert_allclose(sfs2.data, sfs2.data.T)
-    return sfs2, truth
 
 
 def _write_vcf(path, positions, derived):
@@ -112,129 +29,17 @@ def _write_vcf(path, positions, derived):
     path.write_text(header + rows)
 
 
-# --- unit check of the extrapolation kernel --------------------------------------------------------
-
-def test_extrapolate_two_sfs_kernel():
-    """The kernel adds marginal[j]*rho_m*d to (0,j)/(j,0) and n_m*rho_m*d to (0,0), leaving the interior intact."""
-    tsc = su.TargetSiteCounter(n_target_sites=1000)
-
-    interior = np.array([[0, 0, 0], [0, 5, 3], [0, 3, 2]], dtype=float)  # a symmetric polymorphic 2-SFS (n=2)
-    marginal = np.array([0.0, 8.0, 4.0])  # 8 singletons, 4 fixed -> n_poly = 12
-    L, d = 1000.0, 100
-
-    out = tsc._extrapolate_two_sfs(interior, marginal, region_length=L, distance=d)
-
-    n_m = 1000 - 12
-    rho_m = n_m / L
-    np.testing.assert_allclose(out[1:, 1:], interior[1:, 1:])          # interior untouched
-    np.testing.assert_allclose(out[0, 1], 8.0 * rho_m * d)             # mono-singleton pairs
-    np.testing.assert_allclose(out[0, 2], 4.0 * rho_m * d)             # mono-fixed pairs
-    np.testing.assert_allclose(out[0, 1], out[1, 0])                   # symmetric
-    np.testing.assert_allclose(out[0, 0], n_m * rho_m * d)             # mono-mono pairs
-
-
-# --- two-SFS against a full-sequence ground truth --------------------------------------------------
-
-def test_two_sfs_target_site_counter_matches_ground_truth(tmp_path):
+def test_target_site_counter_not_supported_with_two_sfs(tmp_path):
+    """The two-SFS covariance/correlation require the real monomorphic sites, so a target-site extrapolation is
+    refused: combining a :class:`~sfsutils.parser.TargetSiteCounter` with ``two_sfs=True`` raises."""
     Settings.disable_pbar = True
-    rng = np.random.default_rng(0)
-
-    L, d = 50_000, 1_000
-
-    # polymorphic sites: random positions (spanning nearly all of L) with derived count 1 or 2
-    poly_pos = np.sort(rng.choice(np.arange(3, L - 2), size=60, replace=False))
-    poly_pos[0], poly_pos[-1] = 3, L - 2  # anchor the span so it covers the region
-    poly_der = rng.integers(1, 3, size=poly_pos.size)
-
-    # monomorphic sites laid out at uniform density over the same span, avoiding the polymorphic positions
-    mono_pos = np.linspace(3, L - 2, 2_000).astype(int)
-    mono_pos = np.array(sorted(set(mono_pos) - set(poly_pos.tolist())))
-
-    # full site list -> ground-truth windowed two-SFS (n = 2)
-    positions = np.concatenate([poly_pos, mono_pos])
-    derived = np.concatenate([poly_der, np.zeros(mono_pos.size, dtype=int)])
-    order = np.argsort(positions)
-    positions, derived = positions[order], derived[order]
-    truth = _windowed_two_sfs(derived, positions, n=2, distance=d)
-
-    # parse only the polymorphic sites, extrapolating the monomorphic pairs from the target-site count
     vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, poly_pos, poly_der)
-    n_target = poly_pos.size + mono_pos.size
-    sfs2 = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=d, skip_non_polarized=False,
-                     subsample_mode="random",
-                     target_site_counter=su.TargetSiteCounter(n_target_sites=n_target)).parse()
+    _write_vcf(vcf, positions=[10, 30, 60, 90], derived=[1, 2, 1, 1])
 
-    # the polymorphic-polymorphic block is reproduced exactly (same positions, same window)
-    np.testing.assert_array_equal(sfs2.data[1:, 1:], truth[1:, 1:])
-
-    # the monomorphic-involving pairs match to within the edge-effect tolerance of the uniform-density model
-    assert sfs2.data[0, 0] == pytest.approx(truth[0, 0], rel=0.06)
-    assert sfs2.data[0, 1:].sum() == pytest.approx(truth[0, 1:].sum(), rel=0.06)
-    np.testing.assert_allclose(sfs2.data, sfs2.data.T)  # symmetric
-
-
-def test_two_sfs_target_site_counter_leaves_polymorphic_block_unchanged(tmp_path):
-    """The extrapolation must only add the monomorphic row/column, never alter the observed polymorphic pairs."""
-    Settings.disable_pbar = True
-    rng = np.random.default_rng(1)
-
-    pos = np.sort(rng.choice(np.arange(3, 20_000), size=40, replace=False))
-    der = rng.integers(1, 3, size=pos.size)
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, pos, der)
-
-    kw = dict(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
-              subsample_mode="random")
-    without = su.Parser(**kw).parse()
-    with_tsc = su.Parser(**kw, target_site_counter=su.TargetSiteCounter(n_target_sites=100_000)).parse()
-
-    np.testing.assert_array_equal(without.data[1:, 1:], with_tsc.data[1:, 1:])
-    assert with_tsc.data[0, 0] > 0  # but the monomorphic corner is now populated
-
-
-def _interior_covariance(matrix):
-    """Covariance of the derived-allele frequency between two linked *polymorphic* sites, from the interior block
-    (both derived counts >= 1), normalized by the polymorphic-polymorphic pair count. Uses only observed pairs, so
-    it needs no monomorphic sites and no target-site count."""
-    interior = matrix[1:, 1:].astype(float)
-    p_joint = interior / interior.sum()          # P(i, j | both polymorphic)
-    p_marg = p_joint.sum(axis=1)                 # P(i | polymorphic)
-    n = matrix.shape[0] - 1
-    x = np.arange(1, n + 1) / n                   # derived frequency of each polymorphic class
-    cov = p_joint - np.outer(p_marg, p_marg)
-    return x @ cov @ x, cov
-
-
-def test_two_sfs_interior_correlation_recovered_and_target_invariant(tmp_path):
-    """The correlation of the interior (two linked polymorphic sites) is recovered exactly from the observed pairs:
-    it equals the full-site ground truth and is invariant to the target-site count, since no monomorphic-involving
-    pair enters it. (The monomorphic-involving covariances are neither recoverable nor wanted here.)"""
-    Settings.disable_pbar = True
-    rng = np.random.default_rng(7)
-    poly_pos, poly_der, mono_pos = _make_dataset(rng, length=50_000, n_poly=80, n_mono=3_000, homogeneous=False)
-
-    positions = np.concatenate([poly_pos, mono_pos])
-    derived = np.concatenate([poly_der, np.zeros(mono_pos.size, dtype=int)])
-    order = np.argsort(positions)
-    truth = _windowed_two_sfs(derived[order], positions[order], n=2, distance=1_000)
-    truth_cov, _ = _interior_covariance(truth)
-
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, poly_pos, poly_der)
-    kw = dict(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
-              subsample_mode="random")
-
-    # across no counter and two very different target-site counts, the interior covariance is identical, exact
-    covs = [_interior_covariance(su.Parser(**kw, **extra).parse().data)[0] for extra in (
-        {},
-        dict(target_site_counter=su.TargetSiteCounter(n_target_sites=poly_pos.size + mono_pos.size)),
-        dict(target_site_counter=su.TargetSiteCounter(n_target_sites=poly_pos.size + 10 * mono_pos.size)),
-    )]
-
-    for c in covs:
-        assert c == pytest.approx(truth_cov, rel=1e-12)  # recovered exactly from the observed polymorphic pairs
-    assert covs[0] == pytest.approx(covs[1]) == pytest.approx(covs[2])  # invariant to the target-site count
+    with pytest.raises(NotImplementedError, match="two_sfs"):
+        su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=100, skip_non_polarized=False,
+                  subsample_mode="random",
+                  target_site_counter=su.TargetSiteCounter(n_target_sites=10_000)).parse()
 
 
 # --- joint SFS: the monomorphic corner is fixed exactly by the target-site count -------------------
@@ -287,172 +92,3 @@ def test_joint_target_site_counter_degenerate_leaves_corner_unchanged():
                                                                     n_target_sites=n_poly - 1)).parse()["all"].data
 
     np.testing.assert_allclose(degenerate, without)
-
-
-# --- varying SNP densities -------------------------------------------------------------------------
-
-@pytest.mark.parametrize("n_poly,n_mono", [
-    (20, 4_000),    # sparse SNPs, dense monomorphic background
-    (60, 2_000),    # moderate
-    (300, 1_000),   # dense SNPs, fewer monomorphic sites
-    (30, 200),      # low overall density
-])
-def test_two_sfs_target_site_counter_across_densities(tmp_path, n_poly, n_mono):
-    """The extrapolation must hold across a range of SNP densities and monomorphic backgrounds (random layout)."""
-    Settings.disable_pbar = True
-    rng = np.random.default_rng(n_poly)
-    poly_pos, poly_der, mono_pos = _make_dataset(rng, length=50_000, n_poly=n_poly, n_mono=n_mono,
-                                                 homogeneous=False)
-    _compare(tmp_path, poly_pos, poly_der, mono_pos, distance=1_000, rtol=0.10)
-
-
-@pytest.mark.parametrize("n_poly,n_mono", [(40, 4_000), (150, 3_000), (400, 2_000)])
-def test_two_sfs_target_site_counter_homogeneous_density(tmp_path, n_poly, n_mono):
-    """With a homogeneous (regular-grid) layout the uniform-density model is nearly exact, so the monomorphic
-    pairs match the ground truth much more tightly than under a clustered layout."""
-    Settings.disable_pbar = True
-    rng = np.random.default_rng(n_poly)
-    poly_pos, poly_der, mono_pos = _make_dataset(rng, length=100_000, n_poly=n_poly, n_mono=n_mono,
-                                                 homogeneous=True)
-    _compare(tmp_path, poly_pos, poly_der, mono_pos, distance=1_000, rtol=0.03)
-
-
-# --- stratified two-SFS ----------------------------------------------------------------------------
-
-def test_stratified_two_sfs_target_site_counter_matches_ground_truth(tmp_path):
-    """The stratified two-SFS with a TargetSiteCounter samples to estimate the per-stratum monomorphic
-    distribution, then extrapolates each stratum's monomorphic pairs. With a parity stratification the strata are
-    perfectly interspersed, so each stratum's monomorphic pairs must match its within-stratum ground truth."""
-    Settings.disable_pbar = True
-    rng = np.random.default_rng(3)
-    L, d = 60_000, 1_000
-
-    # polymorphic and monomorphic sites at random positions (parity gives each an even/odd stratum)
-    poly_pos = np.sort(rng.choice(np.arange(3, L - 2), size=120, replace=False))
-    poly_pos[0], poly_pos[-1] = 4, L - 3
-    poly_der = rng.integers(1, 3, size=poly_pos.size)
-    mono_pos = np.sort(rng.choice(np.arange(3, L - 2), size=6_000, replace=False))
-    mono_pos = np.array(sorted(set(mono_pos.tolist()) - set(poly_pos.tolist())))
-
-    positions = np.concatenate([poly_pos, mono_pos])
-    derived = np.concatenate([poly_der, np.zeros(mono_pos.size, dtype=int)])
-    types = np.array(["even" if p % 2 == 0 else "odd" for p in positions])
-    order = np.argsort(positions)
-    truth = _windowed_two_sfs_by_type(derived[order], positions[order], types[order], n=2, distance=d)
-
-    # a synthetic FASTA (all 'A') covering the region, needed by the sampling pass
-    fasta = tmp_path / "ref.fasta"
-    fasta.write_text(">1\n" + "A" * L + "\n")
-
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, poly_pos, poly_der)
-    result = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=d, skip_non_polarized=False,
-                       subsample_mode="random", fasta=str(fasta),
-                       stratifications=[_ParityStratification()],
-                       target_site_counter=su.TargetSiteCounter(
-                           n_samples=60_000, n_target_sites=poly_pos.size + mono_pos.size)).parse()
-
-    assert isinstance(result, su.TwoSpectra)
-    assert sorted(result.types) == ["even", "odd"]
-
-    for t in ("even", "odd"):
-        data = result[t].data
-        # within-stratum polymorphic pairs are reproduced exactly
-        np.testing.assert_array_equal(data[1:, 1:], truth[t][1:, 1:])
-        # the per-stratum monomorphic pairs match the within-stratum ground truth
-        assert data[0, 0] == pytest.approx(truth[t][0, 0], rel=0.08)
-        assert data[0, 1:].sum() == pytest.approx(truth[t][0, 1:].sum(), rel=0.08)
-
-
-def test_stratified_two_sfs_target_site_counter_handles_all_skipped(tmp_path):
-    """When every site is filtered out, the stratified two-SFS + TargetSiteCounter must not attempt to count
-    target sites over an empty region (which would divide by an empty contig-bounds array), but return cleanly."""
-    Settings.disable_pbar = True
-
-    class _RejectAll(su.Filtration):
-        def filter_site(self, variant):
-            return False
-
-    L = 10_000
-    fasta = tmp_path / "ref.fasta"
-    fasta.write_text(">1\n" + "A" * L + "\n")
-
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, np.array([100, 500, 900]), np.array([1, 2, 1]))
-
-    result = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
-                       subsample_mode="random", fasta=str(fasta),
-                       stratifications=[_ParityStratification()], filtrations=[_RejectAll()],
-                       target_site_counter=su.TargetSiteCounter(n_samples=1_000, n_target_sites=5_000)).parse()
-
-    assert isinstance(result, su.TwoSpectra)
-    assert len(result.types) == 0
-
-
-def test_stratified_two_sfs_target_site_counter_includes_monomorphic_only_stratum(tmp_path):
-    """A stratum carrying target sites but no polymorphic pairs must still appear in the output, as a pure
-    monomorphic corner, and receive its share of the monomorphic budget."""
-    Settings.disable_pbar = True
-    L, d = 40_000, 1_000
-
-    # all polymorphic sites at even positions; the odd stratum has only monomorphic sites (no SNPs)
-    poly_pos = np.arange(4, L - 2, 40)  # even
-    poly_pos = poly_pos[poly_pos % 2 == 0]
-    poly_der = np.ones(poly_pos.size, dtype=int)
-    poly_der[::2] = 2
-    mono_pos = np.arange(5, L - 2, 7)  # a mix of even and odd positions
-    mono_pos = np.array(sorted(set(mono_pos.tolist()) - set(poly_pos.tolist())))
-    n_mono_odd = int((mono_pos % 2 == 1).sum())
-
-    fasta = tmp_path / "ref.fasta"
-    fasta.write_text(">1\n" + "A" * L + "\n")
-
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, poly_pos, poly_der)
-    result = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=d, skip_non_polarized=False,
-                       subsample_mode="random", fasta=str(fasta),
-                       stratifications=[_ParityStratification()],
-                       target_site_counter=su.TargetSiteCounter(
-                           n_samples=L, n_target_sites=poly_pos.size + mono_pos.size)).parse()
-
-    assert n_mono_odd > 0  # the fixture indeed has odd-position monomorphic sites
-    # the odd stratum has no polymorphic pairs but still appears, as a pure monomorphic corner
-    assert "odd" in result.types
-    odd = result["odd"].data
-    assert odd[1:, 1:].sum() == 0
-    assert odd[0, 0] > 0
-
-
-# --- tree-sequence region length -------------------------------------------------------------------
-
-@pytest.mark.skipif(not _has_tskit, reason="tskit is absent")
-def test_two_sfs_target_site_counter_uses_tree_sequence_length(tmp_path):
-    """For a tree-sequence source the region length is the genome length, not the span of the observed
-    polymorphic sites (which never reach the ends). This corrects the monomorphic density used to extrapolate
-    the two-SFS: a shorter, sites-only span would overestimate it."""
-    import tskit
-
-    Settings.disable_pbar = True
-    length = 5_000
-
-    # polymorphic sites confined to the middle of the genome; their span (1000) is well short of the length
-    tables = tskit.TableCollection(sequence_length=length)
-    tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0)
-    tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0)
-    root = tables.nodes.add_row(flags=0, time=1)
-    tables.edges.add_row(left=0, right=length, parent=root, child=0)
-    tables.edges.add_row(left=0, right=length, parent=root, child=1)
-    for pos in (2_000, 2_500, 3_000):
-        s = tables.sites.add_row(position=pos, ancestral_state="A")
-        tables.mutations.add_row(site=s, node=0, derived_state="T")
-    tables.sort()
-    ts = tables.tree_sequence()
-
-    parser = su.Parser(vcf=ts, n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
-                       subsample_mode="random",
-                       target_site_counter=su.TargetSiteCounter(n_target_sites=5_000))
-    result = parser.parse()
-
-    # the region length is the full genome, not the 1000 bp span of the polymorphic sites
-    assert parser._region_length() == float(length)
-    assert result.data[0, 0] > 0  # the monomorphic corner was populated using that length

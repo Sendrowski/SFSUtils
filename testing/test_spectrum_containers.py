@@ -95,40 +95,37 @@ def test_sfs2_mask_upper_masks_the_upper_triangle():
     assert masked[1, 0] == s.data[1, 0] and masked[2, 0] == s.data[2, 0] and masked[1, 1] == s.data[1, 1]
 
 
-def test_sfs2_interior_covariance_correlation_and_monomorphic_invariance():
-    """cov()/corr() return a full-size TwoSFS holding the class-resolved interior matrices (deviation
-    of the segregating joint from independence, and its standardization) with the monomorphic bins zeroed: they use
-    only the interior and ignore the monomorphic first/last row and column, so an independent (product-form)
-    interior gives an all-zero covariance/correlation, a diagonal (perfectly linked) interior gives a unit
-    correlation diagonal on the segregating classes, and adding arbitrary mass to the monomorphic bins changes
-    neither."""
-    m = np.array([1.0, 3.0, 2.0])  # a marginal over the three segregating classes (sample size n = 4)
+def test_sfs2_branch_length_cov_corr_full_spectrum_semantics():
+    """cov()/corr() are the class-resolved branch-length covariance/correlation ``Cov(L_i, L_j) = P(i, j) - P(i)
+    P(j)`` over the FULL spectrum (monomorphic bins included), returned over the segregating interior of a full-size
+    TwoSFS with the monomorphic bins zeroed. They require the monomorphic sites (they anchor the marginal to the
+    site-frequency spectrum), so a polymorphic-only spectrum raises; a spectrum whose full joint factorizes has
+    zero interior covariance; and the returned correlation has a unit diagonal on the segregating classes."""
+    # cov/corr require the monomorphic sites: a polymorphic-only 2-SFS (no monomorphic-involving pairs) raises
+    snp_only = np.zeros((6, 6)); snp_only[1:-1, 1:-1] = np.arange(1, 17).reshape(4, 4).astype(float)
+    with pytest.raises(ValueError):
+        su.TwoSFS(snp_only).cov()
+    with pytest.raises(ValueError):
+        su.TwoSFS(snp_only).corr()
 
-    # the result is a full-size TwoSFS with the covariance in the segregating interior
-    assert isinstance(su.TwoSFS(np.ones((5, 5))).cov(), su.TwoSFS)
-    assert su.TwoSFS(np.ones((5, 5))).cov().data.shape == (5, 5)
+    # a full joint that factorizes (independence including the monomorphic classes) has zero interior covariance:
+    # here P(i, j) = f_i f_j with f the monomorphic-dominated per-site class distribution. (The correlation is
+    # undefined in this degenerate case, since the branch-length variances are then exactly zero.)
+    f = np.array([90.0, 3.0, 2.0, 1.5, 1.0, 0.0])
+    indep = np.outer(f, f)
+    np.testing.assert_allclose(su.TwoSFS(indep).cov().data, 0.0, atol=1e-9)
 
-    # independent sites: P(i, j) = p_i p_j -> zero covariance and correlation everywhere
-    indep = np.zeros((5, 5)); indep[1:4, 1:4] = np.outer(m, m)
-    np.testing.assert_allclose(su.TwoSFS(indep).cov().data, 0.0, atol=1e-12)
-    np.testing.assert_allclose(su.TwoSFS(indep).corr().data, 0.0, atol=1e-12)
-
-    # perfectly linked (diagonal) interior: each class is identical at the two loci -> unit correlation diagonal
-    diag = np.zeros((5, 5)); diag[1:4, 1:4] = np.diag(m)
-    np.testing.assert_allclose(np.diag(su.TwoSFS(diag).corr().data)[1:-1], 1.0)
-    assert np.all(np.diag(su.TwoSFS(diag).cov().data)[1:-1] > 0)  # positive within-class variance
-
-    # the monomorphic first/last row and column are ignored entirely
-    for base in (indep, diag):
-        mono = base.copy()
-        mono[0, :] += 7.0; mono[:, 0] += 7.0; mono[-1, :] += 5.0; mono[:, -1] += 5.0
-        np.testing.assert_array_equal(su.TwoSFS(mono).cov().data, su.TwoSFS(base).cov().data)
-        np.testing.assert_array_equal(su.TwoSFS(mono).corr().data, su.TwoSFS(base).corr().data)
-
-    # a spectrum with a single segregating class has no marginal variance -> its correlation entry is returned as 0
-    single = su.TwoSFS(np.ones((3, 3)))
-    assert single.cov().data.shape == (3, 3)
-    assert single.corr().data[1, 1] == 0.0
+    # a full spectrum with real monomorphic mass and a segregating block: the result is a full-size TwoSFS with the
+    # monomorphic bins zeroed and a unit correlation diagonal on the segregating classes
+    rng = np.random.default_rng(0)
+    block = rng.random((4, 4)); block = block + block.T
+    S = np.zeros((6, 6)); S[0, 0] = 1000.0; S[1:-1, 1:-1] = block
+    S[0, 1:-1] = rng.random(4) * 20.0; S[1:-1, 0] = S[0, 1:-1]
+    corr = su.TwoSFS(S).corr().data
+    assert corr.shape == (6, 6)
+    assert not np.any(corr[0, :]) and not np.any(corr[-1, :])   # monomorphic bins zeroed
+    assert not np.any(corr[:, 0]) and not np.any(corr[:, -1])
+    np.testing.assert_allclose(np.diag(corr)[1:-1], 1.0)         # unit correlation diagonal
 
 
 def test_sfs2_plot_smoke():
