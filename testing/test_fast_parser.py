@@ -6,13 +6,13 @@ full reference genome, are covered in the inference/slow tiers.
 """
 import numpy as np
 
-import sfsutils as sf
+import sfsutils as su
 
 VCF = 'resources/genome/betula/all.polarized.subset.10000.vcf.gz'
 
 
 def test_parse_plain_sfs():
-    sfs = sf.Parser(vcf=VCF, n=10, max_sites=1000).parse()
+    sfs = su.Parser(vcf=VCF, n=10, max_sites=1000).parse()
 
     assert list(sfs.types) == ['all']
     # an SFS over n=10 haplotypes has n + 1 = 11 entries, all non-negative, with real sites
@@ -24,15 +24,15 @@ def test_parse_plain_sfs():
 
 def test_parse_subsample_smaller_n():
     # subsampling to a smaller n yields a correspondingly shorter SFS
-    sfs = sf.Parser(vcf=VCF, n=6, max_sites=1000).parse()
+    sfs = su.Parser(vcf=VCF, n=6, max_sites=1000).parse()
     assert len(sfs.all.to_list()) == 7
     assert sfs.n_sites.sum() > 0
 
 
 def test_parse_transition_transversion_stratification():
-    sfs = sf.Parser(
+    sfs = su.Parser(
         vcf=VCF, n=8, max_sites=1000,
-        stratifications=[sf.TransitionTransversionStratification()],
+        stratifications=[su.TransitionTransversionStratification()],
     ).parse()
 
     # both mutation classes are present and partition the sites

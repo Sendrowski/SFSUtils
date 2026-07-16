@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-import sfsutils as sf
+import sfsutils as su
 from sfsutils.io_handlers import count_sites
 from testing import TestCase, requires
 
@@ -21,10 +21,10 @@ class FiltrationTestCase(TestCase):
         """
         Test the SNP filtration.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_filter_snp_filtration.vcf',
-            filtrations=[sf.SNPFiltration()],
+            filtrations=[su.SNPFiltration()],
         )
 
         f.filter()
@@ -40,11 +40,11 @@ class FiltrationTestCase(TestCase):
         """
         Make sure the SNP filtration uses the sample mask from the parser.
         """
-        f = sf.SNPFiltration(
+        f = su.SNPFiltration(
             use_parser=True,
         )
 
-        p = sf.Parser(
+        p = su.Parser(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             filtrations=[f],
             n=10,
@@ -62,11 +62,11 @@ class FiltrationTestCase(TestCase):
         """
         Make sure the SNP filtration doesn't use the sample mask from the parser.
         """
-        f = sf.SNPFiltration(
+        f = su.SNPFiltration(
             use_parser=False,
         )
 
-        p = sf.Parser(
+        p = su.Parser(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             filtrations=[f],
             n=10,
@@ -84,11 +84,11 @@ class FiltrationTestCase(TestCase):
         """
         Make sure the SNP filtration uses the sample mask from the parser.
         """
-        f = sf.SNPFiltration(
+        f = su.SNPFiltration(
             include_samples=['ASP01', 'ASP02', 'ASP03']
         )
 
-        filterer = sf.Filterer(
+        filterer = su.Filterer(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_snp_filtration_include.vcf',
             filtrations=[f],
@@ -105,10 +105,10 @@ class FiltrationTestCase(TestCase):
         """
         Test the no poly-allelic filtration.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_filter_no_poly_allelic_filtration.vcf',
-            filtrations=[sf.PolyAllelicFiltration()],
+            filtrations=[su.PolyAllelicFiltration()],
         )
 
         f.filter()
@@ -125,10 +125,10 @@ class FiltrationTestCase(TestCase):
         """
         Test the annotator loading a VCF from a URL.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_filterer_load_vcf_from_url.vcf',
-            filtrations=[sf.PolyAllelicFiltration()]
+            filtrations=[su.PolyAllelicFiltration()]
         )
 
         f.filter()
@@ -143,10 +143,10 @@ class FiltrationTestCase(TestCase):
         """
         Test the annotator loading a VCF from a URL.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_deviant_outgroup_filtration.vcf',
-            filtrations=[sf.DeviantOutgroupFiltration(outgroups=["ERR2103730", "ERR2103731"])]
+            filtrations=[su.DeviantOutgroupFiltration(outgroups=["ERR2103730", "ERR2103731"])]
         )
 
         f.filter()
@@ -166,35 +166,35 @@ class FiltrationTestCase(TestCase):
 
         # test case 1: variant is not an SNP
         mock_variant.is_snp = False
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_masks()
         assert filter_obj.filter_site(mock_variant)  # expect True as the variant is not SNP
 
         # test case 2: variant is an SNP, strict mode is enabled and no outgroup sample is present
         mock_variant.is_snp = True
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'], strict_mode=True)
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'], strict_mode=True)
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_masks()
         mock_variant.gt_bases = np.array(['A/A', './.'])
         assert not filter_obj.filter_site(mock_variant)  # expect False as no outgroup sample is present
 
         # test case 3: variant is an SNP, strict mode is disabled and no outgroup sample is present
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'], strict_mode=False)
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'], strict_mode=False)
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_masks()
         mock_variant.gt_bases = np.array(['A/A', './.'])
         assert filter_obj.filter_site(mock_variant)  # # expect True as strict mode off and no outgroup sample present
 
         # test case 4: variant is an SNP and outgroup base is different from ingroup base
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_masks()
         mock_variant.gt_bases = np.array(['A/A', 'T/T'])
         assert not filter_obj.filter_site(mock_variant)  # expect False as outgroup base is different from ingroup base
 
         # test case 5: variant is an SNP and outgroup base is same as ingroup base
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_masks()
         mock_variant.gt_bases = np.array(['A/A', 'A/A'])
@@ -203,7 +203,7 @@ class FiltrationTestCase(TestCase):
         # test case 6: multiple ingroups and outgroups with matching major bases
         mock_variant = Mock(spec=Variant)
         mock_variant.is_snp = True
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
                                                   ingroups=['ingroup1', 'ingroup2'])
         filter_obj.samples = np.array(['ingroup1', 'ingroup2', 'outgroup1', 'outgroup2'])
         filter_obj._create_masks()
@@ -213,7 +213,7 @@ class FiltrationTestCase(TestCase):
         # test case 7: multiple ingroups and outgroups with differing major bases
         mock_variant = Mock(spec=Variant)
         mock_variant.is_snp = True
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
                                                   ingroups=['ingroup1', 'ingroup2'])
         filter_obj.samples = np.array(['ingroup1', 'ingroup2', 'outgroup1', 'outgroup2'])
         filter_obj._create_masks()
@@ -223,7 +223,7 @@ class FiltrationTestCase(TestCase):
         # test case 8: make sure we retain mono-allelic sites if retain_monomorphic is True
         mock_variant = Mock(spec=Variant)
         mock_variant.is_snp = False
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
                                                   ingroups=['ingroup1', 'ingroup2'], retain_monomorphic=True)
         filter_obj.samples = np.array(['ingroup1', 'ingroup2', 'outgroup1', 'outgroup2'])
         filter_obj._create_masks()
@@ -233,7 +233,7 @@ class FiltrationTestCase(TestCase):
         # test case 9: make sure we don't retain mono-allelic sites if retain_monomorphic is False
         mock_variant = Mock(spec=Variant)
         mock_variant.is_snp = False
-        filter_obj = sf.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
+        filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
                                                   ingroups=['ingroup1', 'ingroup2'], retain_monomorphic=False)
         filter_obj.samples = np.array(['ingroup1', 'ingroup2', 'outgroup1', 'outgroup2'])
         filter_obj._create_masks()
@@ -249,7 +249,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 1: variants has one fully defined outgroup sample
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1'])
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', 'T/T'])
@@ -257,7 +257,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 2: variants has one missing outgroup sample
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1'])
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', './.'])
@@ -265,7 +265,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 3: variants has one fully defined outgroup sample and one missing outgroup sample
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'])
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'])
         filter_obj.samples = np.array(['outgroup1', 'ingroup1', 'outgroup2'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['./.', 'A/A', 'T/T'])
@@ -273,7 +273,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 4: variants has one outgroup sample with one missing allele
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1'])
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', 'T/.'])
@@ -281,7 +281,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 5: variants has three outgroup samples with one missing allele each
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'])
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1', 'outgroup2', 'outgroup3'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', 'T/.', 'T/.', 'T/.'])
@@ -296,7 +296,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 6: n=2, one missing outgroup, extra unused sample -> should pass
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup2', 'outgroup3'], n_missing=2)
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup2', 'outgroup3'], n_missing=2)
         filter_obj.samples = np.array(['unused1', 'ingroup1', 'outgroup2', 'outgroup3', 'unused2'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', 'C/C', './.', 'T/T', 'G/G'])
@@ -304,7 +304,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 7: n=2, exactly two outgroups missing, shuffled sample order -> should fail
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup3', 'outgroup1'], n_missing=2)
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup3', 'outgroup1'], n_missing=2)
         filter_obj.samples = np.array(['ingroup1', 'outgroup3', 'unused1', 'outgroup1', 'unused2'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', './.', 'G/G', './.', 'T/T'])
@@ -312,7 +312,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 8: n=3, two missing outgroups, extra ingroup sample -> should pass
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'], n_missing=3)
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'], n_missing=3)
         filter_obj.samples = np.array(['ingroup1', 'outgroup1', 'ingroup2', 'outgroup2', 'outgroup3'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['A/A', './.', 'C/C', './.', 'T/T'])
@@ -320,7 +320,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 9: n=3, exactly three outgroups missing -> should fail
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'], n_missing=3)
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'], n_missing=3)
         filter_obj.samples = np.array(['outgroup1', 'ingroup1', 'outgroup2', 'outgroup3', 'unused1'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['./.', 'A/A', './.', './.', 'G/G'])
@@ -328,7 +328,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 10: n=3, mixed missing and defined outgroups, with unused samples -> should pass
         mock_variant = Mock(spec=Variant)
-        filter_obj = sf.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'], n_missing=3)
+        filter_obj = su.ExistingOutgroupFiltration(outgroups=['outgroup1', 'outgroup2', 'outgroup3'], n_missing=3)
         filter_obj.samples = np.array(['unused1', 'outgroup1', 'ingroup1', 'outgroup2', 'unused2', 'outgroup3'])
         filter_obj._create_mask()
         mock_variant.gt_bases = np.array(['G/G', './.', 'A/A', 'T/T', 'C/C', './.'])
@@ -339,7 +339,7 @@ class FiltrationTestCase(TestCase):
         """
         Test the SNP filtration.
         """
-        f = sf.SNPFiltration()
+        f = su.SNPFiltration()
 
         assert not f.filter_site(variant=Mock(is_snp=False))
         assert f.filter_site(variant=Mock(is_snp=True))
@@ -349,7 +349,7 @@ class FiltrationTestCase(TestCase):
         """
         Test the SNV filtration.
         """
-        f = sf.SNVFiltration()
+        f = su.SNVFiltration()
 
         assert not f.filter_site(variant=Mock(REF='AG', ALT=['A', 'G']))
         assert f.filter_site(variant=Mock(REF='A', ALT=['G']))
@@ -362,7 +362,7 @@ class FiltrationTestCase(TestCase):
         """
         Test the no poly-allelic filtration.
         """
-        f = sf.PolyAllelicFiltration()
+        f = su.PolyAllelicFiltration()
 
         assert not f.filter_site(variant=Mock(ALT=['T', 'G']))
         assert not f.filter_site(variant=Mock(ALT=['T', 'G', 'C']))
@@ -375,10 +375,10 @@ class FiltrationTestCase(TestCase):
         Test the coding sequence filtration.
         """
         with self.assertRaises(ValueError) as error:
-            f = sf.Filterer(
+            f = su.Filterer(
                 vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
                 output='scratch/test_coding_sequence_filtration.vcf',
-                filtrations=[sf.CodingSequenceFiltration()],
+                filtrations=[su.CodingSequenceFiltration()],
             )
 
             f.filter()
@@ -391,11 +391,11 @@ class FiltrationTestCase(TestCase):
         """
         Test the coding sequence filtration.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_coding_sequence_filtration.vcf',
             gff="resources/genome/betula/genome.gff.gz",
-            filtrations=[sf.CodingSequenceFiltration()],
+            filtrations=[su.CodingSequenceFiltration()],
         )
 
         f.filter()
@@ -411,7 +411,7 @@ class FiltrationTestCase(TestCase):
         """
         Test CpG-context detection, including dinucleotide boundaries, on mocked reference bases.
         """
-        is_cpg = sf.CpGFiltration._is_cpg
+        is_cpg = su.CpGFiltration._is_cpg
 
         # CpG context (positions are 1-based): C followed by G, or G preceded by C
         assert is_cpg("CG", 1, 'C') is True
@@ -438,7 +438,7 @@ class FiltrationTestCase(TestCase):
         handler.get_aliases.return_value = ['chr1']
         handler.get_contig.return_value = "GACGTCGCAG"
 
-        f = sf.CpGFiltration()
+        f = su.CpGFiltration()
         f._handler = handler
 
         def keep(pos, ref):
@@ -465,10 +465,10 @@ class FiltrationTestCase(TestCase):
         Test that the CpG filtration requires a FASTA.
         """
         with self.assertRaises(ValueError):
-            sf.Filterer(
+            su.Filterer(
                 vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
                 output='scratch/test_cpg_filtration_no_fasta.vcf',
-                filtrations=[sf.CpGFiltration()],
+                filtrations=[su.CpGFiltration()],
             ).filter()
 
     @requires('resources/genome/betula/biallelic.subset.10000.vcf.gz', 'resources/genome/betula/genome.fasta')
@@ -478,11 +478,11 @@ class FiltrationTestCase(TestCase):
         """
         Test the CpG filtration end-to-end, obtaining the FASTA from the filterer.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_cpg_filtration.vcf',
             fasta="resources/genome/betula/genome.fasta",
-            filtrations=[sf.CpGFiltration()],
+            filtrations=[su.CpGFiltration()],
         )
 
         f.filter()
@@ -498,10 +498,10 @@ class FiltrationTestCase(TestCase):
         """
         Test the existing outgroup filtration.
         """
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_existing_outgroup_filtration.vcf',
-            filtrations=[sf.ExistingOutgroupFiltration(outgroups=["ERR2103730", "ERR2103731"])]
+            filtrations=[su.ExistingOutgroupFiltration(outgroups=["ERR2103730", "ERR2103731"])]
         )
 
         f.filter()
@@ -515,7 +515,7 @@ class FiltrationTestCase(TestCase):
         """
         Test the SNV filtration.
         """
-        f = sf.BiasedGCConversionFiltration()
+        f = su.BiasedGCConversionFiltration()
 
         class VariantMock:
             """
@@ -552,7 +552,7 @@ class FiltrationTestCase(TestCase):
         """
         Test the contig filtration.
         """
-        f = sf.ContigFiltration(contigs=['chr1'])
+        f = su.ContigFiltration(contigs=['chr1'])
 
         self.assertTrue(f.filter_site(variant=Mock(CHROM='chr1')))
         self.assertFalse(f.filter_site(variant=Mock(CHROM='chr2')))

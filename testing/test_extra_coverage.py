@@ -7,7 +7,7 @@ import numpy as np
 import jsonpickle
 import pytest
 
-import sfsutils as sf
+import sfsutils as su
 from sfsutils import Spectrum, Spectra
 from sfsutils._parallelization import parallelize, check_bounds
 from sfsutils.io_handlers import DummyVariant
@@ -131,18 +131,18 @@ def _dummy(ref="A", alt=None):
 
 
 def test_snv_filtration_keeps_snv_drops_non_snv():
-    f = sf.SNVFiltration()
+    f = su.SNVFiltration()
     assert f.filter_site(_dummy(ref="A")) is np.True_ or f.filter_site(_dummy(ref="A"))
     assert not f.filter_site(_dummy(ref="AT"))
     assert not f.filter_site(_dummy(ref="A", alt=["<DEL>"]))
 
 
 def test_polyallelic_filtration_drops_multiallelic():
-    f = sf.PolyAllelicFiltration()
+    f = su.PolyAllelicFiltration()
     assert f.filter_site(_dummy(alt=["C"]))
     assert not f.filter_site(_dummy(alt=["C", "G"]))
 
 
 def test_all_and_no_filtration():
-    assert sf.AllFiltration().filter_site(_dummy()) is False
-    assert sf.NoFiltration().filter_site(_dummy()) is True
+    assert su.AllFiltration().filter_site(_dummy()) is False
+    assert su.NoFiltration().filter_site(_dummy()) is True

@@ -38,6 +38,6 @@ After installing the Python package, the ``sfsutils`` wrapper module can be load
 
 .. code-block:: r
 
-   sf <- load_sfsutils()
+   su <- load_sfsutils()
 
 See the R package documentation for more information on the available functions.

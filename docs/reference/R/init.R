@@ -12,6 +12,6 @@ library(sfsutils)
 
 setwd("~/PycharmProjects/SFSUtils/")
 
-sf <- load_sfsutils()
+su <- load_sfsutils()
 
-sf$Settings$disable_pbar <- TRUE
+su$Settings$disable_pbar <- TRUE

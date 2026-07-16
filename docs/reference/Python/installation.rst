@@ -26,4 +26,4 @@ You are now ready to use ``sfsutils``:
 
 .. code-block:: python
 
-    import sfsutils as sf
+    import sfsutils as su
