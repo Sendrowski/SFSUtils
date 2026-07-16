@@ -1356,6 +1356,10 @@ class TwoSFS(AbstractSpectrum):
     :class:`JointSFS`.
     """
 
+    # class-level defaults so jsonpickle can restore spectra serialized without these attributes
+    n = None
+    w = None
+
     def __init__(self, data: np.ndarray | list) -> None:
         """
         Construct from a data matrix.
@@ -1713,6 +1717,9 @@ class JointSFS(AbstractSpectrum):
     unlike the square :class:`TwoSFS`); for three populations it is a 3-dimensional array, and so on.
     """
 
+    # class-level default so jsonpickle can restore spectra serialized without population names
+    pop_names = None
+
     def __init__(self, data: np.ndarray | list, pop_names: List[str] = None) -> None:
         """
         Construct from a data array.
@@ -1736,6 +1743,15 @@ class JointSFS(AbstractSpectrum):
 
         #: Names of the populations (one per axis); falls back to ``pop_0, ..., pop_{P-1}`` if not provided.
         self.pop_names: List[str] = list(pop_names) if pop_names is not None else [f'pop_{i}' for i in range(data.ndim)]
+
+    def _names(self) -> List[str]:
+        """
+        The population names, resolving to ``pop_0, ..., pop_{P-1}`` for spectra restored (via jsonpickle) without
+        an explicit :attr:`pop_names`.
+
+        :return: One population name per axis.
+        """
+        return self.pop_names if self.pop_names is not None else [f'pop_{i}' for i in range(self.data.ndim)]
 
     @property
     def n_pops(self) -> int:
@@ -1819,7 +1835,7 @@ class JointSFS(AbstractSpectrum):
         # reorder the remaining axes (which are in ascending order) to match the requested order
         order = [sorted(keep).index(p) for p in keep]
 
-        return JointSFS(np.transpose(data, order), [self.pop_names[p] for p in keep])
+        return JointSFS(np.transpose(data, order), [self._names()[p] for p in keep])
 
     def plot(
             self,
@@ -1881,8 +1897,8 @@ class JointSFS(AbstractSpectrum):
 
         # put the origin at the bottom left
         ax.invert_yaxis()
-        ax.set_xlabel(f'allele count {self.pop_names[pops[1]]}')
-        ax.set_ylabel(f'allele count {self.pop_names[pops[0]]}')
+        ax.set_xlabel(f'allele count {self._names()[pops[1]]}')
+        ax.set_ylabel(f'allele count {self._names()[pops[0]]}')
 
         # square cells, a grey frame, and unobtrusive color bar ticks (as for the 2-SFS plot)
         ax.set_aspect('equal')
@@ -1949,8 +1965,8 @@ class JointSFS(AbstractSpectrum):
 
         ax.plot_surface(x_grid, y_grid, data, cmap=cmap, norm=LogNorm() if log_scale else None)
 
-        ax.set_xlabel(f'allele count {self.pop_names[pops[1]]}')
-        ax.set_ylabel(f'allele count {self.pop_names[pops[0]]}')
+        ax.set_xlabel(f'allele count {self._names()[pops[1]]}')
+        ax.set_ylabel(f'allele count {self._names()[pops[0]]}')
         ax.set_zlabel('branch length')
 
         if title is not None:
@@ -2064,7 +2080,7 @@ class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
         if not self.data:
             raise ValueError('Empty JointSpectra has no population names.')
 
-        return next(iter(self.data.values())).pop_names
+        return next(iter(self.data.values()))._names()
 
     @property
     def n_pops(self) -> int:

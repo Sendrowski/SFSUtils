@@ -756,8 +756,9 @@ class Filterer(MultiHandler):
         for f in self.filtrations:
             f._teardown()
 
-        # close the writer and reader
-        self._writer.close()
+        # close the writer and reader (guarded so an error mid-setup still releases what was opened)
+        if self._writer is not None:
+            self._writer.close()
         self._reader.close()
 
     def filter(self):
@@ -769,24 +770,26 @@ class Filterer(MultiHandler):
         # setup filtrations
         self._setup()
 
-        # get progress bar
-        with self.get_pbar(desc=f"{self.__class__.__name__}>Processing sites") as pbar:
+        # tear down (closing the writer) even if iteration raises, so the output is not left unflushed
+        try:
+            # get progress bar
+            with self.get_pbar(desc=f"{self.__class__.__name__}>Processing sites") as pbar:
 
-            # iterate over the sites
-            for i, variant in enumerate(self._reader):
+                # iterate over the sites
+                for i, variant in enumerate(self._reader):
 
-                if self.is_filtered(variant):
-                    # write the variant
-                    self._writer.write(variant)
+                    if self.is_filtered(variant):
+                        # write the variant
+                        self._writer.write(variant)
 
-                pbar.update()
+                    pbar.update()
 
-                # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
-                # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
-                if i + 1 == self.n_sites or i + 1 == self.max_sites:
-                    break
-
-        # teardown filtrations
-        self._teardown()
+                    # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
+                    # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
+                    if i + 1 == self.n_sites or i + 1 == self.max_sites:
+                        break
+        finally:
+            # teardown filtrations
+            self._teardown()
 
         self._logger.info(f'Filtered out {self.n_filtered} of {self.n_sites} sites in total.')

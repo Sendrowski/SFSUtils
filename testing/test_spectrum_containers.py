@@ -157,6 +157,35 @@ def test_jointsfs_roundtrip_and_copy_type(tmp_path):
     assert type(j.copy()) is su.JointSFS
 
 
+def test_jointsfs_restores_without_pop_names():
+    """A JointSFS serialized without pop_names (legacy or cross-version JSON) must restore and resolve default
+    names rather than raising AttributeError, per the backward-compat class-attribute convention."""
+    import json
+
+    j = su.JointSFS(np.arange(6).reshape(2, 3), pop_names=["A", "B"])
+    payload = json.loads(j.to_json())
+    payload.pop("pop_names", None)  # simulate JSON that predates the attribute
+    loaded = su.JointSFS.from_json(json.dumps(payload))
+
+    assert loaded.pop_names is None  # the raw attribute is absent
+    assert loaded._names() == ["pop_0", "pop_1"]  # but consumers resolve defaults
+    assert loaded.plot(show=False) is not None  # and plotting no longer raises
+    plt.close('all')
+
+
+def test_two_sfs_restores_without_n_w():
+    """A TwoSFS serialized without n/w restores via the class-level defaults instead of raising AttributeError."""
+    import json
+
+    s = su.TwoSFS(np.arange(9).reshape(3, 3))
+    payload = json.loads(s.to_json())
+    for k in ("n", "w"):
+        payload.pop(k, None)
+    loaded = su.TwoSFS.from_json(json.dumps(payload))
+
+    assert np.array_equal(loaded.data, s.data)
+
+
 def test_jointsfs_plot_smoke():
     j = su.JointSFS(np.arange(9).reshape(3, 3).astype(float), pop_names=["A", "B"])
     assert j.plot(show=False) is not None

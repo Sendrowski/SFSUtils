@@ -656,6 +656,12 @@ class TargetSiteCounter:
         For the stratified two-SFS the monomorphic sites are apportioned across strata assuming each stratum's sites
         are uniformly distributed at their own density. This is exact for interspersed strata but only approximate
         for spatially clustered ones (for example coding versus non-coding).
+
+    .. note::
+        The two-SFS monomorphic extrapolation assumes each site sees a full pairing window of monomorphic partners,
+        which biases the estimate upward near contig ends. The bias is negligible for regions long relative to the
+        two-SFS distance, but becomes substantial when contigs are of a length comparable to it (as pairs never cross
+        contig boundaries).
     """
 
     def __init__(
@@ -903,7 +909,8 @@ class TargetSiteCounter:
         if n_monomorphic <= 0:
             self._logger.warning(f"The number of target sites ({self.n_target_sites}) does not exceed the number "
                                  f"of observed sites ({n_observed:.0f}); the joint SFS is left unchanged.")
-            return {t: np.array(arr, dtype=float) for t, arr in sfs.items()}
+            # return the pre-sampling polymorphic spectrum; ``sfs`` has the sampled monomorphic mass at the origin
+            return {t: np.array(_before(t), dtype=float) for t in sfs}
 
         # monomorphic mass sampled from the FASTA file per type (added at the origin during sampling)
         sampled = {t: float(sfs[t][origin] - _before(t)[origin]) for t in sfs}

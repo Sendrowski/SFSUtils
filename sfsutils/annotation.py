@@ -4454,8 +4454,9 @@ class Annotator(MultiHandler):
         for annotation in self.annotations:
             annotation._teardown()
 
-        # close the writer and reader
-        self._writer.close()
+        # close the writer and reader (guarded so an error mid-setup still releases what was opened)
+        if self._writer is not None:
+            self._writer.close()
         self._reader.close()
 
     def annotate(self):
@@ -4467,26 +4468,28 @@ class Annotator(MultiHandler):
         # set up the annotator
         self._setup()
 
-        # get progress bar
-        with self.get_pbar(desc=f"{self.__class__.__name__}>Processing sites") as pbar:
+        # tear down (closing the writer) even if iteration raises, so the output is not left unflushed
+        try:
+            # get progress bar
+            with self.get_pbar(desc=f"{self.__class__.__name__}>Processing sites") as pbar:
 
-            # iterate over the sites
-            for i, variant in enumerate(self._reader):
+                # iterate over the sites
+                for i, variant in enumerate(self._reader):
 
-                # apply annotations
-                for annotation in self.annotations:
-                    annotation.annotate_site(variant)
+                    # apply annotations
+                    for annotation in self.annotations:
+                        annotation.annotate_site(variant)
 
-                # write the variant
-                self._writer.write(variant)
+                    # write the variant
+                    self._writer.write(variant)
 
-                # update the progress bar
-                pbar.update()
+                    # update the progress bar
+                    pbar.update()
 
-                # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
-                # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
-                if i + 1 == self.n_sites or i + 1 == self.max_sites:
-                    break
-
-        # tear down the annotator
-        self._teardown()
+                    # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
+                    # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
+                    if i + 1 == self.n_sites or i + 1 == self.max_sites:
+                        break
+        finally:
+            # tear down the annotator
+            self._teardown()
