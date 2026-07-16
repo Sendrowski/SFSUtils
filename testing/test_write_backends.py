@@ -104,6 +104,80 @@ def test_zarr_writer_persists_info_ancestral(tmp_path):
     assert [v.POS for v in variants] == [10, 20]
 
 
+@requires_zarr
+def test_zarr_writer_handles_large_positions(tmp_path):
+    """Positions beyond the int32 range must round-trip exactly (large-genome contigs exceed 2^31 bp)."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    big = 3_000_000_000  # > 2^31 - 1
+    out = str(tmp_path / "big.vcz")
+    writer = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    writer.write(Variant(ref="A", pos=big, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True))
+    writer.close()
+
+    assert [v.POS for v in ZarrVariantReader(out)] == [big]
+
+
+@requires_zarr
+def test_zarr_writer_skips_reserved_info_names(tmp_path):
+    """An INFO field whose name would collide with a reserved coordinate dataset must be skipped, leaving the
+    real positions intact rather than overwriting them with strings."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "reserved.vcz")
+    writer = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    writer.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True,
+                         info={"position": "junk", "AA": "A"}))
+    writer.write(Variant(ref="C", pos=20, chrom="1", gt_bases=["G|G"], alt=["G"], is_snp=True,
+                         info={"position": "junk", "AA": "G"}))
+    writer.close()
+
+    variants = list(ZarrVariantReader(out, info_ancestral="AA"))
+    assert [v.POS for v in variants] == [10, 20]  # not clobbered by the 'position' INFO field
+    assert [v.INFO["AA"] for v in variants] == ["A", "G"]
+
+
+@requires_trees
+def test_tree_sequence_to_zarr_preserves_phasing(tmp_path):
+    """Tree-sequence haplotypes are phased; the tskit reader emits '|' so a written store records phased genotypes."""
+    import tskit
+    from sfsutils.io_handlers import TskitVariantReader
+
+    variants = list(TskitVariantReader(tskit.load(TREES)))
+    assert variants and all("|" in str(gt) for v in variants for gt in v.gt_bases)
+
+    out = _filter(TREES, str(tmp_path / "phased.vcz"), [su.SNPFiltration()])
+    import zarr
+    root = zarr.open(out, mode="r")
+    assert bool(root["call_genotype_phased"][:].all())
+
+
+@pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
+def test_filterer_closes_writer_on_exception(tmp_path):
+    """If a filtration raises mid-stream, the writer is still closed (finally), so the partial output is a complete,
+    readable file rather than an unflushed, truncated one."""
+    Settings.disable_pbar = True
+
+    class _BoomAfterOne(su.Filtration):
+        def __init__(self):
+            super().__init__()
+            self._seen = 0
+
+        def filter_site(self, variant):
+            self._seen += 1
+            if self._seen > 1:
+                raise RuntimeError("boom")
+            return True
+
+    out = str(tmp_path / "partial.vcf")
+    with pytest.raises(RuntimeError, match="boom"):
+        su.Filterer(vcf=VCF, output=out, filtrations=[_BoomAfterOne()]).filter()
+
+    assert os.path.exists(out)
+    from cyvcf2 import VCF as CyVCF
+    assert len(list(CyVCF(out))) == 1  # the one site written before the error was flushed by close()
+
+
 # --- tree-sequence output (from tree-sequence input only) ------------------------------------------
 
 @requires_trees

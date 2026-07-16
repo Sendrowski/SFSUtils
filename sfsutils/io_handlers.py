@@ -1146,7 +1146,8 @@ class TskitVariantReader(VariantReader):
             genotypes = var.genotypes
 
             gt_bases = np.array([
-                "/".join(
+                # tree-sequence haplotypes within an individual are ordered, hence phased ('|'), as in write_vcf
+                "|".join(
                     alleles[genotypes[self._node_col[node]]]
                     if genotypes[self._node_col[node]] >= 0 and alleles[genotypes[self._node_col[node]]]
                     else "."
@@ -1404,6 +1405,7 @@ class ZarrVariantWriter(VariantWriter):
             )
 
         self._output = output
+        self._logger = logger.getChild(self.__class__.__name__)
         self._samples = list(samples)
         self._contig_ids = list(seqnames)
         self._contig_index = {c: i for i, c in enumerate(self._contig_ids)}
@@ -1465,10 +1467,12 @@ class ZarrVariantWriter(VariantWriter):
         ploidy = max((len(call) for rows in self._genotypes for call in rows), default=2)
         max_alleles = max((len(a) for a in self._alleles), default=1)
 
-        root.create_dataset('variant_position', data=np.array(self._positions, dtype=np.int32), overwrite=True)
-        root.create_dataset('variant_contig', data=np.array(self._contigs, dtype=np.int32), overwrite=True)
+        root.create_dataset('variant_position', data=np.array(self._positions, dtype=np.int64), overwrite=True)
+        root.create_dataset('variant_contig', data=np.array(self._contigs, dtype=np.int64), overwrite=True)
 
-        genotype = np.full((n, n_samples, ploidy), -1, dtype=np.int8)
+        # size the allele-index dtype to the data so many-allele sites do not wrap
+        gt_dtype = np.int8 if max_alleles <= np.iinfo(np.int8).max else np.int32
+        genotype = np.full((n, n_samples, ploidy), -1, dtype=gt_dtype)
         phased = np.zeros((n, n_samples), dtype=bool)
         for vi, (rows, ph) in enumerate(zip(self._genotypes, self._phased)):
             for si, call in enumerate(rows):
@@ -1483,10 +1487,20 @@ class ZarrVariantWriter(VariantWriter):
             allele[vi, :len(a)] = a
         root.create_dataset('variant_allele', data=allele, object_codec=codec, overwrite=True)
 
-        # persist any INFO fields (e.g. an annotated ancestral allele) as variant_<tag> string arrays
+        # persist any INFO fields (e.g. an annotated ancestral allele) as variant_<tag> string arrays,
+        # skipping any whose name would collide with a reserved coordinate/allele/genotype dataset
+        reserved = {'variant_position', 'variant_contig', 'variant_allele',
+                    'call_genotype', 'call_genotype_phased', 'sample_id', 'contig_id'}
         info_keys = sorted({k for info in self._infos for k in info})
         for key in info_keys:
-            _str_array(f'variant_{key}', [str(info.get(key, '')) for info in self._infos])
+            name = f'variant_{key}'
+
+            if name in reserved:
+                self._logger.warning(f"Skipping INFO field '{key}': it collides with the reserved VCF-Zarr "
+                                     f"dataset '{name}'.")
+                continue
+
+            _str_array(name, [str(info.get(key, '')) for info in self._infos])
 
 
 class TskitVariantWriter(VariantWriter):

@@ -224,6 +224,27 @@ def test_joint_target_site_counter_sets_corner_exactly():
     np.testing.assert_allclose(with_no_corner, without_no_corner)
 
 
+@pytest.mark.skipif(not (os.path.exists(REF) and os.path.exists(VCF)),
+                    reason="the reference FASTA / VCF fixture is absent")
+def test_joint_target_site_counter_degenerate_leaves_corner_unchanged():
+    """When the target-site count does not exceed the polymorphic count (a misconfiguration), the joint SFS must be
+    left as the observed polymorphic spectrum, not contaminated by the monomorphic sites sampled during counting."""
+    Settings.disable_pbar = True
+    pops = {"A": [f"tsk_{i}" for i in range(5)], "B": [f"tsk_{i}" for i in range(5, 10)]}
+    kw = dict(vcf=VCF, pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
+
+    without = su.Parser(**kw).parse()["all"].data
+    n_poly = int(without.sum())
+
+    # n_target_sites below the polymorphic count triggers the degenerate branch; a large n_samples would inflate the
+    # origin if the sampled monomorphic mass leaked through
+    degenerate = su.Parser(**kw, fasta=REF,
+                           target_site_counter=su.TargetSiteCounter(n_samples=100_000,
+                                                                    n_target_sites=n_poly - 1)).parse()["all"].data
+
+    np.testing.assert_allclose(degenerate, without)
+
+
 # --- varying SNP densities -------------------------------------------------------------------------
 
 @pytest.mark.parametrize("n_poly,n_mono", [
