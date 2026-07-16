@@ -1367,7 +1367,9 @@ class TwoSFS(AbstractSpectrum):
         :param data: A square 2-dimensional array.
         :raises ValueError: If the data is not a square 2-dimensional array.
         """
-        data = np.array(data).copy()
+        # store as float so operations that assign a NaN fill value (fill_monomorphic, mask_diagonal, mask_upper)
+        # work regardless of the input dtype
+        data = np.array(data, dtype=float)
 
         if data.ndim != 2:
             raise ValueError('Data has to be 2-dimensional.')
@@ -1527,27 +1529,36 @@ class TwoSFS(AbstractSpectrum):
     def _branch_length_covariance(self) -> np.ndarray:
         """
         The full-spectrum branch-length covariance ``Cov(L_i, L_j) = P(i, j) - P(i) P(j)``, where ``P`` is the
-        two-SFS normalized over *all* pairs (monomorphic bins included) and ``P(i)`` is its marginal. Because every
-        site pairs with the same window of partners, that marginal equals the one-dimensional site-frequency
-        spectrum, so the interior block of this matrix is the genuine class-resolved branch-length covariance
+        two-SFS normalized over *all* pairs (monomorphic bins included) and ``P(i)`` is its marginal. For a two-SFS
+        in which every site pairs with the same number of window partners, that marginal equals the one-dimensional
+        site-frequency spectrum, so the interior block of this matrix is the class-resolved branch-length covariance
         between two linked sites, matching PhaseGen's ``sfs2.mean - outer(sfs.mean, sfs.mean)`` up to the (constant)
-        mutational scale.
+        mutational scale. The marginal only approximates the site-frequency spectrum where sites pair with unequal
+        partner counts (within a pairing window of a contig boundary, or in sparse regions); the deviation is
+        negligible when the pairing window is small relative to the region.
 
-        This requires the monomorphic sites: they anchor the marginal to the true per-site class distribution.
-        Without them the marginal collapses to the polymorphic-only distribution and the interior deviation is the
-        model-blind conditional joint, which does not recover the coalescent signal.
+        This requires the monomorphic sites: they anchor the marginal to the per-site class distribution. Without
+        them the marginal collapses to the polymorphic-only distribution and the interior deviation is the
+        model-blind conditional joint, which does not recover the coalescent signal. The two-SFS is symmetrized here
+        (it counts unordered site pairs), so the covariance is symmetric regardless of the input.
 
         :return: The full ``(n + 1) x (n + 1)`` covariance matrix.
-        :raises ValueError: If the 2-SFS is empty or carries no monomorphic-involving pairs.
+        :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
         """
-        total = self.data.sum()
+        # a two-SFS counts unordered site pairs, so symmetrize; this makes the row and column marginals (the SFS)
+        # coincide and the covariance symmetric even for a directly-constructed asymmetric matrix
+        data = self.data + self.data.T
+        total = data.sum()
+
+        if not np.isfinite(total):
+            raise ValueError('The 2-SFS contains non-finite values (NaN or inf).')
 
         if total == 0:
             raise ValueError('The 2-SFS is empty.')
 
         # the two monomorphic bins (first and last row/column) must carry mass: they anchor the marginal to the
         # site-frequency spectrum. Their absence (a polymorphic-only spectrum) leaves the covariance undefined.
-        border = np.concatenate([self.data[[0, -1], :].ravel(), self.data[:, [0, -1]].ravel()])
+        border = np.concatenate([data[[0, -1], :].ravel(), data[:, [0, -1]].ravel()])
         if not np.any(border):
             raise ValueError(
                 'The 2-SFS carries no monomorphic-involving pairs, so the branch-length covariance/correlation is '
@@ -1555,9 +1566,10 @@ class TwoSFS(AbstractSpectrum):
                 'with the monomorphic (invariant) sites specified.'
             )
 
-        p = self.data.astype(float) / total
+        p = data / total
+        m = p.sum(axis=0)
 
-        return p - np.outer(p.sum(axis=1), p.sum(axis=0))
+        return p - np.outer(m, m)
 
     def cov(self) -> 'TwoSFS':
         """
@@ -1571,10 +1583,11 @@ class TwoSFS(AbstractSpectrum):
         normalization.
 
         This requires the monomorphic sites to be present: parse an all-sites input with the monomorphic
-        (invariant) sites specified.
+        (invariant) sites specified. For a valid two-SFS the interior diagonal is a nonnegative branch-length
+        variance; an arbitrary (non-coalescent) input can give a non-positive-semidefinite result.
 
         :return: The branch-length covariance over the interior, embedded in a full-size :class:`TwoSFS`.
-        :raises ValueError: If the 2-SFS is empty or carries no monomorphic-involving pairs.
+        :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
         """
         return self._embed(self._branch_length_covariance()[1:-1, 1:-1])
 
@@ -1582,21 +1595,29 @@ class TwoSFS(AbstractSpectrum):
         """
         The class-resolved branch-length correlation corresponding to :meth:`cov`: ``R[i, j] = Cov(L_i, L_j) /
         sqrt(Var(L_i) Var(L_j))`` over the segregating interior, standardized by the branch-length variances (the
-        interior diagonal of the full-spectrum covariance). Each entry lies in ``[-1, 1]``; the diagonal is one.
-        It matches PhaseGen's branch-length correlation and, like :meth:`cov`, requires the monomorphic sites.
-        Classes with no branch-length variance are returned as zero.
+        interior diagonal of the full-spectrum covariance). For a valid (coalescent) two-SFS this is a proper
+        correlation, matching PhaseGen's branch-length correlation, with entries in ``[-1, 1]`` and a unit diagonal.
+        Like :meth:`cov`, it requires the monomorphic sites. Classes with negligible branch-length variance are
+        returned as zero, and because the underlying quantity is a cross-covariance between the two loci (not a
+        within-locus covariance matrix), the entries are clipped to ``[-1, 1]`` as a safeguard for arbitrary input.
 
         :return: The branch-length correlation over the interior, embedded in a full-size :class:`TwoSFS`.
-        :raises ValueError: If the 2-SFS is empty or carries no monomorphic-involving pairs.
+        :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
         """
         c = self._branch_length_covariance()
-        sd = np.sqrt(np.clip(np.diag(c), 0.0, None))
+        var = np.clip(np.diag(c), 0.0, None)
+
+        # treat a class whose branch-length variance is negligible relative to the covariance scale as having no
+        # variance (return zero for it) rather than dividing by ~0 and amplifying noise
+        floor = 1e-10 * np.abs(c).max()
+        sd = np.sqrt(np.where(var > floor, var, 0.0))
         denom = np.outer(sd, sd)
 
         with np.errstate(divide='ignore', invalid='ignore'):
             r = np.where(denom > 0, c / denom, 0.0)
 
-        return self._embed(r[1:-1, 1:-1])
+        # the standardized cross-covariance is not Cauchy-Schwarz bounded for a non-coalescent input, so clip
+        return self._embed(np.clip(r, -1.0, 1.0)[1:-1, 1:-1])
 
     def fill_monomorphic(self, fill_value=np.nan) -> 'TwoSFS':
         """
