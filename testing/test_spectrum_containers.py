@@ -96,7 +96,7 @@ def test_sfs2_mask_upper_masks_the_upper_triangle():
 
 
 def test_sfs2_interior_covariance_correlation_and_monomorphic_invariance():
-    """covariance()/correlation() return a full-size TwoSFS holding the class-resolved interior matrices (deviation
+    """cov()/corr() return a full-size TwoSFS holding the class-resolved interior matrices (deviation
     of the segregating joint from independence, and its standardization) with the monomorphic bins zeroed: they use
     only the interior and ignore the monomorphic first/last row and column, so an independent (product-form)
     interior gives an all-zero covariance/correlation, a diagonal (perfectly linked) interior gives a unit
@@ -105,30 +105,30 @@ def test_sfs2_interior_covariance_correlation_and_monomorphic_invariance():
     m = np.array([1.0, 3.0, 2.0])  # a marginal over the three segregating classes (sample size n = 4)
 
     # the result is a full-size TwoSFS with the covariance in the segregating interior
-    assert isinstance(su.TwoSFS(np.ones((5, 5))).covariance(), su.TwoSFS)
-    assert su.TwoSFS(np.ones((5, 5))).covariance().data.shape == (5, 5)
+    assert isinstance(su.TwoSFS(np.ones((5, 5))).cov(), su.TwoSFS)
+    assert su.TwoSFS(np.ones((5, 5))).cov().data.shape == (5, 5)
 
     # independent sites: P(i, j) = p_i p_j -> zero covariance and correlation everywhere
     indep = np.zeros((5, 5)); indep[1:4, 1:4] = np.outer(m, m)
-    np.testing.assert_allclose(su.TwoSFS(indep).covariance().data, 0.0, atol=1e-12)
-    np.testing.assert_allclose(su.TwoSFS(indep).correlation().data, 0.0, atol=1e-12)
+    np.testing.assert_allclose(su.TwoSFS(indep).cov().data, 0.0, atol=1e-12)
+    np.testing.assert_allclose(su.TwoSFS(indep).corr().data, 0.0, atol=1e-12)
 
     # perfectly linked (diagonal) interior: each class is identical at the two loci -> unit correlation diagonal
     diag = np.zeros((5, 5)); diag[1:4, 1:4] = np.diag(m)
-    np.testing.assert_allclose(np.diag(su.TwoSFS(diag).correlation().data)[1:-1], 1.0)
-    assert np.all(np.diag(su.TwoSFS(diag).covariance().data)[1:-1] > 0)  # positive within-class variance
+    np.testing.assert_allclose(np.diag(su.TwoSFS(diag).corr().data)[1:-1], 1.0)
+    assert np.all(np.diag(su.TwoSFS(diag).cov().data)[1:-1] > 0)  # positive within-class variance
 
     # the monomorphic first/last row and column are ignored entirely
     for base in (indep, diag):
         mono = base.copy()
         mono[0, :] += 7.0; mono[:, 0] += 7.0; mono[-1, :] += 5.0; mono[:, -1] += 5.0
-        np.testing.assert_array_equal(su.TwoSFS(mono).covariance().data, su.TwoSFS(base).covariance().data)
-        np.testing.assert_array_equal(su.TwoSFS(mono).correlation().data, su.TwoSFS(base).correlation().data)
+        np.testing.assert_array_equal(su.TwoSFS(mono).cov().data, su.TwoSFS(base).cov().data)
+        np.testing.assert_array_equal(su.TwoSFS(mono).corr().data, su.TwoSFS(base).corr().data)
 
     # a spectrum with a single segregating class has no marginal variance -> its correlation entry is returned as 0
     single = su.TwoSFS(np.ones((3, 3)))
-    assert single.covariance().data.shape == (3, 3)
-    assert single.correlation().data[1, 1] == 0.0
+    assert single.cov().data.shape == (3, 3)
+    assert single.corr().data[1, 1] == 0.0
 
 
 def test_sfs2_plot_smoke():

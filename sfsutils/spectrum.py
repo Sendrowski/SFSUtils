@@ -1524,7 +1524,7 @@ class TwoSFS(AbstractSpectrum):
 
         return TwoSFS(data)
 
-    def covariance(self) -> 'TwoSFS':
+    def cov(self) -> 'TwoSFS':
         """
         The covariance matrix of the derived-allele-count classes between two linked polymorphic sites, as a
         :class:`TwoSFS`: the deviation of the interior joint distribution from independence, ``C[i, j] = P(i, j) -
@@ -1532,22 +1532,25 @@ class TwoSFS(AbstractSpectrum):
         positive entry marks a pair of frequency classes that co-occurs at linked sites more often than under
         independence, i.e. the two-locus branch-length correlation resolved by class. It is computed from the
         interior block alone (see :meth:`interior`), so it is independent of the monomorphic sites and of any
-        :class:`~sfsutils.parser.TargetSiteCounter` used to obtain the spectrum.
+        :class:`~sfsutils.parser.TargetSiteCounter` used to obtain the spectrum, and is well-defined even when the
+        spectrum carries no monomorphic pairs at all (the usual SNP-only case). The only degenerate input is an empty
+        interior (no polymorphic-polymorphic pairs), for which :meth:`interior` raises.
 
         :return: The covariance matrix, embedded in a full-size :class:`TwoSFS`.
+        :raises ValueError: If the interior (segregating) block is empty.
         """
         p = self.interior(normalize=True)
 
         return self._embed(p - np.outer(p.sum(axis=1), p.sum(axis=0)))
 
-    def correlation(self) -> 'TwoSFS':
+    def corr(self) -> 'TwoSFS':
         """
-        The correlation matrix corresponding to :meth:`covariance`, as a :class:`TwoSFS`. Because this is a
+        The correlation matrix corresponding to :meth:`cov`, as a :class:`TwoSFS`. Because this is a
         *cross*-covariance between two loci, each segregating class is standardized by its marginal (indicator)
         standard deviation, giving the Pearson correlation of class membership between the two sites: ``R[i, j] =
         (P(i, j) - P(i) P(j)) / sqrt(P(i)(1 - P(i)) P(j)(1 - P(j)))``. Each entry lies in ``[-1, 1]`` and the
         diagonal is the cross-locus correlation of same-class membership (below one unless the sites are perfectly
-        linked). Like :meth:`covariance`, it uses only the interior block and is therefore independent of the
+        linked). Like :meth:`cov`, it uses only the interior block and is therefore independent of the
         monomorphic sites and of any target-site count. Entries of a class with no marginal variance (a degenerate
         single-class spectrum) are zero.
 
