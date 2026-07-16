@@ -106,3 +106,48 @@ def test_two_sfs_converges_to_phasegen_expectation(name):
     with_mono[-1, :] += 1e6; with_mono[:, -1] += 1e6    # and the all-derived bin
     np.testing.assert_array_equal(su.TwoSFS(with_mono).covariance().data, parsed.covariance().data)  # untouched
     np.testing.assert_array_equal(su.TwoSFS(with_mono).correlation().data, parsed.correlation().data)
+
+
+@pytest.mark.slow
+def test_two_sfs_matches_phasegen_with_recombination():
+    """A two-SFS validation that is NOT based on a single genealogy. Simulate a recombining sequence (each replicate
+    spans many distinct trees), pool the parser's two-SFS over pairs of sites at a fixed genetic distance, and check
+    it matches PhaseGen's exact two-locus SFS at the corresponding recombination rate ``rho = Ne * r * d``. PhaseGen
+    scales recombination so that a linked lineage recombines at rate ``rho`` per coalescent time unit; with the unit
+    population size used here (as for the rho = 0 test), that is ``Ne * r * d`` for two sites at distance ``d``.
+    Recombination must have visibly decorrelated the two loci relative to the fully linked (rho = 0) limit."""
+    import msprime
+    import phasegen as pg
+
+    Settings.disable_pbar = True
+    n, ne, r, mu = 4, 1.0, 1e-3, 1e-3
+    seq_len, reps, seed = 20_000, 2_500, 11
+    offset, width = 800, 400
+    rho = ne * r * (offset + width / 2)  # = 1.0, the two-locus recombination rate for pairs in this window
+
+    emp = np.zeros((n + 1, n + 1))
+    total_trees = 0
+    trees = msprime.sim_ancestry(samples=n, ploidy=1, population_size=ne, sequence_length=seq_len,
+                                 recombination_rate=r, num_replicates=reps, random_seed=seed)
+    for i, ts in enumerate(trees):
+        total_trees += ts.num_trees
+        mts = msprime.sim_mutations(ts, rate=mu, discrete_genome=False, random_seed=seed + 1 + i)
+        if mts.num_sites < 2:
+            continue
+        emp += su.Parser(vcf=mts, n=n, two_sfs=True, two_sfs_offset=offset, two_sfs_distance=width,
+                         skip_non_polarized=False, subsample_mode="random").parse().data
+
+    assert total_trees > 3 * reps  # the sequence genuinely recombines: many distinct genealogies, not one tree
+    parsed = su.TwoSFS(emp)
+    at_rho = su.TwoSFS(np.asarray(pg.Coalescent(n=n, loci=2, recombination_rate=rho).sfs2.mean.data))
+    at_zero = su.TwoSFS(np.asarray(pg.Coalescent(n=n, loci=2, recombination_rate=0.0).sfs2.mean.data))
+
+    # the pooled two-SFS matches PhaseGen at the recombination rate implied by the genetic distance
+    np.testing.assert_allclose(parsed.covariance().data, at_rho.covariance().data, atol=0.01)
+    np.testing.assert_allclose(parsed.correlation().data, at_rho.correlation().data, atol=0.04)
+
+    # and this is a real recombination signal, not the single-tree limit: the parsed correlation is far closer to
+    # the rho = 1 expectation than to the fully linked rho = 0 one (which recombination has decorrelated away)
+    to_rho = np.abs(parsed.correlation().data - at_rho.correlation().data).max()
+    to_zero = np.abs(parsed.correlation().data - at_zero.correlation().data).max()
+    assert to_rho < 0.3 * to_zero
