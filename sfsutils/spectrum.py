@@ -1511,31 +1511,47 @@ class TwoSFS(AbstractSpectrum):
 
         return interior / total
 
-    def covariance(self) -> np.ndarray:
+    def _embed(self, interior: np.ndarray) -> 'TwoSFS':
         """
-        The covariance matrix of the derived-allele-count classes between two linked polymorphic sites: the
-        deviation of the interior joint distribution from independence, ``C[i, j] = P(i, j) - P(i) P(j)`` for
-        segregating classes ``i, j = 1, ..., n - 1``. A positive entry marks a pair of frequency classes that
-        co-occurs at linked sites more often than under independence, i.e. the two-locus branch-length correlation
-        resolved by class. It is computed from the interior block alone (see :meth:`interior`), so it is
-        independent of the monomorphic sites and of any :class:`~sfsutils.parser.TargetSiteCounter` used to obtain
-        the spectrum.
+        Embed an interior (segregating) matrix back into a full ``n x n`` :class:`TwoSFS`, with the two
+        monomorphic rows and columns set to zero, so that its indexing stays aligned with this spectrum.
 
-        :return: The ``(n - 1) x (n - 1)`` interior covariance matrix.
+        :param interior: The ``(n - 1) x (n - 1)`` interior matrix.
+        :return: The full-size :class:`TwoSFS`.
+        """
+        data = np.zeros_like(self.data, dtype=float)
+        data[1:-1, 1:-1] = interior
+
+        return TwoSFS(data)
+
+    def covariance(self) -> 'TwoSFS':
+        """
+        The covariance matrix of the derived-allele-count classes between two linked polymorphic sites, as a
+        :class:`TwoSFS`: the deviation of the interior joint distribution from independence, ``C[i, j] = P(i, j) -
+        P(i) P(j)`` for segregating classes ``i, j = 1, ..., n - 1``, with the monomorphic bins set to zero. A
+        positive entry marks a pair of frequency classes that co-occurs at linked sites more often than under
+        independence, i.e. the two-locus branch-length correlation resolved by class. It is computed from the
+        interior block alone (see :meth:`interior`), so it is independent of the monomorphic sites and of any
+        :class:`~sfsutils.parser.TargetSiteCounter` used to obtain the spectrum.
+
+        :return: The covariance matrix, embedded in a full-size :class:`TwoSFS`.
         """
         p = self.interior(normalize=True)
 
-        return p - np.outer(p.sum(axis=1), p.sum(axis=0))
+        return self._embed(p - np.outer(p.sum(axis=1), p.sum(axis=0)))
 
-    def correlation(self) -> np.ndarray:
+    def correlation(self) -> 'TwoSFS':
         """
-        The correlation matrix corresponding to :meth:`covariance`, standardizing each segregating class by its
-        marginal (indicator) standard deviation: ``R[i, j] = (P(i, j) - P(i) P(j)) / sqrt(P(i)(1 - P(i)) P(j)(1 -
-        P(j)))``. Each entry lies in ``[-1, 1]``. Like :meth:`covariance`, it uses only the interior block and is
-        therefore independent of the monomorphic sites and of any target-site count. Entries whose class has no
-        marginal variance (a degenerate single-class spectrum) are returned as zero.
+        The correlation matrix corresponding to :meth:`covariance`, as a :class:`TwoSFS`. Because this is a
+        *cross*-covariance between two loci, each segregating class is standardized by its marginal (indicator)
+        standard deviation, giving the Pearson correlation of class membership between the two sites: ``R[i, j] =
+        (P(i, j) - P(i) P(j)) / sqrt(P(i)(1 - P(i)) P(j)(1 - P(j)))``. Each entry lies in ``[-1, 1]`` and the
+        diagonal is the cross-locus correlation of same-class membership (below one unless the sites are perfectly
+        linked). Like :meth:`covariance`, it uses only the interior block and is therefore independent of the
+        monomorphic sites and of any target-site count. Entries of a class with no marginal variance (a degenerate
+        single-class spectrum) are zero.
 
-        :return: The ``(n - 1) x (n - 1)`` interior correlation matrix.
+        :return: The correlation matrix, embedded in a full-size :class:`TwoSFS`.
         """
         p = self.interior(normalize=True)
         p_row, p_col = p.sum(axis=1), p.sum(axis=0)
@@ -1544,7 +1560,7 @@ class TwoSFS(AbstractSpectrum):
         cov = p - np.outer(p_row, p_col)
 
         with np.errstate(divide='ignore', invalid='ignore'):
-            return np.where(sd > 0, cov / sd, 0.0)
+            return self._embed(np.where(sd > 0, cov / sd, 0.0))
 
     def fill_monomorphic(self, fill_value=np.nan) -> 'TwoSFS':
         """

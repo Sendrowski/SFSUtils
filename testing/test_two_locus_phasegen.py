@@ -98,11 +98,11 @@ def test_two_sfs_converges_to_phasegen_expectation(name):
     # the interior class-resolved covariance/correlation matrices recovered from the parser match the analytic
     # ones, and, crucially, are invariant to whether monomorphic sites are included (they populate only bins 0/n)
     exact, parsed = su.TwoSFS(expected), su.TwoSFS(empirical)
-    np.testing.assert_allclose(parsed.covariance(), exact.covariance(), atol=0.02)
-    np.testing.assert_allclose(parsed.correlation(), exact.correlation(), atol=0.06)
+    np.testing.assert_allclose(parsed.covariance().data, exact.covariance().data, atol=0.02)
+    np.testing.assert_allclose(parsed.correlation().data, exact.correlation().data, atol=0.06)
 
     with_mono = empirical.copy()
     with_mono[0, :] += 1e6; with_mono[:, 0] += 1e6      # monomorphic-involving pairs (all-ancestral)
     with_mono[-1, :] += 1e6; with_mono[:, -1] += 1e6    # and the all-derived bin
-    np.testing.assert_array_equal(su.TwoSFS(with_mono).covariance(), parsed.covariance())   # interior untouched
-    np.testing.assert_array_equal(su.TwoSFS(with_mono).correlation(), parsed.correlation())
+    np.testing.assert_array_equal(su.TwoSFS(with_mono).covariance().data, parsed.covariance().data)  # untouched
+    np.testing.assert_array_equal(su.TwoSFS(with_mono).correlation().data, parsed.correlation().data)
