@@ -84,8 +84,8 @@ filter
 
 Write only the sites that pass the given filtrations. The output format follows the ``--out`` extension: a VCF
 (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store
-can be written from any input; a tree sequence only from a tree-sequence input (the surviving sites are kept via
-``delete_sites``), since a genealogy cannot be reconstructed from genotype data.
+can be written from any input. A VCF output requires a VCF input, and a tree sequence a tree-sequence input (the
+surviving sites are kept via ``delete_sites``), since a genealogy cannot be reconstructed from genotype data.
 
 .. code-block:: bash
 
@@ -120,14 +120,21 @@ can be written from any input; a tree sequence only from a tree-sequence input (
 annotate
 --------
 
-Write a VCF with added site-level information: site degeneracy from a reference, or the ancestral allele inferred
-from outgroups under a maximum-likelihood substitution model.
+Write the input back with added site-level information: site degeneracy from a reference, or the ancestral allele
+inferred from outgroups under a maximum-likelihood substitution model. As for ``filter``, the output format follows
+the ``--out`` extension: a VCF (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence
+(``.trees``). A VCF-Zarr store can be written from any input; a VCF requires a VCF input and a tree sequence a
+tree-sequence input.
 
 .. code-block:: bash
 
    # annotate site degeneracy
    sfsutils annotate --vcf variants.vcf.gz --annotation degeneracy \
        --fasta genome.fasta --gff genome.gff.gz --out degeneracy.vcf.gz
+
+   # the same, writing a VCF-Zarr store instead
+   sfsutils annotate --vcf variants.vcf.gz --annotation degeneracy \
+       --fasta genome.fasta --gff genome.gff.gz --out degeneracy.vcz
 
    # infer the ancestral allele from two outgroups
    sfsutils annotate --vcf variants.with_outgroups.vcf.gz \
@@ -140,8 +147,10 @@ from outgroups under a maximum-likelihood substitution model.
 
    * - Option
      - Description
-   * - ``--vcf`` / ``--out``
-     - Input VCF and output VCF (gzipped supported). Required.
+   * - ``--vcf`` / ``--zarr`` / ``--trees``
+     - Input source (VCF, VCF-Zarr store, or tree sequence). Exactly one is required.
+   * - ``--out``
+     - Output path; its extension selects the format (``.vcf``/``.vcf.gz``, ``.vcz``/``.zarr``, ``.trees``). Required.
    * - ``--annotation``
      - Comma-separated annotations (``degeneracy``, ``maximum-likelihood-ancestral``). Required.
    * - ``--fasta`` / ``--gff``

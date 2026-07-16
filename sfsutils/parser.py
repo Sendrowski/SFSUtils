@@ -1620,8 +1620,12 @@ class Parser(MultiHandler):
         total_monomorphic = self.target_site_counter.n_target_sites - total_polymorphic
         region_length = self._region_length()
 
+        # every sampled stratum receives a share of the monomorphic budget, including strata that carry
+        # target sites but no polymorphic pairs (their two-SFS is a pure monomorphic corner)
+        strata = set(self._two_sfs_matrices) | set(counts)
+
         result = {}
-        for t in sorted(self._two_sfs_matrices):
+        for t in sorted(strata):
             matrix = TwoSFS(self._two_sfs_matrices[t]).symmetrize().data
 
             if total_monomorphic > 0 and total_sampled > 0:
@@ -1836,7 +1840,7 @@ class Parser(MultiHandler):
                 return TwoSFS(matrix)
 
             # with stratifications, extrapolate per stratum when a target-site counter is used
-            if self.target_site_counter is not None:
+            if self.target_site_counter is not None and self.n_skipped < self.n_sites:
                 return self._parse_two_sfs_stratified_with_target_sites()
 
             # otherwise return one symmetrized two-SFS per (within-stratum) type

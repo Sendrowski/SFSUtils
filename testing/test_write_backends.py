@@ -151,6 +151,44 @@ def test_tree_sequence_output_attaches_info_metadata(tmp_path):
     assert all(site.metadata.get("tag") == int(site.position) + 1 for site in sub.sites())
 
 
+@requires_trees
+def test_tree_sequence_subset_handles_colliding_integer_positions(tmp_path):
+    """
+    Continuous-genome tree sequences carry non-integer positions that collide under the integer VCF ``POS``.
+    The writer must identify kept sites by their exact tskit position, not the truncated ``POS``, or filtered-out
+    sites are silently retained.
+    """
+    import tskit
+
+    # two SNP sites at 5.2 and 5.8 (both -> POS 6), each with a distinct derived allele
+    tables = tskit.TableCollection(sequence_length=10)
+    tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0)
+    tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE, time=0)
+    root = tables.nodes.add_row(flags=0, time=1)
+    tables.edges.add_row(left=0, right=10, parent=root, child=0)
+    tables.edges.add_row(left=0, right=10, parent=root, child=1)
+    s0 = tables.sites.add_row(position=5.2, ancestral_state="A")
+    s1 = tables.sites.add_row(position=5.8, ancestral_state="A")
+    tables.mutations.add_row(site=s0, node=0, derived_state="T")
+    tables.mutations.add_row(site=s1, node=1, derived_state="G")
+    tables.sort()
+    ts = tables.tree_sequence()
+
+    trees_in = str(tmp_path / "collide.trees")
+    ts.dump(trees_in)
+
+    # keep only the second site; both share POS 6, so a POS-keyed writer would retain both
+    class KeepG(su.Filtration):
+        def filter_site(self, variant):
+            return "G" in list(variant.ALT)
+
+    out = _filter(trees_in, str(tmp_path / "collide_out.trees"), [KeepG()])
+    ts_out = tskit.load(out)
+
+    assert ts_out.num_sites == 1
+    assert ts_out.site(0).position == 5.8
+
+
 # --- unsupported combinations ----------------------------------------------------------------------
 
 def test_vcf_to_trees_raises(tmp_path):

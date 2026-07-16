@@ -1136,7 +1136,7 @@ class TskitVariantReader(VariantReader):
             observed = [a for a in alleles if a]
             is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
 
-            yield Variant(
+            variant = Variant(
                 ref=alleles[0],
                 pos=int(var.site.position) + 1,  # tskit positions are 0-based, VCF POS is 1-based
                 chrom=self._contig,
@@ -1144,6 +1144,12 @@ class TskitVariantReader(VariantReader):
                 alt=[a for a in alleles[1:] if a],
                 is_snp=is_snp,
             )
+
+            # carry the exact (possibly non-integer) tskit position so TskitVariantWriter can identify the
+            # site without relying on the lossy integer POS, which collides on continuous-genome sequences
+            variant._tskit_position = var.site.position
+
+            yield variant
 
 
 class ZarrVariantReader(VariantReader):
@@ -1481,11 +1487,24 @@ class TskitVariantWriter(VariantWriter):
         self._output = output
         self._logger = logger.getChild(self.__class__.__name__)
 
-        #: The 1-based VCF positions of the sites to keep.
+        #: The exact tskit positions of the sites to keep.
         self._kept: set = set()
 
-        #: INFO metadata keyed by 1-based position, for kept sites.
-        self._info_by_pos: Dict[int, Dict[str, object]] = {}
+        #: INFO metadata keyed by exact tskit position, for kept sites.
+        self._info_by_pos: Dict[float, Dict[str, object]] = {}
+
+    def _position(self, variant: Site) -> float:
+        """
+        The exact tskit (0-based) position of a variant. :class:`TskitVariantReader` attaches it so that
+        continuous-genome sequences, whose positions collide under the integer VCF ``POS``, are identified
+        unambiguously; for any other source we fall back to reconstructing it from ``POS``.
+
+        :param variant: The variant.
+        :return: The exact 0-based position.
+        """
+        pos = getattr(variant, '_tskit_position', None)
+
+        return float(pos) if pos is not None else float(int(variant.POS) - 1)
 
     def write(self, variant: Site) -> None:
         """
@@ -1493,7 +1512,7 @@ class TskitVariantWriter(VariantWriter):
 
         :param variant: The variant to keep.
         """
-        pos = int(variant.POS)
+        pos = self._position(variant)
         self._kept.add(pos)
 
         if getattr(variant, 'INFO', None):
@@ -1503,8 +1522,7 @@ class TskitVariantWriter(VariantWriter):
         """
         Delete the dropped sites and dump the resulting tree sequence.
         """
-        # tskit stores 0-based positions; the reader reports POS = int(position) + 1
-        drop = [site.id for site in self._ts.sites() if int(site.position) + 1 not in self._kept]
+        drop = [site.id for site in self._ts.sites() if site.position not in self._kept]
 
         sub = self._ts.delete_sites(drop)
 
@@ -1529,7 +1547,7 @@ class TskitVariantWriter(VariantWriter):
             tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
 
             for row in sites:
-                info = self._info_by_pos.get(int(row.position) + 1, {})
+                info = self._info_by_pos.get(row.position, {})
                 metadata = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in info.items()}
                 tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state, metadata=metadata)
 

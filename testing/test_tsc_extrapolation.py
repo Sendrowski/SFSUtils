@@ -294,3 +294,62 @@ def test_stratified_two_sfs_target_site_counter_matches_ground_truth(tmp_path):
         # the per-stratum monomorphic pairs match the within-stratum ground truth
         assert data[0, 0] == pytest.approx(truth[t][0, 0], rel=0.08)
         assert data[0, 1:].sum() == pytest.approx(truth[t][0, 1:].sum(), rel=0.08)
+
+
+def test_stratified_two_sfs_target_site_counter_handles_all_skipped(tmp_path):
+    """When every site is filtered out, the stratified two-SFS + TargetSiteCounter must not attempt to count
+    target sites over an empty region (which would divide by an empty contig-bounds array), but return cleanly."""
+    Settings.disable_pbar = True
+
+    class _RejectAll(su.Filtration):
+        def filter_site(self, variant):
+            return False
+
+    L = 10_000
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">1\n" + "A" * L + "\n")
+
+    vcf = tmp_path / "poly.vcf"
+    _write_vcf(vcf, np.array([100, 500, 900]), np.array([1, 2, 1]))
+
+    result = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=1_000, skip_non_polarized=False,
+                       subsample_mode="random", fasta=str(fasta),
+                       stratifications=[_ParityStratification()], filtrations=[_RejectAll()],
+                       target_site_counter=su.TargetSiteCounter(n_samples=1_000, n_target_sites=5_000)).parse()
+
+    assert isinstance(result, su.TwoSpectra)
+    assert len(result.types) == 0
+
+
+def test_stratified_two_sfs_target_site_counter_includes_monomorphic_only_stratum(tmp_path):
+    """A stratum carrying target sites but no polymorphic pairs must still appear in the output, as a pure
+    monomorphic corner, and receive its share of the monomorphic budget."""
+    Settings.disable_pbar = True
+    L, d = 40_000, 1_000
+
+    # all polymorphic sites at even positions; the odd stratum has only monomorphic sites (no SNPs)
+    poly_pos = np.arange(4, L - 2, 40)  # even
+    poly_pos = poly_pos[poly_pos % 2 == 0]
+    poly_der = np.ones(poly_pos.size, dtype=int)
+    poly_der[::2] = 2
+    mono_pos = np.arange(5, L - 2, 7)  # a mix of even and odd positions
+    mono_pos = np.array(sorted(set(mono_pos.tolist()) - set(poly_pos.tolist())))
+    n_mono_odd = int((mono_pos % 2 == 1).sum())
+
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">1\n" + "A" * L + "\n")
+
+    vcf = tmp_path / "poly.vcf"
+    _write_vcf(vcf, poly_pos, poly_der)
+    result = su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=d, skip_non_polarized=False,
+                       subsample_mode="random", fasta=str(fasta),
+                       stratifications=[_ParityStratification()],
+                       target_site_counter=su.TargetSiteCounter(
+                           n_samples=L, n_target_sites=poly_pos.size + mono_pos.size)).parse()
+
+    assert n_mono_odd > 0  # the fixture indeed has odd-position monomorphic sites
+    # the odd stratum has no polymorphic pairs but still appears, as a pure monomorphic corner
+    assert "odd" in result.types
+    odd = result["odd"].data
+    assert odd[1:, 1:].sum() == 0
+    assert odd[0, 0] > 0
