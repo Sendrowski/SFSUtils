@@ -1,6 +1,6 @@
-.. _modules.sfs2:
+.. _modules.two_sfs:
 
-SFS2 and TwoLocusSFS classes
+TwoSFS and TwoLocusSFS classes
 ----------------------------
 
 The two-dimensional (two-site) site-frequency spectrum: a square matrix relating derived-allele
@@ -11,9 +11,9 @@ counts at pairs of frequency classes, together with its two-locus specialization
 .. autosummary::
    :nosignatures:
 
-   ~sfsutils.spectrum.SFS2
+   ~sfsutils.spectrum.TwoSFS
    ~sfsutils.spectrum.TwoLocusSFS
 
-.. autoclass:: sfsutils.spectrum.SFS2
+.. autoclass:: sfsutils.spectrum.TwoSFS
 
 .. autoclass:: sfsutils.spectrum.TwoLocusSFS

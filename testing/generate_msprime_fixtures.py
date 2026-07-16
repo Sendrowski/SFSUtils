@@ -134,7 +134,7 @@ print(f"wrote joint fixtures to {OUT}/")
 # streaming sliding-window accumulation), so the test genuinely validates the parser.
 import cyvcf2
 
-from sfsutils.spectrum import SFS2
+from sfsutils.spectrum import TwoSFS
 
 TWO_SFS_SEED = 42
 TWO_SFS_DISTANCE = 2_000
@@ -179,7 +179,7 @@ for a in range(len(sites)):
             ref[der_a, sites[b][1]] += 1
 ref = (ref + ref.T) / 2
 
-SFS2(ref).to_file(f"{OUT}/two_sfs.sfs2.json")
+TwoSFS(ref).to_file(f"{OUT}/two_sfs.ref.json")
 
 with open(f"{OUT}/two_sfs.meta.json", "w") as f:
     json.dump({"n": n_two, "distance": TWO_SFS_DISTANCE, "offset": TWO_SFS_OFFSET}, f, indent=2)

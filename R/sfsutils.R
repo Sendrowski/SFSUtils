@@ -284,14 +284,14 @@ load_sfsutils <- function(install = FALSE) {
   # runtime was available at authoring time). If `self` is not bound, wire these as
   # standalone functions (e.g. plot_sfs2(x, ...)) or via a py_run_string shim instead.
   #
-  # Plot a 2-SFS (SFS2) as a heatmap.
+  # Plot a 2-SFS (TwoSFS) as a heatmap.
   #
-  # Reimplements SFS2.plot using a ggplot2 geom_tile heatmap with a diverging
+  # Reimplements TwoSFS.plot using a ggplot2 geom_tile heatmap with a diverging
   # PuOr palette. The monomorphic first and last rows and columns are dropped,
   # and if the spectrum is folded only the folded half is shown. Mirrors the
   # Python backend which uses a symmetric (PuOr_r) colour scale.
   #
-  # @param self The SFS2 object (passed implicitly as the instance).
+  # @param self The TwoSFS object (passed implicitly as the instance).
   # @param title Character. Title of the plot. Default is NULL.
   # @param log_scale Logical. Kept for signature compatibility with the Python
   #                  backend; currently ignored. Default is FALSE.
@@ -302,7 +302,7 @@ load_sfsutils <- function(install = FALSE) {
   # @param ... Additional arguments which are ignored.
   #
   # @return A ggplot object.
-  sf$SFS2$plot <- function(
+  sf$TwoSFS$plot <- function(
     self,
     title = NULL,
     log_scale = FALSE,

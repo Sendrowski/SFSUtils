@@ -25,7 +25,7 @@ from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
 from .io_handlers import bases, get_called_bases, FASTAHandler, NoTypeException, \
     DummyVariant, MultiHandler, VCFHandler, is_monomorphic_snp
 from .settings import Settings
-from .spectrum import Spectra, SFS2, JointSFS, JointSpectra
+from .spectrum import Spectra, TwoSFS, JointSFS, JointSpectra
 
 # logger
 logger = logging.getLogger('sfsutils')
@@ -1014,7 +1014,7 @@ class Parser(MultiHandler):
             derived allele. This should enhance accuracy, especially for small datasets. Whenever the ancestral
             probability tag is not present, we assume a probability of 1 for the ancestral allele.
         :param two_sfs: Whether to parse the two-dimensional (two-site) SFS instead of the ordinary SFS. When
-            ``True``, :meth:`parse` returns a square :class:`~sfsutils.spectrum.SFS2` whose entry ``(i, j)`` counts
+            ``True``, :meth:`parse` returns a square :class:`~sfsutils.spectrum.TwoSFS` whose entry ``(i, j)`` counts
             pairs of sites, on the same contig and within the distance window of one another, where one site has ``i``
             and the other ``j`` derived alleles (down-projected to ``n``). As for the one-dimensional SFS, monomorphic
             sites are retained (contributing to the zero-frequency row and column); add a
@@ -1174,7 +1174,7 @@ class Parser(MultiHandler):
                 raise ValueError("two_sfs_distance must be at least 1.")
 
         #: The accumulating two-SFS matrix of shape ``(n + 1, n + 1)`` (only when ``two_sfs`` is set)
-        self._sfs2: np.ndarray | None = np.zeros((self.n + 1, self.n + 1)) if self.two_sfs else None
+        self._two_sfs_matrix: np.ndarray | None = np.zeros((self.n + 1, self.n + 1)) if self.two_sfs else None
 
         #: Sliding buffer of ``(position, down-projection vector)`` for recent sites on the current contig
         self._two_sfs_buffer: deque = deque()
@@ -1433,7 +1433,7 @@ class Parser(MultiHandler):
 
             if self.two_sfs_offset < distance <= max_distance:
                 # accumulate the (forward) pair; the matrix is symmetrized once at the end
-                self._sfs2 += np.multiply.outer(m_prev, m)
+                self._two_sfs_matrix += np.multiply.outer(m_prev, m)
 
         self._two_sfs_buffer.append((variant.POS, m))
 
@@ -1548,13 +1548,13 @@ class Parser(MultiHandler):
         for a in self.annotations:
             a._teardown()
 
-    def parse(self) -> Spectra | JointSpectra | SFS2:
+    def parse(self) -> Spectra | JointSpectra | TwoSFS:
         """
         Parse the VCF file.
 
         :return: A :class:`~sfsutils.spectrum.Spectra` for a single-population SFS, a
             :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given, or a square
-            :class:`~sfsutils.spectrum.SFS2` when ``two_sfs`` was set.
+            :class:`~sfsutils.spectrum.TwoSFS` when ``two_sfs`` was set.
         """
         # set up parser
         self._setup()
@@ -1618,9 +1618,9 @@ class Parser(MultiHandler):
 
         # in two-SFS mode, return the symmetrized pair-count matrix
         if self.two_sfs:
-            self._logger.info(f'Counted {self._sfs2.sum():.0f} site pairs within {self.two_sfs_distance} bp.')
+            self._logger.info(f'Counted {self._two_sfs_matrix.sum():.0f} site pairs within {self.two_sfs_distance} bp.')
 
-            return SFS2(self._sfs2).symmetrize()
+            return TwoSFS(self._two_sfs_matrix).symmetrize()
 
         # in joint mode, return a collection of joint spectra keyed by (sorted) type
         if self.pops is not None:

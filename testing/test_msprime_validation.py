@@ -31,7 +31,7 @@ JOINT_POPS = "resources/msprime/two_epoch_joint.pops.json"
 
 # two-SFS (two-site) fixtures
 TWO_SFS_VCF = "resources/msprime/two_sfs.vcf"
-TWO_SFS_REF = "resources/msprime/two_sfs.sfs2.json"
+TWO_SFS_REF = "resources/msprime/two_sfs.ref.json"
 TWO_SFS_META = "resources/msprime/two_sfs.meta.json"
 
 pytestmark = pytest.mark.skipif(
@@ -216,13 +216,13 @@ def test_parser_reproduces_msprime_two_sfs():
     """
     Settings.disable_pbar = True
     meta = _load_two_sfs_meta()
-    ref = np.asarray(sf.SFS2.from_file(TWO_SFS_REF))
+    ref = np.asarray(sf.TwoSFS.from_file(TWO_SFS_REF))
 
     sfs2 = sf.Parser(vcf=TWO_SFS_VCF, n=meta["n"], two_sfs=True, two_sfs_distance=meta["distance"],
                      two_sfs_offset=meta["offset"], skip_non_polarized=False,
                      subsample_mode="random").parse()
 
-    assert isinstance(sfs2, sf.SFS2)
+    assert isinstance(sfs2, sf.TwoSFS)
     assert sfs2.data.shape == ref.shape
     # the matrix is symmetric by construction
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
@@ -234,7 +234,7 @@ def test_two_sfs_pair_count_is_projection_invariant():
     """Down-projecting to a smaller sample size preserves the total number of pairs (each pair keeps unit mass)."""
     Settings.disable_pbar = True
     meta = _load_two_sfs_meta()
-    ref_total = np.asarray(sf.SFS2.from_file(TWO_SFS_REF)).sum()
+    ref_total = np.asarray(sf.TwoSFS.from_file(TWO_SFS_REF)).sum()
 
     sfs2 = sf.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, two_sfs_distance=meta["distance"],
                      skip_non_polarized=False, subsample_mode="probabilistic").parse()

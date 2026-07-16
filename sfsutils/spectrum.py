@@ -53,7 +53,7 @@ class AbstractSpectrum(ABC):
     Abstract base class for site-frequency spectrum containers.
 
     A concrete spectrum wraps a numpy array in :attr:`data`: the one-dimensional :class:`Spectrum`, the square
-    two-dimensional :class:`SFS2` (and its two-locus specialization :class:`TwoLocusSFS`), and the multi-population
+    two-dimensional :class:`TwoSFS` (and its two-locus specialization :class:`TwoLocusSFS`), and the multi-population
     :class:`JointSFS`. This base provides the shared array interface (shape, total number of sites, iteration,
     copying) and JSON serialization; subclasses add their dimension-specific behaviour such as folding and plotting.
     """
@@ -1348,7 +1348,7 @@ class Spectra(AbstractSpectra):
         return Spectra.from_dataframe(self.data.sort_index(axis=1))
 
 
-class SFS2(AbstractSpectrum):
+class TwoSFS(AbstractSpectrum):
     """
     A 2-dimensional site-frequency spectrum, i.e. a square matrix whose entry ``(i, j)`` relates the number of
     derived alleles at a pair of frequency classes ``i`` and ``j`` of a single population (for example the
@@ -1388,76 +1388,76 @@ class SFS2(AbstractSpectrum):
         """
         return np.all(self.data == self.fold().data)
 
-    def __add__(self, other) -> 'SFS2':
+    def __add__(self, other) -> 'TwoSFS':
         """
         Add to the 2-SFS.
 
         :param other: Another 2-SFS or a scalar or array.
         :return: 2-SFS
         """
-        if isinstance(other, SFS2):
+        if isinstance(other, TwoSFS):
             return self + other.data
 
-        return SFS2(self.data + other)
+        return TwoSFS(self.data + other)
 
-    def __sub__(self, other) -> 'SFS2':
+    def __sub__(self, other) -> 'TwoSFS':
         """
         Subtract from the 2-SFS.
 
         :param other: Another 2-SFS or a scalar or array.
         :return: 2-SFS
         """
-        if isinstance(other, SFS2):
+        if isinstance(other, TwoSFS):
             return self - other.data
 
-        return SFS2(self.data - other)
+        return TwoSFS(self.data - other)
 
-    def __mul__(self, other) -> 'SFS2':
+    def __mul__(self, other) -> 'TwoSFS':
         """
         Multiply the 2-SFS.
 
         :param other: Another 2-SFS or a scalar or array.
         :return: 2-SFS
         """
-        if isinstance(other, SFS2):
+        if isinstance(other, TwoSFS):
             return self * other.data
 
-        return SFS2(self.data * other)
+        return TwoSFS(self.data * other)
 
-    def __floordiv__(self, other) -> 'SFS2':
+    def __floordiv__(self, other) -> 'TwoSFS':
         """
         Floor-divide the 2-SFS.
 
         :param other: Another 2-SFS or a scalar or array.
         :return: 2-SFS
         """
-        if isinstance(other, SFS2):
+        if isinstance(other, TwoSFS):
             return self // other.data
 
-        return SFS2(self.data // other)
+        return TwoSFS(self.data // other)
 
-    def __truediv__(self, other) -> 'SFS2':
+    def __truediv__(self, other) -> 'TwoSFS':
         """
         Divide the 2-SFS.
 
         :param other: Another 2-SFS or a scalar or array.
         :return: 2-SFS
         """
-        if isinstance(other, SFS2):
+        if isinstance(other, TwoSFS):
             return self / other.data
 
-        return SFS2(self.data / other)
+        return TwoSFS(self.data / other)
 
-    def __pow__(self, power) -> 'SFS2':
+    def __pow__(self, power) -> 'TwoSFS':
         """
         Raise the 2-SFS to a power.
 
         :param power: Exponent
         :return: 2-SFS
         """
-        return SFS2(self.data ** power)
+        return TwoSFS(self.data ** power)
 
-    def fold(self) -> 'SFS2':
+    def fold(self) -> 'TwoSFS':
         """
         Fold the 2-SFS by adding up ``i`` and ``n - i`` for both axes.
         Note that this only makes sense for counts or frequencies.
@@ -1474,17 +1474,17 @@ class SFS2(AbstractSpectrum):
             # add parts and rotate
             data = (left + right).T
 
-        return SFS2(data)
+        return TwoSFS(data)
 
-    def symmetrize(self) -> 'SFS2':
+    def symmetrize(self) -> 'TwoSFS':
         """
         Symmetrize the 2-SFS so that ``i, j`` and ``j, i`` are the same.
 
         :return: Symmetric 2-SFS.
         """
-        return SFS2((self.data + self.data.T) / 2)
+        return TwoSFS((self.data + self.data.T) / 2)
 
-    def fill_monomorphic(self, fill_value=np.nan) -> 'SFS2':
+    def fill_monomorphic(self, fill_value=np.nan) -> 'TwoSFS':
         """
         Fill the monomorphic entries (first and last row and column) of the 2-SFS.
 
@@ -1650,7 +1650,7 @@ class SFS2(AbstractSpectrum):
 
         return ax
 
-    def mask_diagonal(self, fill_value=np.nan) -> 'SFS2':
+    def mask_diagonal(self, fill_value=np.nan) -> 'TwoSFS':
         """
         Mask both the primary and secondary diagonal entries of the 2-SFS matrix.
 
@@ -1667,7 +1667,7 @@ class SFS2(AbstractSpectrum):
         np.fill_diagonal(data, fill_value)
         data = np.fliplr(data)
 
-        return SFS2(data)
+        return TwoSFS(data)
 
     def get_max_abs(self) -> float:
         """
@@ -1677,7 +1677,7 @@ class SFS2(AbstractSpectrum):
         """
         return np.nanmax(np.abs(self.data))
 
-    def mask_upper(self, fill_value=np.nan) -> 'SFS2':
+    def mask_upper(self, fill_value=np.nan) -> 'TwoSFS':
         """
         Mask the upper triangular entries of the 2-SFS matrix.
 
@@ -1688,16 +1688,16 @@ class SFS2(AbstractSpectrum):
 
         data[np.triu(np.ones_like(data, dtype=bool), k=1)] = fill_value
 
-        return SFS2(data)
+        return TwoSFS(data)
 
 
-class TwoLocusSFS(SFS2):
+class TwoLocusSFS(TwoSFS):
     """
     The two-locus site-frequency spectrum under recombination: a square matrix whose entry ``(i, j)`` is the
     expected product of the branch length subtending ``i`` samples at locus 0 and ``j`` samples at locus 1, for two
     loci separated by a given recombination rate ``r``. It interpolates between the within-tree cross-moment of the
     SFS at ``r = 0`` (fully linked) and the outer product of the marginal SFS as ``r`` tends to infinity
-    (independent loci). It shares the container machinery of :class:`SFS2` (plotting, folding, arithmetic,
+    (independent loci). It shares the container machinery of :class:`TwoSFS` (plotting, folding, arithmetic,
     serialization).
     """
     pass
@@ -1710,7 +1710,7 @@ class JointSFS(AbstractSpectrum):
     The data is a ``P``-dimensional array of shape ``(n_0 + 1, ..., n_{P-1} + 1)`` where ``P`` is the number of
     populations and entry ``(k_0, ..., k_{P-1})`` counts sites (or branch length) with ``k_p`` derived alleles in
     population ``p``. For two populations this is a 2-dimensional array (analogous to but generally rectangular,
-    unlike the square :class:`SFS2`); for three populations it is a 3-dimensional array, and so on.
+    unlike the square :class:`TwoSFS`); for three populations it is a 3-dimensional array, and so on.
     """
 
     def __init__(self, data: np.ndarray | list, pop_names: List[str] = None) -> None:

@@ -145,12 +145,12 @@ def test_run_parse_joint(tmp_path):
 @requires_fixtures
 def test_run_parse_two_sfs(tmp_path):
     Settings.disable_pbar = True
-    out = tmp_path / "sfs2.json"
+    out = tmp_path / "two_sfs.json"
     code = run(["-q", "parse", "--vcf", TWO_SFS_VCF, "--n", "20", "--two-sfs",
                 "--two-sfs-distance", "1000", "--no-skip-non-polarized",
                 "--subsample-mode", "random", "--out", str(out)])
     assert code == 0 and out.exists()
-    sfs2 = sf.SFS2.from_file(str(out))
+    sfs2 = sf.TwoSFS.from_file(str(out))
     assert sfs2.data.shape == (21, 21)
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
 

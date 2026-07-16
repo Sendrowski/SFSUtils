@@ -112,7 +112,7 @@ logger.addHandler(handler)
 
 # load classes from modules
 from .settings import Settings
-from .spectrum import AbstractSpectrum, Spectrum, SFS2, TwoLocusSFS, JointSFS, \
+from .spectrum import AbstractSpectrum, Spectrum, TwoSFS, TwoLocusSFS, JointSFS, \
     AbstractSpectra, Spectra, JointSpectra
 from .parser import Parser, Stratification, BaseTransitionStratification, BaseContextStratification, \
     DegeneracyStratification, TransitionTransversionStratification, AncestralBaseStratification, \
@@ -130,7 +130,7 @@ __all__ = [
     'Settings',
     'AbstractSpectrum',
     'Spectrum',
-    'SFS2',
+    'TwoSFS',
     'TwoLocusSFS',
     'JointSFS',
     'AbstractSpectra',

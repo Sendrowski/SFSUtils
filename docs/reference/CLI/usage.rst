@@ -35,7 +35,7 @@ spectrum: a single-population SFS is written as CSV, a joint or two-site SFS as 
        --pops "CEU=NA06984,NA06985;YRI=NA18486,NA18487" --out jsfs.json
 
    # two-site SFS, pairing sites within 1 kb
-   sfsutils parse --vcf variants.vcf.gz --n 20 --two-sfs --two-sfs-distance 1000 --out sfs2.json
+   sfsutils parse --vcf variants.vcf.gz --n 20 --two-sfs --two-sfs-distance 1000 --out two_sfs.json
 
 .. list-table::
    :header-rows: 1

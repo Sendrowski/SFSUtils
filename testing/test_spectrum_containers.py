@@ -1,6 +1,6 @@
 """
 Unit tests for the higher-dimensional spectrum containers pulled from PhaseGen: the square two-dimensional
-:class:`~sfsutils.spectrum.SFS2` (and its :class:`~sfsutils.spectrum.TwoLocusSFS` specialization), the
+:class:`~sfsutils.spectrum.TwoSFS` (and its :class:`~sfsutils.spectrum.TwoLocusSFS` specialization), the
 multi-population :class:`~sfsutils.spectrum.JointSFS`, and the :class:`~sfsutils.spectrum.JointSpectra` collection.
 These need only numpy / matplotlib / jsonpickle and run in the light suite.
 """
@@ -24,25 +24,25 @@ def test_abstract_bases_not_instantiable():
 
 def test_hierarchy():
     assert issubclass(sf.Spectrum, AbstractSpectrum)
-    assert issubclass(sf.SFS2, AbstractSpectrum)
-    assert issubclass(sf.TwoLocusSFS, sf.SFS2)
+    assert issubclass(sf.TwoSFS, AbstractSpectrum)
+    assert issubclass(sf.TwoLocusSFS, sf.TwoSFS)
     assert issubclass(sf.JointSFS, AbstractSpectrum)
     assert issubclass(sf.Spectra, AbstractSpectra)
     assert issubclass(sf.JointSpectra, AbstractSpectra)
 
 
-# --- SFS2 -----------------------------------------------------------------------------------------
+# --- TwoSFS -----------------------------------------------------------------------------------------
 
 def test_sfs2_validation():
     with pytest.raises(ValueError):
-        sf.SFS2(np.arange(8))  # not 2-D
+        sf.TwoSFS(np.arange(8))  # not 2-D
     with pytest.raises(ValueError):
-        sf.SFS2(np.arange(6).reshape(2, 3))  # not square
+        sf.TwoSFS(np.arange(6).reshape(2, 3))  # not square
 
 
 def test_sfs2_shape_and_totals():
     data = np.arange(16).reshape(4, 4).astype(float)
-    s = sf.SFS2(data)
+    s = sf.TwoSFS(data)
     assert s.n == 4 and s.w == 2
     assert s.shape == (4, 4)
     assert s.n_sites == data.sum()
@@ -51,7 +51,7 @@ def test_sfs2_shape_and_totals():
 
 def test_sfs2_fold_is_idempotent_and_conserves_mass():
     rng = np.random.default_rng(0)
-    s = sf.SFS2(rng.integers(0, 10, size=(5, 5)).astype(float))
+    s = sf.TwoSFS(rng.integers(0, 10, size=(5, 5)).astype(float))
     folded = s.fold()
     assert folded.is_folded()
     assert folded.n_sites == pytest.approx(s.n_sites)
@@ -60,35 +60,35 @@ def test_sfs2_fold_is_idempotent_and_conserves_mass():
 
 
 def test_sfs2_arithmetic_and_masks():
-    s = sf.SFS2(np.ones((4, 4)))
+    s = sf.TwoSFS(np.ones((4, 4)))
     assert ((s + s).data == 2).all()
     assert ((s * 3).data == 3).all()
-    assert ((s - sf.SFS2(np.ones((4, 4)))).data == 0).all()
+    assert ((s - sf.TwoSFS(np.ones((4, 4)))).data == 0).all()
     assert np.isnan(s.symmetrize().mask_diagonal().data).any()
     assert np.isnan(s.fill_monomorphic().data[0]).all()
     assert s.get_max_abs() == 1
 
 
 def test_sfs2_roundtrip_and_copy_type(tmp_path):
-    s = sf.SFS2(np.arange(9).reshape(3, 3).astype(float))
-    f = tmp_path / "sfs2.json"
+    s = sf.TwoSFS(np.arange(9).reshape(3, 3).astype(float))
+    f = tmp_path / "two_sfs.json"
     s.to_file(str(f))
-    loaded = sf.SFS2.from_file(str(f))
-    assert type(loaded) is sf.SFS2
+    loaded = sf.TwoSFS.from_file(str(f))
+    assert type(loaded) is sf.TwoSFS
     assert np.array_equal(loaded.data, s.data)
-    assert type(s.copy()) is sf.SFS2
+    assert type(s.copy()) is sf.TwoSFS
 
 
 def test_two_locus_sfs_roundtrip_type(tmp_path):
     t = sf.TwoLocusSFS(np.arange(9).reshape(3, 3).astype(float))
-    assert isinstance(t, sf.SFS2)
+    assert isinstance(t, sf.TwoSFS)
     f = tmp_path / "two_locus.json"
     t.to_file(str(f))
     assert type(sf.TwoLocusSFS.from_file(str(f))) is sf.TwoLocusSFS
 
 
 def test_sfs2_mask_upper_masks_the_upper_triangle():
-    s = sf.SFS2(np.arange(9).reshape(3, 3).astype(float))
+    s = sf.TwoSFS(np.arange(9).reshape(3, 3).astype(float))
     masked = s.mask_upper(fill_value=-1.0).data
     # strictly-upper entries are masked; the diagonal and lower triangle are retained
     assert masked[0, 1] == -1 and masked[0, 2] == -1 and masked[1, 2] == -1
@@ -96,7 +96,7 @@ def test_sfs2_mask_upper_masks_the_upper_triangle():
 
 
 def test_sfs2_plot_smoke():
-    s = sf.SFS2(np.arange(16).reshape(4, 4).astype(float))
+    s = sf.TwoSFS(np.arange(16).reshape(4, 4).astype(float))
     assert s.plot(show=False) is not None
     s.plot_surface(show=False)
     plt.close('all')
