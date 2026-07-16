@@ -214,7 +214,7 @@ def _run_filter(args: argparse.Namespace) -> int:
     from . import Filterer
 
     Filterer(
-        vcf=args.vcf,
+        vcf=_input_source(args),
         output=args.out,
         filtrations=_build_filtrations(args.filter, args.contigs),
         gff=args.gff,
@@ -222,7 +222,7 @@ def _run_filter(args: argparse.Namespace) -> int:
         max_sites=args.max_sites if args.max_sites is not None else float("inf"),
     ).filter()
 
-    logger.info("filter: wrote filtered VCF to %s", args.out)
+    logger.info("filter: wrote filtered sites to %s", args.out)
 
     return 0
 
@@ -237,7 +237,7 @@ def _run_annotate(args: argparse.Namespace) -> int:
     from . import Annotator
 
     Annotator(
-        vcf=args.vcf,
+        vcf=_input_source(args),
         output=args.out,
         annotations=_build_annotations(args.annotation, args.outgroups, args.n_ingroups),
         gff=args.gff,
@@ -247,7 +247,7 @@ def _run_annotate(args: argparse.Namespace) -> int:
         seed=args.seed,
     ).annotate()
 
-    logger.info("annotate: wrote annotated VCF to %s", args.out)
+    logger.info("annotate: wrote annotated sites to %s", args.out)
 
     return 0
 
@@ -256,12 +256,12 @@ def _run_annotate(args: argparse.Namespace) -> int:
 
 def _add_common_io(p: argparse.ArgumentParser, out_help: str) -> None:
     """
-    Add the ``--vcf`` and ``--out`` options shared by the VCF-writing subcommands.
+    Add the input-source group and ``--out`` shared by the ``filter`` and ``annotate`` subcommands.
 
     :param p: The subparser.
     :param out_help: Help text for ``--out``.
     """
-    p.add_argument("--vcf", required=True, help="Input VCF file (may be gzipped or a URL).")
+    _add_input_source(p)
     p.add_argument("--out", required=True, help=out_help)
 
 
@@ -366,9 +366,11 @@ def _add_filter_parser(sub: argparse._SubParsersAction) -> None:
 
     :param sub: The subparsers action.
     """
-    p = sub.add_parser("filter", help="Filter a VCF and write the result.",
-                       description="Filter a VCF using one or more filtrations.")
-    _add_common_io(p, "Output VCF file (may be gzipped).")
+    p = sub.add_parser("filter", help="Filter a dataset and write the result.",
+                       description="Filter a VCF, VCF-Zarr store, or tree sequence using one or more filtrations. "
+                                   "The output format follows the --out extension (a tree sequence may only be "
+                                   "written from a tree-sequence input).")
+    _add_common_io(p, "Output path; the format follows its extension (.vcf/.vcf.gz, .vcz/.zarr, or .trees).")
 
     p.add_argument("--filter", type=_split_csv, required=True,
                    help="Comma-separated filtrations (e.g. snp,coding-sequence,cpg).")
@@ -385,9 +387,11 @@ def _add_annotate_parser(sub: argparse._SubParsersAction) -> None:
 
     :param sub: The subparsers action.
     """
-    p = sub.add_parser("annotate", help="Annotate a VCF and write the result.",
-                       description="Annotate a VCF with site degeneracy or ancestral-allele information.")
-    _add_common_io(p, "Output VCF file (may be gzipped).")
+    p = sub.add_parser("annotate", help="Annotate a dataset and write the result.",
+                       description="Annotate a VCF, VCF-Zarr store, or tree sequence with site degeneracy or "
+                                   "ancestral-allele information. The output format follows the --out extension "
+                                   "(a tree sequence may only be written from a tree-sequence input).")
+    _add_common_io(p, "Output path; the format follows its extension (.vcf/.vcf.gz, .vcz/.zarr, or .trees).")
 
     p.add_argument("--annotation", type=_split_csv, required=True,
                    help="Comma-separated annotations (degeneracy, maximum-likelihood-ancestral).")

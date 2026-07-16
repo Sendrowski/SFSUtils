@@ -16,6 +16,7 @@ from sfsutils.settings import Settings
 VCF = "resources/msprime/two_epoch.vcf"
 TREES = "resources/msprime/two_epoch.trees"
 VCZ = "resources/msprime/two_epoch.vcz"
+REF = "resources/msprime/two_epoch.ref.fasta.gz"
 
 _has_tskit = importlib.util.find_spec("tskit") is not None
 _has_zarr = importlib.util.find_spec("zarr") is not None
@@ -89,3 +90,25 @@ def test_tree_sequence_joint_matches_vcf():
     from_vcf = np.asarray(su.Parser(vcf=VCF, **kw).parse()["all"]).astype(int)
     from_trees = np.asarray(su.Parser(vcf=TREES, **kw).parse()["all"]).astype(int)
     np.testing.assert_array_equal(from_trees, from_vcf)
+
+
+@pytest.mark.skipif(not os.path.exists(REF), reason="the reference FASTA fixture is absent")
+@pytest.mark.parametrize("source", ["vcf", "trees", "vcz"])
+def test_target_site_counter_input_agnostic(source):
+    """The TargetSiteCounter extrapolates to the same total from any input: it depends only on the per-contig
+    variant bounds (populated by the source-agnostic parse loop) and the FASTA, not on the input format. The
+    tree/zarr fixtures share the VCF's synthetic contig '1', matching the reference FASTA."""
+    paths = {"vcf": VCF, "trees": TREES, "vcz": VCZ}
+    if source == "trees" and not _has_tskit:
+        pytest.skip("tskit is absent")
+    if source == "vcz" and not _has_zarr:
+        pytest.skip("zarr is absent")
+
+    Settings.disable_pbar = True
+    spectra = su.Parser(
+        vcf=paths[source], n=20, skip_non_polarized=False, subsample_mode="random", fasta=REF,
+        target_site_counter=su.TargetSiteCounter(n_samples=50_000, n_target_sites=50_000),
+    ).parse()
+
+    assert spectra.n_sites.sum() == pytest.approx(50_000)
+    assert spectra.n_polymorphic.sum() == 608

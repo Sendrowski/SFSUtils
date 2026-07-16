@@ -118,7 +118,9 @@ from .parser import Parser, Stratification, BaseTransitionStratification, BaseCo
     DegeneracyStratification, TransitionTransversionStratification, AncestralBaseStratification, \
     SynonymyStratification, VEPStratification, SnpEffStratification, ContigStratification, ChunkedStratification, \
     RandomStratification, TargetSiteCounter
-from .io_handlers import VCFHandler, FASTAHandler, GFFHandler, FileHandler
+from .io_handlers import VCFHandler, FASTAHandler, GFFHandler, FileHandler, \
+    Site, Variant, VariantReader, TskitVariantReader, ZarrVariantReader, \
+    VariantWriter, VCFVariantWriter, ZarrVariantWriter, TskitVariantWriter, open_writer
 from .annotation import Annotator, Annotation, MaximumParsimonyAncestralAnnotation, SiteInfo, \
     MaximumLikelihoodAncestralAnnotation, DegeneracyAnnotation, SynonymyAnnotation, SubstitutionModel, \
     K2SubstitutionModel, JCSubstitutionModel, PolarizationPrior, KingmanPolarizationPrior, AdaptivePolarizationPrior
@@ -181,4 +183,14 @@ __all__ = [
     'ExistingOutgroupFiltration',
     'ContigFiltration',
     'CpGFiltration',
+    'Site',
+    'Variant',
+    'VariantReader',
+    'TskitVariantReader',
+    'ZarrVariantReader',
+    'VariantWriter',
+    'VCFVariantWriter',
+    'ZarrVariantWriter',
+    'TskitVariantWriter',
+    'open_writer',
 ]

@@ -1,0 +1,170 @@
+"""
+Validate the variant writers behind ``Filterer``/``Annotator``: the output format is chosen by the output
+file's extension. A VCF-Zarr store can be written from any input; a ``.trees`` file only from a tree-sequence
+input (a genealogy cannot be reconstructed from genotypes), and the written store/tree sequence must parse to
+the same spectrum as the equivalent VCF output. These need the optional ``tskit`` / ``zarr`` packages and the
+committed fixtures, and are skipped otherwise.
+"""
+import importlib.util
+import os
+
+import numpy as np
+import pytest
+
+import sfsutils as su
+from sfsutils.settings import Settings
+from sfsutils.io_handlers import Variant
+
+VCF = "resources/msprime/two_epoch.vcf"
+TREES = "resources/msprime/two_epoch.trees"
+VCZ = "resources/msprime/two_epoch.vcz"
+
+_has_tskit = importlib.util.find_spec("tskit") is not None
+_has_zarr = importlib.util.find_spec("zarr") is not None
+
+requires_zarr = pytest.mark.skipif(
+    not (_has_zarr and os.path.exists(VCZ) and os.path.exists(VCF)),
+    reason="zarr or the VCF-Zarr fixture is absent",
+)
+requires_trees = pytest.mark.skipif(
+    not (_has_tskit and os.path.exists(TREES) and os.path.exists(VCF)),
+    reason="tskit or the tree-sequence fixture is absent",
+)
+
+_KW = dict(n=20, skip_non_polarized=False, subsample_mode="random")
+
+
+def _sfs(source):
+    Settings.disable_pbar = True
+    return np.array(su.Parser(vcf=source, **_KW).parse().all.to_list()).astype(int)
+
+
+def _filter(source, output, filtrations):
+    Settings.disable_pbar = True
+    su.Filterer(vcf=source, output=output, filtrations=filtrations).filter()
+    return output
+
+
+# --- format detection ------------------------------------------------------------------------------
+
+def test_output_format_detection():
+    from sfsutils.io_handlers import _output_format
+    assert _output_format("x.vcz") == "zarr"
+    assert _output_format("x.zarr") == "zarr"
+    assert _output_format("x.zarr/") == "zarr"
+    assert _output_format("x.trees") == "tskit"
+    assert _output_format("x.vcf") == "vcf"
+    assert _output_format("x.vcf.gz") == "vcf"
+    assert _output_format("x.bcf") == "vcf"
+
+
+# --- VCF-Zarr output (from any input) --------------------------------------------------------------
+
+@requires_zarr
+def test_vcf_to_zarr_filter_roundtrips(tmp_path):
+    """Filtering a VCF to a VCF-Zarr store gives the same spectrum as filtering it to a VCF."""
+    out_vcz = _filter(VCF, str(tmp_path / "out.vcz"), [su.SNPFiltration()])
+    out_vcf = _filter(VCF, str(tmp_path / "out.vcf"), [su.SNPFiltration()])
+    np.testing.assert_array_equal(_sfs(out_vcz), _sfs(out_vcf))
+    assert _sfs(out_vcz)[1:20].sum() > 0
+
+
+@requires_zarr
+def test_zarr_to_zarr_filter_roundtrips(tmp_path):
+    """A VCF-Zarr store filtered to a VCF-Zarr store still matches the VCF-filtered spectrum."""
+    out_vcz = _filter(VCZ, str(tmp_path / "out.vcz"), [su.SNPFiltration()])
+    out_vcf = _filter(VCF, str(tmp_path / "out.vcf"), [su.SNPFiltration()])
+    np.testing.assert_array_equal(_sfs(out_vcz), _sfs(out_vcf))
+
+
+@requires_trees
+@requires_zarr
+def test_tree_sequence_to_zarr_roundtrips(tmp_path):
+    """A tree sequence filtered to a VCF-Zarr store matches the VCF-filtered spectrum (any input -> Zarr)."""
+    out_vcz = _filter(TREES, str(tmp_path / "out.vcz"), [su.SNPFiltration()])
+    out_vcf = _filter(VCF, str(tmp_path / "out.vcf"), [su.SNPFiltration()])
+    np.testing.assert_array_equal(_sfs(out_vcz), _sfs(out_vcf))
+
+
+@requires_zarr
+def test_zarr_writer_persists_info_ancestral(tmp_path):
+    """INFO fields (e.g. an annotated ancestral allele) written to a store are read back under INFO."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "info.vcz")
+    writer = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    writer.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"],
+                                        is_snp=True, info={"AA": "A"}))
+    writer.write(Variant(ref="C", pos=20, chrom="1", gt_bases=["G|G"], alt=["G"],
+                                        is_snp=True, info={"AA": "G"}))
+    writer.close()
+
+    variants = list(ZarrVariantReader(out, info_ancestral="AA"))
+    assert [v.INFO["AA"] for v in variants] == ["A", "G"]
+    assert [v.POS for v in variants] == [10, 20]
+
+
+# --- tree-sequence output (from tree-sequence input only) ------------------------------------------
+
+@requires_trees
+def test_tree_sequence_subset_write_preserves_topology(tmp_path):
+    """Filtering a tree sequence to .trees keeps only surviving sites via delete_sites; genealogy untouched."""
+    import tskit
+
+    out = _filter(TREES, str(tmp_path / "out.trees"), [su.SNPFiltration()])
+    ts_in, ts_out = tskit.load(TREES), tskit.load(out)
+
+    assert ts_out.num_sites <= ts_in.num_sites
+    # the genealogy (edges/trees) is unchanged; only the site table is subset
+    assert ts_out.num_edges == ts_in.num_edges
+    assert ts_out.num_trees == ts_in.num_trees
+
+
+@requires_trees
+def test_tree_sequence_subset_matches_vcf_filter(tmp_path):
+    """Parsing the site-subset .trees equals parsing the same filter applied to the VCF."""
+    out_trees = _filter(TREES, str(tmp_path / "out.trees"), [su.SNPFiltration()])
+    out_vcf = _filter(VCF, str(tmp_path / "out.vcf"), [su.SNPFiltration()])
+    np.testing.assert_array_equal(_sfs(out_trees), _sfs(out_vcf))
+
+
+@requires_trees
+def test_tree_sequence_output_attaches_info_metadata(tmp_path):
+    """INFO added while writing a .trees is stored as JSON site metadata on the kept sites (best-effort)."""
+    import tskit
+    from sfsutils.io_handlers import TskitVariantWriter
+
+    ts = tskit.load(TREES)
+    out = str(tmp_path / "meta.trees")
+
+    writer = TskitVariantWriter(ts, out)
+    # keep exactly the first two sites, tagging them with INFO
+    kept = sorted(int(s.position) + 1 for s in ts.sites())[:2]
+    for site in ts.sites():
+        pos = int(site.position) + 1
+        if pos in kept:
+            writer.write(Variant(ref="A", pos=pos, chrom="1", info={"tag": pos}))
+    writer.close()
+
+    sub = tskit.load(out)
+    assert sub.num_sites == 2
+    assert all(site.metadata.get("tag") == int(site.position) + 1 for site in sub.sites())
+
+
+# --- unsupported combinations ----------------------------------------------------------------------
+
+def test_vcf_to_trees_raises(tmp_path):
+    """Writing a .trees from a VCF is rejected: a genealogy cannot be reconstructed from genotypes."""
+    Settings.disable_pbar = True
+    with pytest.raises(ValueError, match="tree sequence"):
+        su.Filterer(vcf=VCF, output=str(tmp_path / "bad.trees"),
+                    filtrations=[su.SNPFiltration()]).filter()
+
+
+@requires_zarr
+def test_zarr_to_trees_raises(tmp_path):
+    """Writing a .trees from a VCF-Zarr store is likewise rejected (non-tree-sequence input)."""
+    Settings.disable_pbar = True
+    with pytest.raises(ValueError, match="tree sequence"):
+        su.Filterer(vcf=VCZ, output=str(tmp_path / "bad.trees"),
+                    filtrations=[su.SNPFiltration()]).filter()

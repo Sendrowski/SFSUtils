@@ -9,13 +9,14 @@ __date__ = "2023-05-11"
 import functools
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Callable, Dict, Union
+from typing import List, Optional, Callable, Dict
 
 import numpy as np
 import pandas as pd
 
 from .annotation import DegeneracyAnnotation
-from .io_handlers import get_major_base, MultiHandler, get_called_bases, DummyVariant
+from .io_handlers import get_major_base, MultiHandler, get_called_bases, DummyVariant, Site, VariantWriter, \
+    open_writer
 
 # get logger
 logger = logging.getLogger('sfsutils')
@@ -63,7 +64,7 @@ class Filtration(ABC):
 
     @abstractmethod
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -174,7 +175,7 @@ class SNPFiltration(MaskedFiltration):
     """
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -195,7 +196,7 @@ class SNVFiltration(Filtration):
     """
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -211,7 +212,7 @@ class PolyAllelicFiltration(MaskedFiltration):
     """
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site. Note that we don't check explicitly all alleles, but rather
         rely on ``ALT`` field.
@@ -233,7 +234,7 @@ class AllFiltration(Filtration):
     """
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -249,7 +250,7 @@ class NoFiltration(Filtration):
     """
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -307,7 +308,7 @@ class CodingSequenceFiltration(Filtration):
         self.cd = None
 
     @_count_filtered
-    def filter_site(self, v: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, v: Site) -> bool:
         """
         Filter site by whether it is in a coding sequence.
 
@@ -429,7 +430,7 @@ class DeviantOutgroupFiltration(Filtration):
             self.ingroup_mask = np.isin(self.samples, self.ingroups)
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -505,7 +506,7 @@ class ExistingOutgroupFiltration(Filtration):
         self.outgroup_mask: np.ndarray = np.isin(self.samples, self.outgroups)
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -540,7 +541,7 @@ class BiasedGCConversionFiltration(Filtration):
     """
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Remove bi-allelic sites that are not A<->T or G<->C mutations.
 
@@ -599,7 +600,7 @@ class CpGFiltration(Filtration):
         return False
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site by whether its reference base is in a CpG context.
 
@@ -635,7 +636,7 @@ class ContigFiltration(Filtration):
         self.contigs: List[str] = contigs
 
     @_count_filtered
-    def filter_site(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def filter_site(self, variant: Site) -> bool:
         """
         Filter site.
 
@@ -719,10 +720,10 @@ class Filterer(MultiHandler):
         #: The number of sites that did not pass the filters.
         self.n_filtered: int = 0
 
-        #: The VCF writer.
-        self._writer: 'cyvcf2.Writer' | None = None
+        #: The variant writer (format chosen by the output extension).
+        self._writer: VariantWriter | None = None
 
-    def is_filtered(self, variant: Union['cyvcf2.Variant', DummyVariant]) -> bool:
+    def is_filtered(self, variant: Site) -> bool:
         """
         Whether the given variant is kept.
 
@@ -741,20 +742,12 @@ class Filterer(MultiHandler):
         """
         Set up the filtrations.
         """
-        try:
-            from cyvcf2 import Writer
-        except ImportError:
-            raise ImportError(
-                "VCF support in sfsutils requires the optional 'cyvcf2' package. "
-                "Please install sfsutils with the 'vcf' extra: pip install sfsutils[vcf]"
-            )
-
         # setup filtrations
         for f in self.filtrations:
             f._setup(self)
 
-        # create the writer
-        self._writer = Writer(self.output, self._reader)
+        # create the writer for the format implied by the output extension
+        self._writer = open_writer(self.output, self._reader, info_ancestral=self.info_ancestral)
 
     def _teardown(self):
         """
@@ -784,7 +777,7 @@ class Filterer(MultiHandler):
 
                 if self.is_filtered(variant):
                     # write the variant
-                    self._writer.write_record(variant)
+                    self._writer.write(variant)
 
                 pbar.update()
 

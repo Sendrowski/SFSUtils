@@ -10,13 +10,15 @@ import gzip
 import hashlib
 import logging
 import os
+import re
 import shutil
 import tempfile
 import warnings
 from abc import ABC, abstractmethod
 from collections import Counter
 from functools import cached_property
-from typing import List, Iterable, Iterator, TextIO, Dict, Optional, Tuple, Union, Sequence
+from typing import List, Iterable, Iterator, TextIO, Dict, Optional, Tuple, Union, Sequence, Protocol, \
+    runtime_checkable
 from urllib.parse import urlparse
 
 import numpy as np
@@ -35,6 +37,49 @@ bases = ["A", "C", "G", "T"]
 
 # logger
 logger = logging.getLogger('sfsutils')
+
+
+@runtime_checkable
+class Site(Protocol):
+    """
+    Structural interface for a single streamed variant site: the abstraction layer over the input backends.
+    Both :class:`cyvcf2.Variant` (the VCF backend) and the concrete :class:`Variant` emitted by the
+    tree-sequence and VCF-Zarr backends satisfy it structurally, so the parser, filtrations, annotations and
+    stratifications are typed against ``Site`` alone rather than a union of the concrete backend types.
+    """
+
+    #: The contig.
+    CHROM: str
+
+    #: The 1-based position.
+    POS: int
+
+    #: The reference allele.
+    REF: str
+
+    #: The alternate alleles.
+    ALT: List[str]
+
+    #: The INFO field.
+    INFO: Dict[str, object]
+
+    #: The per-sample genotype strings (e.g. ``"A/T"``), as for ``cyvcf2.Variant.gt_bases``.
+    gt_bases: 'np.ndarray'
+
+    #: Whether the site is an SNP.
+    is_snp: bool
+
+    #: Whether the site is an MNP.
+    is_mnp: bool
+
+    #: Whether the site is an indel.
+    is_indel: bool
+
+    #: Whether the site is a deletion.
+    is_deletion: bool
+
+    #: Whether the site is a structural variant.
+    is_sv: bool
 
 
 def get_called_bases(genotypes: Sequence[str]) -> np.ndarray:
@@ -68,7 +113,7 @@ def get_major_base(genotypes: Sequence[str]) -> str | None:
         return Counter(bases).most_common()[0][0]
 
 
-def is_monomorphic_snp(variant: Union['cyvcf2.Variant', 'DummyVariant']) -> bool:
+def is_monomorphic_snp(variant: Site) -> bool:
     """
     Whether the given variant is a monomorphic SNP.
 
@@ -844,11 +889,12 @@ class NoTypeException(BaseException):
 
 class Variant:
     """
-    Minimal duck-typed stand-in for a :class:`cyvcf2.Variant`, exposing the subset of its interface that
-    the parser, filtrations, annotations and stratifications rely on: ``CHROM``, ``POS``, ``REF``,
-    ``ALT``, ``INFO``, the ``is_*`` type flags and the per-sample ``gt_bases``. Non-VCF backends (tree
-    sequences, VCF-Zarr stores) emit these objects so they feed the same streaming site interface as
-    cyvcf2, without sfsutils having to special-case the input format downstream.
+    Minimal concrete implementation of the :class:`Site` interface: a duck-typed stand-in for a
+    :class:`cyvcf2.Variant` exposing the subset of its interface that the parser, filtrations, annotations and
+    stratifications rely on: ``CHROM``, ``POS``, ``REF``, ``ALT``, ``INFO``, the ``is_*`` type flags and the
+    per-sample ``gt_bases``. Non-VCF backends (tree sequences, VCF-Zarr stores) emit these objects so they feed
+    the same streaming site interface as cyvcf2, without sfsutils having to special-case the input format
+    downstream.
     """
 
     #: Whether the variant is an SNP
@@ -1050,6 +1096,15 @@ class TskitVariantReader(VariantReader):
         """
         return [self._contig]
 
+    @property
+    def tree_sequence(self) -> 'tskit.TreeSequence':
+        """
+        The underlying tree sequence, used by :class:`TskitVariantWriter` to write a site-subset ``.trees``.
+
+        :return: The tree sequence.
+        """
+        return self._ts
+
     def count_sites(self) -> int:
         """
         The number of sites in the tree sequence.
@@ -1222,3 +1277,316 @@ class ZarrVariantReader(VariantReader):
                     is_snp=is_snp,
                     info=info,
                 )
+
+
+class VariantWriter(ABC):
+    """
+    Abstract sink mirroring :class:`VariantReader`: it consumes the same streamed :class:`Variant` interface
+    and writes it to a concrete on-disk format. :class:`Filterer` and :class:`Annotator` write through this,
+    so the output format is chosen by the output file's extension (see :func:`open_writer`) rather than being
+    hard-coded to VCF.
+    """
+
+    def write(self, variant: Site) -> None:
+        """
+        Write a single variant.
+
+        :param variant: The variant to write.
+        """
+        raise NotImplementedError
+
+    def close(self) -> None:
+        """
+        Flush and release any resources held by the writer.
+        """
+        pass
+
+
+class VCFVariantWriter(VariantWriter):
+    """
+    Write variants to a VCF (optionally gzipped) via cyvcf2, copying the header from the input VCF. Because it
+    reuses the input's cyvcf2 header, this writer requires a VCF input; writing VCF output from a tree sequence
+    or VCF-Zarr store is not supported (use a ``.vcz``/``.zarr`` output instead).
+    """
+
+    def __init__(self, output: str, template: 'cyvcf2.VCF'):
+        """
+        Open the writer.
+
+        :param output: The output VCF path.
+        :param template: The input cyvcf2 VCF whose header is copied.
+        :raises ValueError: If the input is not a VCF (no cyvcf2 header to copy).
+        """
+        try:
+            from cyvcf2 import Writer
+        except ImportError:
+            raise ImportError(
+                "VCF support in sfsutils requires the optional 'cyvcf2' package. "
+                "Please install sfsutils with the 'vcf' extra: pip install sfsutils[vcf]"
+            )
+
+        if isinstance(template, VariantReader):
+            raise ValueError(
+                "Writing VCF output is only supported from a VCF input, since the header is copied from it. "
+                "To write from a tree sequence or VCF-Zarr store, use a .vcz/.zarr output instead."
+            )
+
+        self._writer = Writer(output, template)
+
+    def write(self, variant: 'cyvcf2.Variant') -> None:
+        """
+        Write a single record.
+
+        :param variant: The cyvcf2 variant to write.
+        """
+        self._writer.write_record(variant)
+
+    def close(self) -> None:
+        """
+        Close the underlying writer.
+        """
+        self._writer.close()
+
+
+class ZarrVariantWriter(VariantWriter):
+    """
+    Write variants to a VCF-Zarr store in the `vcf2zarr <https://sgkit-dev.github.io/bio2zarr>`_ (VCZ) layout
+    read back by :class:`ZarrVariantReader`, so the output can come from any input (VCF, tree sequence or
+    another VCF-Zarr store). Any INFO fields present on the variants (for example an annotated ancestral
+    allele) are persisted as ``variant_<tag>`` arrays. Variants are buffered in memory and the arrays written
+    on :meth:`close`, since the ragged allele dimension needs a global maximum.
+    """
+
+    def __init__(self, output: str, samples: List[str], seqnames: List[str], info_ancestral: str = 'AA'):
+        """
+        Open the writer.
+
+        :param output: The output store path (``.vcz`` or ``.zarr``).
+        :param samples: The sample names.
+        :param seqnames: The contig names.
+        :param info_ancestral: The INFO tag holding the ancestral allele (written as ``variant_<tag>``).
+        """
+        try:
+            import zarr  # noqa: F401
+            import numcodecs  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "VCF-Zarr support in sfsutils requires the optional 'zarr' package. "
+                "Please install sfsutils with the 'zarr' extra: pip install sfsutils[zarr]"
+            )
+
+        self._output = output
+        self._samples = list(samples)
+        self._contig_ids = list(seqnames)
+        self._contig_index = {c: i for i, c in enumerate(self._contig_ids)}
+        self._info_ancestral = info_ancestral
+
+        self._positions: List[int] = []
+        self._contigs: List[int] = []
+        self._alleles: List[List[str]] = []
+        self._genotypes: List[List[List[int]]] = []
+        self._phased: List[List[bool]] = []
+        self._infos: List[Dict[str, object]] = []
+
+    def write(self, variant: Site) -> None:
+        """
+        Buffer a single variant.
+
+        :param variant: The variant to write.
+        """
+        alleles = [variant.REF] + list(variant.ALT)
+        index = {a: i for i, a in enumerate(alleles)}
+
+        rows, phased = [], []
+        for gt in np.asarray(variant.gt_bases):
+            gt = str(gt)
+            phased.append('|' in gt)
+            rows.append([index.get(c, -1) for c in re.split(r'[|/]', gt)])
+
+        chrom = variant.CHROM
+        if chrom not in self._contig_index:
+            self._contig_index[chrom] = len(self._contig_ids)
+            self._contig_ids.append(chrom)
+
+        self._positions.append(int(variant.POS))
+        self._contigs.append(self._contig_index[chrom])
+        self._alleles.append(alleles)
+        self._genotypes.append(rows)
+        self._phased.append(phased)
+        self._infos.append(dict(variant.INFO) if getattr(variant, 'INFO', None) else {})
+
+    def close(self) -> None:
+        """
+        Write the buffered variants to the store.
+        """
+        import zarr
+        import numcodecs
+
+        root = zarr.open(self._output, mode='w')
+        codec = numcodecs.VLenUTF8()
+
+        def _str_array(name: str, values):
+            root.create_dataset(name, data=np.asarray([str(v) for v in values], dtype=object),
+                                object_codec=codec, overwrite=True)
+
+        _str_array('sample_id', self._samples)
+        _str_array('contig_id', self._contig_ids)
+
+        n = len(self._positions)
+        n_samples = len(self._samples)
+        ploidy = max((len(call) for rows in self._genotypes for call in rows), default=2)
+        max_alleles = max((len(a) for a in self._alleles), default=1)
+
+        root.create_dataset('variant_position', data=np.array(self._positions, dtype=np.int32), overwrite=True)
+        root.create_dataset('variant_contig', data=np.array(self._contigs, dtype=np.int32), overwrite=True)
+
+        genotype = np.full((n, n_samples, ploidy), -1, dtype=np.int8)
+        phased = np.zeros((n, n_samples), dtype=bool)
+        for vi, (rows, ph) in enumerate(zip(self._genotypes, self._phased)):
+            for si, call in enumerate(rows):
+                genotype[vi, si, :len(call)] = call
+                phased[vi, si] = ph[si]
+
+        root.create_dataset('call_genotype', data=genotype, overwrite=True)
+        root.create_dataset('call_genotype_phased', data=phased, overwrite=True)
+
+        allele = np.full((n, max_alleles), '', dtype=object)
+        for vi, a in enumerate(self._alleles):
+            allele[vi, :len(a)] = a
+        root.create_dataset('variant_allele', data=allele, object_codec=codec, overwrite=True)
+
+        # persist any INFO fields (e.g. an annotated ancestral allele) as variant_<tag> string arrays
+        info_keys = sorted({k for info in self._infos for k in info})
+        for key in info_keys:
+            _str_array(f'variant_{key}', [str(info.get(key, '')) for info in self._infos])
+
+
+class TskitVariantWriter(VariantWriter):
+    """
+    Write a site-subset of an input tree sequence to a ``.trees`` file. Only the sites whose variants are
+    written (i.e. survive filtering) are kept, via :meth:`tskit.TreeSequence.delete_sites`, leaving the
+    genealogy untouched. This is the only well-defined ``.trees`` output: a genealogy cannot be reconstructed
+    from genotype data, so a tree-sequence output requires a tree-sequence input. INFO fields added by
+    annotations are attached to the kept sites as JSON metadata on a best-effort basis.
+    """
+
+    def __init__(self, ts: 'tskit.TreeSequence', output: str):
+        """
+        Open the writer.
+
+        :param ts: The source tree sequence.
+        :param output: The output ``.trees`` path.
+        """
+        self._ts = ts
+        self._output = output
+        self._logger = logger.getChild(self.__class__.__name__)
+
+        #: The 1-based VCF positions of the sites to keep.
+        self._kept: set = set()
+
+        #: INFO metadata keyed by 1-based position, for kept sites.
+        self._info_by_pos: Dict[int, Dict[str, object]] = {}
+
+    def write(self, variant: Site) -> None:
+        """
+        Mark the variant's site as kept.
+
+        :param variant: The variant to keep.
+        """
+        pos = int(variant.POS)
+        self._kept.add(pos)
+
+        if getattr(variant, 'INFO', None):
+            self._info_by_pos[pos] = dict(variant.INFO)
+
+    def close(self) -> None:
+        """
+        Delete the dropped sites and dump the resulting tree sequence.
+        """
+        # tskit stores 0-based positions; the reader reports POS = int(position) + 1
+        drop = [site.id for site in self._ts.sites() if int(site.position) + 1 not in self._kept]
+
+        sub = self._ts.delete_sites(drop)
+
+        if self._info_by_pos:
+            sub = self._attach_site_metadata(sub)
+
+        sub.dump(self._output)
+
+    def _attach_site_metadata(self, ts: 'tskit.TreeSequence') -> 'tskit.TreeSequence':
+        """
+        Attach the collected INFO fields to the kept sites as permissive-JSON metadata.
+
+        :param ts: The site-subset tree sequence.
+        :return: The tree sequence with site metadata, or the input unchanged if metadata could not be encoded.
+        """
+        import tskit
+
+        try:
+            tables = ts.dump_tables()
+            sites = tables.sites.copy()
+            tables.sites.clear()
+            tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+
+            for row in sites:
+                info = self._info_by_pos.get(int(row.position) + 1, {})
+                metadata = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in info.items()}
+                tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state, metadata=metadata)
+
+            return tables.tree_sequence()
+        except Exception as e:
+            self._logger.warning(f"Could not attach INFO metadata to the tree sequence: {e}")
+            return ts
+
+
+def _output_format(output: str) -> str:
+    """
+    Infer the output format from a file name.
+
+    :param output: The output path.
+    :return: One of ``'zarr'``, ``'tskit'`` or ``'vcf'``.
+    """
+    lowered = output.rstrip('/').lower()
+
+    if lowered.endswith(('.vcz', '.zarr')):
+        return 'zarr'
+
+    if lowered.endswith('.trees'):
+        return 'tskit'
+
+    return 'vcf'
+
+
+def open_writer(
+        output: str,
+        reader: Union['cyvcf2.VCF', VariantReader],
+        info_ancestral: str = 'AA'
+) -> VariantWriter:
+    """
+    Open the variant writer matching the output file's extension: a VCF-Zarr store for ``.vcz``/``.zarr`` (from
+    any input), a tskit tree sequence for ``.trees`` (only when the input is itself a tree sequence, since a
+    genealogy cannot be reconstructed from genotype data), and a VCF otherwise.
+
+    :param output: The output path; its extension selects the format.
+    :param reader: The open input reader (a cyvcf2 VCF or a :class:`VariantReader`).
+    :param info_ancestral: The INFO tag holding the ancestral allele, for the VCF-Zarr writer.
+    :return: The writer.
+    :raises ValueError: If a ``.trees`` output is requested from a non-tree-sequence input.
+    """
+    fmt = _output_format(output)
+
+    if fmt == 'zarr':
+        return ZarrVariantWriter(output, samples=list(reader.samples), seqnames=list(reader.seqnames),
+                                 info_ancestral=info_ancestral)
+
+    if fmt == 'tskit':
+        if not isinstance(reader, TskitVariantReader):
+            raise ValueError(
+                "Writing a tree sequence (.trees) is only supported when the input is itself a tree sequence: "
+                "a genealogy cannot be reconstructed from genotype data without ARG inference. Use a .vcz/.zarr "
+                "or VCF output instead."
+            )
+
+        return TskitVariantWriter(reader.tree_sequence, output)
+
+    return VCFVariantWriter(output, reader)
