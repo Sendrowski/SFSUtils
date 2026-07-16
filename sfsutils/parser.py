@@ -1,6 +1,7 @@
 """
-A VCF parser that can be used to extract the site frequency spectrum (SFS) from a VCF file.
-Stratifying the SFS is supported by providing a list of :class:`Stratification` instances.
+A parser that extracts the site frequency spectrum (SFS) from a VCF file, a VCF-Zarr store, or a tskit
+tree sequence (ARG). Stratifying the SFS is supported by providing a list of :class:`Stratification`
+instances.
 """
 
 __author__ = "Janek Sendrowski"
@@ -868,7 +869,7 @@ class TargetSiteCounter:
 
 class Parser(MultiHandler):
     """
-    Parse site-frequency spectra from VCF files.
+    Parse site-frequency spectra from VCF files, VCF-Zarr stores, or tskit tree sequences.
 
     By default, the parser looks at the ``AA`` tag in the VCF file's info field to retrieve
     the correct polarization. Polymorphic sites for which this tag is not well-defined are by default
@@ -896,10 +897,10 @@ class Parser(MultiHandler):
 
     ::
 
-        import sfsutils as sf
+        import sfsutils as su
 
         # Parse selected and neutral SFS from human chromosome 1.
-        p = sf.Parser(
+        p = su.Parser(
             vcf="https://ngs.sanger.ac.uk/production/hgdp/hgdp_wgs.20190516/"
                 "hgdp_wgs.20190516.full.chr21.vcf.gz",
             fasta="http://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/"
@@ -909,26 +910,26 @@ class Parser(MultiHandler):
             aliases=dict(chr21=['21']),  # mapping for contig names
             n=10,  # SFS sample size
             # we use a target site counter to infer the number of target sites.
-            target_site_counter=sf.TargetSiteCounter(
+            target_site_counter=su.TargetSiteCounter(
                 n_samples=1000000,
                 # determine number of target sites by looking at total length of coding sequences
-                n_target_sites=sf.Annotation.count_target_sites(
+                n_target_sites=su.Annotation.count_target_sites(
                     "http://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/"
                     "Homo_sapiens.GRCh38.109.chromosome.21.gff3.gz"
                 )['21']
             ),
             # add degeneracy annotation for sites
             annotations=[
-                sf.DegeneracyAnnotation()
+                su.DegeneracyAnnotation()
             ],
             filtrations=[
                 # exclude non-SNPs as we infer monomorphic sites with target site counter
-                sf.SNPFiltration(),
+                su.SNPFiltration(),
                 # filter out sites not in coding sequences
-                sf.CodingSequenceFiltration()
+                su.CodingSequenceFiltration()
             ],
             # stratify by 4-fold/0-fold degeneracy
-            stratifications=[sf.DegeneracyStratification()],
+            stratifications=[su.DegeneracyStratification()],
             info_ancestral='AA_ensembl'
         )
 
@@ -968,9 +969,9 @@ class Parser(MultiHandler):
         Initialize the parser.
 
         :param vcf: The variant source: a path to a VCF file (gzipped or a URL), a path to a VCF-Zarr store
-            (a ``.vcz`` or ``.zarr`` directory), a path to a tskit tree sequence (a ``.trees`` file) or an
-            in-memory ``tskit.TreeSequence``, or an iterable of variants. VCF-Zarr requires the optional
-            ``zarr`` package and tree sequences the optional ``tskit`` package.
+            (a ``.vcz`` or ``.zarr`` directory), or a tskit tree sequence (a ``.trees`` file or an in-memory
+            ``tskit.TreeSequence``). VCF-Zarr requires the optional ``zarr`` package and tree sequences the
+            optional ``tskit`` package.
         :param gff: The path to the GFF file, possibly gzipped or a URL. This file is optional and depends on
             the stratifications, annotations and filtrations that are used.
         :param fasta: The path to the FASTA file, possibly gzipped or a URL. This file is optional and depends on

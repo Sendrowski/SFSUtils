@@ -1961,6 +1961,20 @@ class JointSFS(AbstractSpectrum):
 
         return ax
 
+
+_D = TypeVar("_D", bound="_DictSpectraSerialization")
+
+
+class _DictSpectraSerialization:
+    """
+    JSON serialization shared by the dict-backed spectra collections (:class:`JointSpectra` and :class:`TwoSpectra`),
+    whose :attr:`data` maps each type to a spectrum object wrapping a numpy array. The arrays are converted to nested
+    lists for encoding and back to arrays on decode. The CSV/DataFrame-backed :class:`Spectra` does not use this.
+    """
+
+    #: The spectra keyed by type.
+    data: Dict[str, AbstractSpectrum]
+
     def to_file(self, file: str) -> None:
         """
         Save to file (in JSON format).
@@ -1978,39 +1992,41 @@ class JointSFS(AbstractSpectrum):
         """
         obj = copy.deepcopy(self)
 
-        # convert numpy array to list
-        obj.data = obj.data.tolist()
+        # convert each spectrum's array to a list
+        for s in obj.data.values():
+            s.data = s.data.tolist()
 
         return jsonpickle.encode(obj)
 
-    @staticmethod
-    def from_file(file: str) -> 'JointSFS':
+    @classmethod
+    def from_file(cls: type[_D], file: str) -> _D:
         """
         Load from file.
 
         :param file: File path.
-        :return: Joint SFS.
+        :return: Spectra.
         """
         with open(file, 'r') as f:
-            return JointSFS.from_json(f.read())
+            return cls.from_json(f.read())
 
-    @staticmethod
-    def from_json(json: str) -> 'JointSFS':
+    @classmethod
+    def from_json(cls: type[_D], json: str) -> _D:
         """
         Load from a JSON string.
 
         :param json: JSON string.
-        :return: Joint SFS.
+        :return: Spectra.
         """
         obj = jsonpickle.decode(json)
 
-        # convert list back to numpy array
-        obj.data = np.array(obj.data)
+        # convert each spectrum's list back to a numpy array
+        for s in obj.data.values():
+            s.data = np.array(s.data)
 
         return obj
 
 
-class JointSpectra(AbstractSpectra):
+class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of joint (multi-population) site-frequency spectra keyed by type, the multi-population analogue of
     :class:`Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the parser is given
@@ -2130,58 +2146,8 @@ class JointSpectra(AbstractSpectra):
         """
         return dict(self.data)
 
-    def to_file(self, file: str) -> None:
-        """
-        Save to file (in JSON format).
 
-        :param file: File path.
-        """
-        with open(file, 'w') as f:
-            f.write(self.to_json())
-
-    def to_json(self) -> str:
-        """
-        Convert to a JSON string.
-
-        :return: JSON string.
-        """
-        obj = copy.deepcopy(self)
-
-        # convert each joint SFS array to a list
-        for s in obj.data.values():
-            s.data = s.data.tolist()
-
-        return jsonpickle.encode(obj)
-
-    @staticmethod
-    def from_file(file: str) -> 'JointSpectra':
-        """
-        Load from file.
-
-        :param file: File path.
-        :return: Joint spectra.
-        """
-        with open(file, 'r') as f:
-            return JointSpectra.from_json(f.read())
-
-    @staticmethod
-    def from_json(json: str) -> 'JointSpectra':
-        """
-        Load from a JSON string.
-
-        :param json: JSON string.
-        :return: Joint spectra.
-        """
-        obj = jsonpickle.decode(json)
-
-        # convert each joint SFS list back to a numpy array
-        for s in obj.data.values():
-            s.data = np.array(s.data)
-
-        return obj
-
-
-class TwoSpectra(AbstractSpectra):
+class TwoSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of two-site (two-locus) site-frequency spectra keyed by type, the two-dimensional analogue of
     :class:`Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the two-SFS is parsed
@@ -2265,56 +2231,6 @@ class TwoSpectra(AbstractSpectra):
         :return: Dictionary of two-site spectra keyed by type.
         """
         return dict(self.data)
-
-    def to_file(self, file: str) -> None:
-        """
-        Save to file (in JSON format).
-
-        :param file: File path.
-        """
-        with open(file, 'w') as f:
-            f.write(self.to_json())
-
-    def to_json(self) -> str:
-        """
-        Convert to a JSON string.
-
-        :return: JSON string.
-        """
-        obj = copy.deepcopy(self)
-
-        # convert each two-site SFS array to a list
-        for s in obj.data.values():
-            s.data = s.data.tolist()
-
-        return jsonpickle.encode(obj)
-
-    @staticmethod
-    def from_file(file: str) -> 'TwoSpectra':
-        """
-        Load from file.
-
-        :param file: File path.
-        :return: Two-site spectra.
-        """
-        with open(file, 'r') as f:
-            return TwoSpectra.from_json(f.read())
-
-    @staticmethod
-    def from_json(json: str) -> 'TwoSpectra':
-        """
-        Load from a JSON string.
-
-        :param json: JSON string.
-        :return: Two-site spectra.
-        """
-        obj = jsonpickle.decode(json)
-
-        # convert each two-site SFS list back to a numpy array
-        for s in obj.data.values():
-            s.data = np.array(s.data)
-
-        return obj
 
 
 def parse_polydfe_sfs_config(file: str) -> dict:

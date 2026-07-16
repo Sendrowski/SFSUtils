@@ -1,5 +1,5 @@
 """
-Handlers the reading of VCF, GFF and FASTA files.
+Handles the reading of VCF, VCF-Zarr, tree-sequence, GFF and FASTA files.
 """
 
 __author__ = "Janek Sendrowski"
@@ -584,7 +584,7 @@ class VCFHandler(FileHandler):
 
     def __init__(
             self,
-            vcf: str | Iterable['cyvcf2.Variant'],
+            vcf: "str | 'tskit.TreeSequence'",
             info_ancestral: str = 'AA',
             max_sites: int = np.inf,
             seed: int | None = 0,
@@ -594,7 +594,7 @@ class VCFHandler(FileHandler):
         """
         Create a new VCF instance.
 
-        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a tskit tree sequence (.trees) or TreeSequence, or an iterable of variants
+        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), or a tskit tree sequence (a .trees path or a TreeSequence object)
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
         :param max_sites: Maximum number of sites to consider
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
@@ -603,7 +603,7 @@ class VCFHandler(FileHandler):
         """
         FileHandler.__init__(self, cache=cache, aliases=aliases)
 
-        #: The path to the VCF file or an iterable of variants
+        #: The variant source (a path or a tskit TreeSequence object)
         self.vcf = vcf
 
         #: The tag in the INFO field that contains the ancestral allele
@@ -698,7 +698,7 @@ class VCFHandler(FileHandler):
 
     def load_vcf(self) -> 'cyvcf2.VCF':
         """
-        Load a VCF file into a dictionary.
+        Open a VCF file for streaming.
 
         :return: The VCF reader.
         """
@@ -761,7 +761,7 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
 
     def __init__(
             self,
-            vcf: str | Iterable['cyvcf2.Variant'],
+            vcf: "str | 'tskit.TreeSequence'",
             fasta: str | None = None,
             gff: str | None = None,
             info_ancestral: str = 'AA',
@@ -773,7 +773,7 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
         """
         Create a new MultiHandler instance.
 
-        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a tskit tree sequence (.trees) or TreeSequence, or an iterable of variants
+        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), or a tskit tree sequence (a .trees path or a TreeSequence object)
         :param fasta: The path to the FASTA file.
         :param gff: The path to the GFF file.
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele

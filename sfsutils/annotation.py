@@ -146,9 +146,9 @@ class DegeneracyAnnotation(Annotation):
 
     ::
 
-        import sfsutils as sf
+        import sfsutils as su
 
-        ann = sf.Annotator(
+        ann = su.Annotator(
             vcf="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
                 "1000_genomes_project/release/20181203_biallelic_SNV/"
                 "ALL.chr21.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz",
@@ -157,7 +157,7 @@ class DegeneracyAnnotation(Annotation):
             gff="http://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/"
                 "Homo_sapiens.GRCh38.109.chromosome.21.gff3.gz",
             output='sapiens.chr21.degeneracy.vcf.gz',
-            annotations=[sf.DegeneracyAnnotation()],
+            annotations=[su.DegeneracyAnnotation()],
             aliases=dict(chr21=['21'])
         )
 
@@ -2140,11 +2140,11 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
     ::
 
-        import sfsutils as sf
+        import sfsutils as su
 
-        ann = sf.Annotator(
+        ann = su.Annotator(
             vcf="path/to/variants.with_outgroups.vcf.gz",
-            annotations=[sf.MaximumLikelihoodAncestralAnnotation(
+            annotations=[su.MaximumLikelihoodAncestralAnnotation(
                 outgroups=["ERR2103730"],
                 n_ingroups=15
             )],
@@ -4367,9 +4367,9 @@ class Annotator(MultiHandler):
 
     ::
 
-        import sfsutils as sf
+        import sfsutils as su
 
-        ann = sf.Annotator(
+        ann = su.Annotator(
             vcf="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
                 "1000_genomes_project/release/20181203_biallelic_SNV/"
                 "ALL.chr21.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz",
@@ -4378,7 +4378,7 @@ class Annotator(MultiHandler):
             gff="http://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/"
                 "Homo_sapiens.GRCh38.109.chromosome.21.gff3.gz",
             output='sapiens.chr21.degeneracy.vcf.gz',
-            annotations=[sf.DegeneracyAnnotation()],
+            annotations=[su.DegeneracyAnnotation()],
             aliases=dict(chr21=['21'])
         )
 

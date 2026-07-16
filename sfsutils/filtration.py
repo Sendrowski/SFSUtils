@@ -9,7 +9,7 @@ __date__ = "2023-05-11"
 import functools
 import logging
 from abc import ABC, abstractmethod
-from typing import Iterable, List, Optional, Callable, Dict, Union
+from typing import List, Optional, Callable, Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -653,17 +653,17 @@ class Filterer(MultiHandler):
 
     ::
 
-        import sfsutils as sf
+        import sfsutils as su
 
         # only keep variants in coding sequences
-        f = sf.Filterer(
+        f = su.Filterer(
             vcf="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
                 "1000_genomes_project/release/20181203_biallelic_SNV/"
                 "ALL.chr21.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz",
             gff="http://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/"
                 "Homo_sapiens.GRCh38.109.chromosome.21.gff3.gz",
             output='sapiens.chr21.coding.vcf.gz',
-            filtrations=[sf.CodingSequenceFiltration()],
+            filtrations=[su.CodingSequenceFiltration()],
             aliases=dict(chr21=['21'])
         )
 
@@ -673,7 +673,7 @@ class Filterer(MultiHandler):
 
     def __init__(
             self,
-            vcf: str | Iterable['cyvcf2.Variant'],
+            vcf: str,
             output: str,
             gff: str | None = None,
             fasta: str | None = None,

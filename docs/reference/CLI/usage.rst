@@ -4,7 +4,8 @@ Command-line interface
 ======================
 
 Installing ``sfsutils`` provides the ``sfsutils`` command, a thin wrapper around the Python API with three
-subcommands: ``parse`` derives a spectrum from a VCF, while ``filter`` and ``annotate`` write a transformed VCF.
+subcommands: ``parse`` derives a spectrum from a VCF, a VCF-Zarr store, or a tskit tree sequence, while
+``filter`` and ``annotate`` write a transformed VCF.
 
 .. code-block:: bash
 
