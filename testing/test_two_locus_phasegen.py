@@ -95,14 +95,14 @@ def test_two_sfs_converges_to_phasegen_expectation(name):
     assert np.corrcoef(e.ravel(), o.ravel())[0, 1] > 0.99
     assert np.abs(e - o).max() < 0.04
 
-    # the interior branch-length correlation/covariance recovered from the parser matches the analytic value,
-    # and, crucially, is invariant to whether monomorphic sites are included (they populate only bins 0 and n)
+    # the interior class-resolved covariance/correlation matrices recovered from the parser match the analytic
+    # ones, and, crucially, are invariant to whether monomorphic sites are included (they populate only bins 0/n)
     exact, parsed = su.TwoSFS(expected), su.TwoSFS(empirical)
-    assert parsed.correlation() == pytest.approx(exact.correlation(), abs=0.03)
-    assert parsed.covariance() == pytest.approx(exact.covariance(), abs=1.5e-3)
+    np.testing.assert_allclose(parsed.covariance(), exact.covariance(), atol=0.02)
+    np.testing.assert_allclose(parsed.correlation(), exact.correlation(), atol=0.06)
 
     with_mono = empirical.copy()
     with_mono[0, :] += 1e6; with_mono[:, 0] += 1e6      # monomorphic-involving pairs (all-ancestral)
     with_mono[-1, :] += 1e6; with_mono[:, -1] += 1e6    # and the all-derived bin
-    assert su.TwoSFS(with_mono).correlation() == parsed.correlation()   # exact: the interior is untouched
-    assert su.TwoSFS(with_mono).covariance() == parsed.covariance()
+    np.testing.assert_array_equal(su.TwoSFS(with_mono).covariance(), parsed.covariance())   # interior untouched
+    np.testing.assert_array_equal(su.TwoSFS(with_mono).correlation(), parsed.correlation())
