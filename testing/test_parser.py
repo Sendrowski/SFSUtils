@@ -1,6 +1,6 @@
 import logging
 
-import sfsutils as fd
+import sfsutils as sf
 import numpy as np
 import pandas as pd
 import pytest
@@ -21,10 +21,10 @@ class ParserTestCase(TestCase):
         """
         Test the degeneracy stratification.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
-            stratifications=[fd.DegeneracyStratification()]
+            stratifications=[sf.DegeneracyStratification()]
         )
 
         sfs = p.parse()
@@ -43,10 +43,10 @@ class ParserTestCase(TestCase):
         """
         Test the degeneracy stratification.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
-            stratifications=[fd.ContigStratification()]
+            stratifications=[sf.ContigStratification()]
         )
 
         sfs = p.parse()
@@ -63,7 +63,7 @@ class ParserTestCase(TestCase):
         """
         Test the contig stratification.
         """
-        s = fd.ContigStratification(['contig1', 'contig2'])
+        s = sf.ContigStratification(['contig1', 'contig2'])
 
         self.assertEqual(s.get_types(), ['contig1', 'contig2'])
         self.assertNotEqual(s.get_types(), ['contig1', 'contig3'])
@@ -75,7 +75,7 @@ class ParserTestCase(TestCase):
         Test the RandomStratification class.
         """
         # Test with 3 bins and fixed seed
-        s = fd.RandomStratification(n_bins=3, seed=42)
+        s = sf.RandomStratification(n_bins=3, seed=42)
 
         # Ensure all bin types are generated correctly
         self.assertEqual(s.get_types(), ['bin0', 'bin1', 'bin2'])
@@ -86,16 +86,16 @@ class ParserTestCase(TestCase):
         self.assertIn(bin, ['bin0', 'bin1', 'bin2'])
 
         # Test reproducibility: two instances with the same seed should match
-        s2 = fd.RandomStratification(n_bins=3, seed=42)
+        s2 = sf.RandomStratification(n_bins=3, seed=42)
         self.assertEqual(bin, s2.get_type(mock_variant))
 
         # Test with only 1 bin (should always return "bin1")
-        s_single_bin = fd.RandomStratification(n_bins=1, seed=42)
+        s_single_bin = sf.RandomStratification(n_bins=1, seed=42)
         self.assertEqual(s_single_bin.get_type(mock_variant), 'bin0')
 
         # Test invalid num_bins (should raise ValueError)
         with self.assertRaises(ValueError):
-            fd.RandomStratification(n_bins=0)
+            sf.RandomStratification(n_bins=0)
 
     @requires('resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz')
     @staticmethod
@@ -104,9 +104,9 @@ class ParserTestCase(TestCase):
         Test the degeneracy stratification.
         """
         n_chunks = 7
-        s = fd.ChunkedStratification(n_chunks=n_chunks)
+        s = sf.ChunkedStratification(n_chunks=n_chunks)
 
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[s]
@@ -132,10 +132,10 @@ class ParserTestCase(TestCase):
         """
         Test the VEP for human chr21.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='snakemake/results/vcf/sapiens/chr21.vep.vcf.gz',
             n=20,
-            stratifications=[fd.VEPStratification()]
+            stratifications=[sf.VEPStratification()]
         )
 
         sfs = p.parse()
@@ -150,11 +150,11 @@ class ParserTestCase(TestCase):
         """
         Test the synonymy stratification for a small subset of Betula spp.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             max_sites=1000,
-            stratifications=[fd.VEPStratification()]
+            stratifications=[sf.VEPStratification()]
         )
 
         sfs = p.parse()
@@ -170,10 +170,10 @@ class ParserTestCase(TestCase):
         """
         Test the synonymy stratification against SNPEFF for human chr21.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='snakemake/results/vcf/sapiens/chr21.snpeff.vcf.gz',
             n=20,
-            stratifications=[fd.SnpEffStratification()]
+            stratifications=[sf.SnpEffStratification()]
         )
 
         sfs = p.parse()
@@ -189,10 +189,10 @@ class ParserTestCase(TestCase):
         """
         Test the base transition stratification.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
             n=20,
-            stratifications=[fd.BaseTransitionStratification()]
+            stratifications=[sf.BaseTransitionStratification()]
         )
 
         sfs = p.parse()
@@ -211,10 +211,10 @@ class ParserTestCase(TestCase):
         """
         Test the transition transversion stratification.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
             n=20,
-            stratifications=[fd.TransitionTransversionStratification()]
+            stratifications=[sf.TransitionTransversionStratification()]
         )
 
         sfs = p.parse()
@@ -233,10 +233,10 @@ class ParserTestCase(TestCase):
         """
         Test the base context stratification.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
-            stratifications=[fd.BaseContextStratification(fasta='resources/genome/betula/genome.subset.20.fasta')]
+            stratifications=[sf.BaseContextStratification(fasta='resources/genome/betula/genome.subset.20.fasta')]
         )
 
         sfs = p.parse()
@@ -255,10 +255,10 @@ class ParserTestCase(TestCase):
         """
         Test the reference base stratification.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
-            stratifications=[fd.AncestralBaseStratification()]
+            stratifications=[sf.AncestralBaseStratification()]
         )
 
         sfs = p.parse()
@@ -276,19 +276,19 @@ class ParserTestCase(TestCase):
         """
         Parse human chr21 test VCF file.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/sapiens/chr21_test.vcf.gz",
             gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
             fasta="http://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz",
             n=20,
             annotations=[
-                fd.DegeneracyAnnotation(),
-                fd.MaximumParsimonyAncestralAnnotation()
+                sf.DegeneracyAnnotation(),
+                sf.MaximumParsimonyAncestralAnnotation()
             ],
             filtrations=[
-                fd.CodingSequenceFiltration()
+                sf.CodingSequenceFiltration()
             ],
-            stratifications=[fd.DegeneracyStratification()],
+            stratifications=[sf.DegeneracyStratification()],
             max_sites=100000
         )
 
@@ -306,10 +306,10 @@ class ParserTestCase(TestCase):
         """
         Test that filtering out all sites logs a warning.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             n=20,
-            filtrations=[fd.AllFiltration()]
+            filtrations=[sf.AllFiltration()]
         )
 
         with self.assertLogs(level="WARNING", logger=logging.getLogger('sfsutils')):
@@ -321,7 +321,7 @@ class ParserTestCase(TestCase):
         """
         Test that filtering out all sites logs a warning.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             n=20,
             stratifications=[]
@@ -337,19 +337,19 @@ class ParserTestCase(TestCase):
         """
         Parse the VCF file of Betula spp.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/all.polarized.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             n=20,
             annotations=[
-                fd.DegeneracyAnnotation(),
-                fd.MaximumParsimonyAncestralAnnotation()
+                sf.DegeneracyAnnotation(),
+                sf.MaximumParsimonyAncestralAnnotation()
             ],
             filtrations=[
-                fd.CodingSequenceFiltration()
+                sf.CodingSequenceFiltration()
             ],
-            stratifications=[fd.DegeneracyStratification()]
+            stratifications=[sf.DegeneracyStratification()]
         )
 
         sfs = p.parse()
@@ -361,21 +361,21 @@ class ParserTestCase(TestCase):
         """
         Parse the VCF file of Betula spp.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/all.polarized.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             n=20,
             annotations=[
-                fd.DegeneracyAnnotation(),
-                fd.SynonymyAnnotation()
+                sf.DegeneracyAnnotation(),
+                sf.SynonymyAnnotation()
             ],
             filtrations=[
-                fd.CodingSequenceFiltration()
+                sf.CodingSequenceFiltration()
             ],
             stratifications=[
-                fd.DegeneracyStratification(),
-                fd.SynonymyStratification()
+                sf.DegeneracyStratification(),
+                sf.SynonymyStratification()
             ]
         )
 
@@ -390,18 +390,18 @@ class ParserTestCase(TestCase):
         """
         Parse the VCF file of Betula spp.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.polarized.vcf.gz",
             fasta="resources/genome/betula/genome.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             n=10,
             annotations=[
-                fd.SynonymyAnnotation()
+                sf.SynonymyAnnotation()
             ],
             filtrations=[
-                fd.CodingSequenceFiltration()
+                sf.CodingSequenceFiltration()
             ],
-            stratifications=[fd.SynonymyStratification()]
+            stratifications=[sf.SynonymyStratification()]
         )
 
         sfs = p.parse()
@@ -414,10 +414,10 @@ class ParserTestCase(TestCase):
         """
         Make sure an error is raised when not FASTA file is specified
         """
-        p = fd.Parser(
+        p = sf.Parser(
             n=10,
             vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
-            target_site_counter=fd.TargetSiteCounter(
+            target_site_counter=sf.TargetSiteCounter(
                 n_target_sites=40000
             ),
             max_sites=10
@@ -433,20 +433,20 @@ class ParserTestCase(TestCase):
         """
         Test whether the monomorphic site counter works on the Betula data.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             max_sites=10000,
             n=10,
-            target_site_counter=fd.TargetSiteCounter(
+            target_site_counter=sf.TargetSiteCounter(
                 n_target_sites=40000,
                 n_samples=10000
             ),
             annotations=[
-                fd.DegeneracyAnnotation()
+                sf.DegeneracyAnnotation()
             ],
-            stratifications=[fd.DegeneracyStratification()]
+            stratifications=[sf.DegeneracyStratification()]
         )
 
         # set log level to DEBUG
@@ -464,19 +464,19 @@ class ParserTestCase(TestCase):
         """
         Test updating the target sites for different spectra.
         """
-        c = fd.TargetSiteCounter(
+        c = sf.TargetSiteCounter(
             n_target_sites=1000,
             n_samples=10000
         )
 
         # assign a polymorphic SFS to the target site counter
-        c._sfs_polymorphic = fd.Spectra(dict(
+        c._sfs_polymorphic = sf.Spectra(dict(
             neutral=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             selected=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         ))
 
         with self.assertLogs(level="WARNING", logger=logging.getLogger('sfsutils.TargetSiteCounter')) as warning:
-            c._update_target_sites(fd.Spectra(dict(
+            c._update_target_sites(sf.Spectra(dict(
                 # an SFS, decreasing sequence
                 neutral=[177130, 997, 441, 228, 156, 117, 114, 83, 105, 109, 652],
                 selected=[797939, 1329, 499, 265, 162, 104, 117, 90, 94, 119, 794]
@@ -488,19 +488,19 @@ class ParserTestCase(TestCase):
         """
         Test updating the target sites for different spectra.
         """
-        c = fd.TargetSiteCounter(
+        c = sf.TargetSiteCounter(
             n_target_sites=100000,
             n_samples=10000
         )
 
         # assign a polymorphic SFS to the target site counter
-        c._sfs_polymorphic = fd.Spectra(dict(
+        c._sfs_polymorphic = sf.Spectra(dict(
             neutral=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             selected=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         ))
 
         with self.assertLogs(level="WARNING", logger=logging.getLogger('sfsutils.TargetSiteCounter')) as warning:
-            c._update_target_sites(fd.Spectra(dict(
+            c._update_target_sites(sf.Spectra(dict(
                 # an SFS, decreasing sequence
                 neutral=[0, 997, 441, 228, 156, 117, 114, 83, 105, 109, 652],
                 selected=[0, 1329, 499, 265, 162, 104, 117, 90, 94, 119, 794]
@@ -512,18 +512,18 @@ class ParserTestCase(TestCase):
         """
         Test updating the target sites for different spectra.
         """
-        c = fd.TargetSiteCounter(
+        c = sf.TargetSiteCounter(
             n_target_sites=100000,
             n_samples=10000
         )
 
         # assign a polymorphic SFS to the target site counter
-        c._sfs_polymorphic = fd.Spectra(dict(
+        c._sfs_polymorphic = sf.Spectra(dict(
             neutral=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             selected=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         ))
 
-        sfs1 = fd.Spectra(dict(
+        sfs1 = sf.Spectra(dict(
             neutral=[177130, 997, 441, 228, 156, 117, 114, 83, 105, 109, 652],
             selected=[797939, 1329, 499, 265, 162, 104, 117, 90, 94, 119, 794]
         ))
@@ -543,20 +543,20 @@ class ParserTestCase(TestCase):
         """
         Test updating the target sites for different spectra.
         """
-        c = fd.TargetSiteCounter(
+        c = sf.TargetSiteCounter(
             n_target_sites=100000,
             n_samples=10000
         )
 
         # assign a polymorphic SFS to the target site counter
-        c._sfs_polymorphic = fd.Spectra({
+        c._sfs_polymorphic = sf.Spectra({
             'type1.neutral': [0, 0, 0, 0, 0, 0],
             'type1.selected': [0, 0, 0, 0, 0, 0],
             'type2.neutral': [0, 0, 0, 0, 0, 0],
             'type2.selected': [0, 0, 0, 0, 0, 0]
         })
 
-        sfs1 = fd.Spectra({
+        sfs1 = sf.Spectra({
             'type1.neutral': [177130, 997, 441, 228, 156, 117],
             'type1.selected': [797939, 1329, 499, 265, 162, 104],
             'type2.neutral': [144430, 114, 83, 105, 109, 652],
@@ -573,7 +573,7 @@ class ParserTestCase(TestCase):
         """
         Test that the parser includes only the samples that are given in the include_samples parameter.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20,
             include_samples=['ASP01', 'ASP02', 'ASP03']
@@ -588,7 +588,7 @@ class ParserTestCase(TestCase):
         """
         Test that the parser includes all samples if the include_samples parameter is not given.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20
         )
@@ -602,7 +602,7 @@ class ParserTestCase(TestCase):
         """
         Test that the parser excludes the samples that are given in the exclude_samples parameter.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20,
             exclude_samples=['ASP01', 'ASP02']
@@ -617,7 +617,7 @@ class ParserTestCase(TestCase):
         """
         Test that both include and exclude samples work together.
         """
-        p = fd.Parser(
+        p = sf.Parser(
             vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20,
             include_samples=['ASP01', 'ASP02', 'ASP03'],
@@ -649,25 +649,25 @@ class ParserTestCase(TestCase):
         Test the example from the manuscript.
         """
         # instantiate parser
-        p = fd.Parser(
+        p = sf.Parser(
             n=8,  # SFS sample size
             vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
-            target_site_counter=fd.TargetSiteCounter(
+            target_site_counter=sf.TargetSiteCounter(
                 n_target_sites=350000  # total number of target sites
             ),
             annotations=[
-                fd.DegeneracyAnnotation(),  # determine degeneracy
-                fd.MaximumLikelihoodAncestralAnnotation(
+                sf.DegeneracyAnnotation(),  # determine degeneracy
+                sf.MaximumLikelihoodAncestralAnnotation(
                     outgroups=["ERR2103730"]  # use one outgroup
                 )
             ],
-            stratifications=[fd.DegeneracyStratification()]
+            stratifications=[sf.DegeneracyStratification()]
         )
 
         # obtain SFS
-        spectra: fd.Spectra = p.parse()
+        spectra: sf.Spectra = p.parse()
 
         spectra.plot()
 
@@ -676,8 +676,8 @@ class ParserTestCase(TestCase):
         """
         Test the count_target_sites function with removing overlaps.
         """
-        sites_overlaps = fd.Annotation.count_target_sites('resources/genome/betula/genome.gff.gz', remove_overlaps=True)
-        sites = fd.Annotation.count_target_sites('resources/genome/betula/genome.gff.gz', remove_overlaps=False)
+        sites_overlaps = sf.Annotation.count_target_sites('resources/genome/betula/genome.gff.gz', remove_overlaps=True)
+        sites = sf.Annotation.count_target_sites('resources/genome/betula/genome.gff.gz', remove_overlaps=False)
 
         for config in sites.keys():
             self.assertLessEqual(sites_overlaps[config], sites[config])
@@ -688,7 +688,7 @@ class ParserTestCase(TestCase):
         Test that an invalid subsample model raises a ValueError.
         """
         with self.assertRaises(ValueError):
-            fd.Parser(
+            sf.Parser(
                 vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
                 n=20,
                 subsample_mode='invalid'
@@ -701,7 +701,7 @@ class ParserTestCase(TestCase):
         The used VCF files don't contain AA probability tags.
         """
         for n in [9, 10]:
-            p1 = fd.Parser(
+            p1 = sf.Parser(
                 vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=True,
                 subsample_mode='random',
@@ -711,7 +711,7 @@ class ParserTestCase(TestCase):
 
             sfs_prob = p1.parse()
 
-            p2 = fd.Parser(
+            p2 = sf.Parser(
                 vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=False,
                 subsample_mode='random',
@@ -721,7 +721,7 @@ class ParserTestCase(TestCase):
 
             sfs_fixed = p2.parse()
 
-            spectra = fd.Spectra(dict(
+            spectra = sf.Spectra(dict(
                 prob=sfs_prob.all,
                 fixed=sfs_fixed.all
             ))
@@ -739,7 +739,7 @@ class ParserTestCase(TestCase):
         The used VCF files don't contain AA probability tags.
         """
         for n in [9, 10]:
-            p1 = fd.Parser(
+            p1 = sf.Parser(
                 vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=True,
                 subsample_mode='probabilistic',
@@ -749,7 +749,7 @@ class ParserTestCase(TestCase):
 
             sfs_prob = p1.parse()
 
-            p2 = fd.Parser(
+            p2 = sf.Parser(
                 vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=False,
                 subsample_mode='probabilistic',
@@ -759,7 +759,7 @@ class ParserTestCase(TestCase):
 
             sfs_fixed = p2.parse()
 
-            spectra = fd.Spectra(dict(
+            spectra = sf.Spectra(dict(
                 prob=sfs_prob.all,
                 fixed=sfs_fixed.all
             ))
@@ -776,7 +776,7 @@ class ParserTestCase(TestCase):
         Compare probabilistic polarization with fixed polarization.
         """
         for n in [19, 20]:
-            p1 = fd.Parser(
+            p1 = sf.Parser(
                 vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=True,
                 subsample_mode='random',
@@ -786,7 +786,7 @@ class ParserTestCase(TestCase):
 
             sfs_prob = p1.parse()
 
-            p2 = fd.Parser(
+            p2 = sf.Parser(
                 vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=False,
                 subsample_mode='random',
@@ -796,7 +796,7 @@ class ParserTestCase(TestCase):
 
             sfs_fixed = p2.parse()
 
-            spectra = fd.Spectra(dict(
+            spectra = sf.Spectra(dict(
                 prob=sfs_prob.all,
                 fixed=sfs_fixed.all
             ))
@@ -812,7 +812,7 @@ class ParserTestCase(TestCase):
         Compare probabilistic polarization with fixed polarization.
         """
         for n in [19, 20]:
-            p1 = fd.Parser(
+            p1 = sf.Parser(
                 vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=True,
                 max_sites=10000,
@@ -821,7 +821,7 @@ class ParserTestCase(TestCase):
 
             sfs_prob = p1.parse()
 
-            p2 = fd.Parser(
+            p2 = sf.Parser(
                 vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=False,
                 max_sites=10000,
@@ -830,7 +830,7 @@ class ParserTestCase(TestCase):
 
             sfs_fixed = p2.parse()
 
-            spectra = fd.Spectra(dict(
+            spectra = sf.Spectra(dict(
                 prob=sfs_prob.all,
                 fixed=sfs_fixed.all
             ))
@@ -851,7 +851,7 @@ class FastParserTestCase(TestCase):
     fasta = 'resources/genome/betula/genome.subset.20.fasta'
 
     def _parse(self, stratifications, max_sites=200, **kwargs):
-        sfs = fd.Parser(
+        sfs = sf.Parser(
             vcf=self.vcf,
             n=20,
             stratifications=stratifications,
@@ -861,7 +861,7 @@ class FastParserTestCase(TestCase):
 
         # parse() always returns a Spectra; some stratifications skip every site in a tiny slice
         # (sparse INFO fields), which still exercises the parse/skip paths
-        self.assertIsInstance(sfs, fd.Spectra)
+        self.assertIsInstance(sfs, sf.Spectra)
         return sfs
 
     def test_no_stratification(self):
@@ -873,13 +873,13 @@ class FastParserTestCase(TestCase):
     def test_stratifications_vcf_only(self):
         """Stratifications that read only the VCF / its INFO fields."""
         for strat in [
-            fd.DegeneracyStratification(),
-            fd.TransitionTransversionStratification(),
-            fd.BaseTransitionStratification(),
-            fd.AncestralBaseStratification(),
-            fd.RandomStratification(n_bins=3, seed=42),
-            fd.ContigStratification(),
-            fd.ChunkedStratification(n_chunks=2),
+            sf.DegeneracyStratification(),
+            sf.TransitionTransversionStratification(),
+            sf.BaseTransitionStratification(),
+            sf.AncestralBaseStratification(),
+            sf.RandomStratification(n_bins=3, seed=42),
+            sf.ContigStratification(),
+            sf.ChunkedStratification(n_chunks=2),
         ]:
             with self.subTest(stratification=type(strat).__name__):
                 sfs = self._parse([strat])
@@ -888,12 +888,12 @@ class FastParserTestCase(TestCase):
 
     def test_base_context_stratification_with_fasta(self):
         """The FASTA-backed base-context stratification (tiny committed genome subset)."""
-        self._parse([fd.BaseContextStratification(fasta=self.fasta)])
+        self._parse([sf.BaseContextStratification(fasta=self.fasta)])
 
     def test_filtrations(self):
         """Parse with VCF-only filtrations applied."""
-        self._parse([], filtrations=[fd.SNPFiltration()])
-        self._parse([], filtrations=[fd.SNPFiltration(), fd.PolyAllelicFiltration()])
+        self._parse([], filtrations=[sf.SNPFiltration()])
+        self._parse([], filtrations=[sf.SNPFiltration(), sf.PolyAllelicFiltration()])
 
     def test_options(self):
         """The random subsample mode with an explicit seed."""
@@ -902,17 +902,17 @@ class FastParserTestCase(TestCase):
     @requires('resources/genome/betula/all.subset.100000.vcf.gz', 'resources/genome/betula/genome.gff.gz')
     def test_inline_annotation_and_stratification(self):
         """An inline degeneracy annotation + stratification during the parse (FASTA + GFF)."""
-        sfs = fd.Parser(
+        sfs = sf.Parser(
             vcf='resources/genome/betula/all.subset.100000.vcf.gz',
             fasta=self.fasta,
             gff='resources/genome/betula/genome.gff.gz',
             n=20,
             max_sites=200,
-            annotations=[fd.DegeneracyAnnotation()],
-            stratifications=[fd.DegeneracyStratification()],
+            annotations=[sf.DegeneracyAnnotation()],
+            stratifications=[sf.DegeneracyStratification()],
         ).parse()
 
-        self.assertIsInstance(sfs, fd.Spectra)
+        self.assertIsInstance(sfs, sf.Spectra)
 
     def test_target_site_counter(self):
         """
@@ -920,16 +920,16 @@ class FastParserTestCase(TestCase):
         SNP-only VCF and reconstructs the monomorphic counts from the reference). A small
         ``n_samples`` keeps it in the millisecond range while still exercising the count/update path.
         """
-        sfs = fd.Parser(
+        sfs = sf.Parser(
             vcf=self.vcf,
             fasta=self.fasta,
             n=20,
             max_sites=200,
-            filtrations=[fd.SNPFiltration()],
-            target_site_counter=fd.TargetSiteCounter(n_target_sites=100000, n_samples=200),
+            filtrations=[sf.SNPFiltration()],
+            target_site_counter=sf.TargetSiteCounter(n_target_sites=100000, n_samples=200),
         ).parse()
 
-        self.assertIsInstance(sfs, fd.Spectra)
+        self.assertIsInstance(sfs, sf.Spectra)
         # monomorphic counts were filled in from the reference, so the SFS is non-empty
         self.assertGreater(sfs.all.data.sum(), 0)
 
@@ -940,16 +940,16 @@ class FastParserTestCase(TestCase):
         SynonymyStratification then reads to split neutral/selected — exercising the synonymy
         stratification path without a pre-annotated (VEP/snpEff) VCF.
         """
-        sfs = fd.Parser(
+        sfs = sf.Parser(
             vcf='resources/genome/betula/all.subset.100000.vcf.gz',
             fasta=self.fasta,
             gff='resources/genome/betula/genome.gff.gz',
             n=20,
             max_sites=200,
-            annotations=[fd.SynonymyAnnotation()],
-            stratifications=[fd.SynonymyStratification()],
+            annotations=[sf.SynonymyAnnotation()],
+            stratifications=[sf.SynonymyStratification()],
         ).parse()
 
-        self.assertIsInstance(sfs, fd.Spectra)
+        self.assertIsInstance(sfs, sf.Spectra)
         if sfs.types:
             self.assertTrue(set(sfs.types).issubset({'neutral', 'selected'}))
