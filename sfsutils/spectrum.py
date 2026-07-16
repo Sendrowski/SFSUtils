@@ -1488,16 +1488,6 @@ class TwoSFS(AbstractSpectrum):
         """
         return TwoSFS((self.data + self.data.T) / 2)
 
-    def _frequencies(self) -> np.ndarray:
-        """
-        The derived-allele frequency ``i / n`` of each segregating class ``i = 1, ..., n - 1``.
-
-        :return: The segregating-class frequencies.
-        """
-        sample_size = self.n - 1
-
-        return np.arange(1, sample_size) / sample_size
-
     def interior(self, normalize: bool = False) -> np.ndarray:
         """
         The interior (segregating) block of the 2-SFS: pairs for which both sites carry between ``1`` and ``n - 1``
@@ -1521,44 +1511,40 @@ class TwoSFS(AbstractSpectrum):
 
         return interior / total
 
-    def covariance(self) -> float:
+    def covariance(self) -> np.ndarray:
         """
-        The covariance of the derived-allele frequency between two linked sites, conditional on both being
-        polymorphic. It is computed from the interior block alone (see :meth:`interior`), so it is independent of
-        the monomorphic sites and of any :class:`~sfsutils.parser.TargetSiteCounter` used to obtain the spectrum:
-        only the two-locus branch-length correlation among segregating sites enters it.
+        The covariance matrix of the derived-allele-count classes between two linked polymorphic sites: the
+        deviation of the interior joint distribution from independence, ``C[i, j] = P(i, j) - P(i) P(j)`` for
+        segregating classes ``i, j = 1, ..., n - 1``. A positive entry marks a pair of frequency classes that
+        co-occurs at linked sites more often than under independence, i.e. the two-locus branch-length correlation
+        resolved by class. It is computed from the interior block alone (see :meth:`interior`), so it is
+        independent of the monomorphic sites and of any :class:`~sfsutils.parser.TargetSiteCounter` used to obtain
+        the spectrum.
 
-        :return: The covariance of the derived-allele frequency.
-        """
-        p = self.interior(normalize=True)
-        x = self._frequencies()
-
-        return float(x @ p @ x - (x @ p.sum(axis=1)) * (x @ p.sum(axis=0)))
-
-    def correlation(self) -> float:
-        """
-        The Pearson correlation of the derived-allele frequency between two linked sites, conditional on both being
-        polymorphic. Like :meth:`covariance`, it uses only the interior block and is therefore independent of the
-        monomorphic sites and of any target-site count.
-
-        :return: The correlation coefficient in ``[-1, 1]``.
-        :raises ValueError: If either marginal has zero variance (fewer than two segregating classes).
+        :return: The ``(n - 1) x (n - 1)`` interior covariance matrix.
         """
         p = self.interior(normalize=True)
-        x = self._frequencies()
 
+        return p - np.outer(p.sum(axis=1), p.sum(axis=0))
+
+    def correlation(self) -> np.ndarray:
+        """
+        The correlation matrix corresponding to :meth:`covariance`, standardizing each segregating class by its
+        marginal (indicator) standard deviation: ``R[i, j] = (P(i, j) - P(i) P(j)) / sqrt(P(i)(1 - P(i)) P(j)(1 -
+        P(j)))``. Each entry lies in ``[-1, 1]``. Like :meth:`covariance`, it uses only the interior block and is
+        therefore independent of the monomorphic sites and of any target-site count. Entries whose class has no
+        marginal variance (a degenerate single-class spectrum) are returned as zero.
+
+        :return: The ``(n - 1) x (n - 1)`` interior correlation matrix.
+        """
+        p = self.interior(normalize=True)
         p_row, p_col = p.sum(axis=1), p.sum(axis=0)
-        mean_row, mean_col = x @ p_row, x @ p_col
 
-        cov = x @ p @ x - mean_row * mean_col
-        var_row = x ** 2 @ p_row - mean_row ** 2
-        var_col = x ** 2 @ p_col - mean_col ** 2
+        sd = np.outer(np.sqrt(p_row * (1 - p_row)), np.sqrt(p_col * (1 - p_col)))
+        cov = p - np.outer(p_row, p_col)
 
-        if var_row <= 0 or var_col <= 0:
-            raise ValueError('Cannot compute a correlation: a marginal has zero variance '
-                             '(at least two segregating classes are required).')
-
-        return float(cov / np.sqrt(var_row * var_col))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.where(sd > 0, cov / sd, 0.0)
 
     def fill_monomorphic(self, fill_value=np.nan) -> 'TwoSFS':
         """
