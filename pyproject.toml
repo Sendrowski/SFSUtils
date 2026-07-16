@@ -48,6 +48,8 @@ autodocsumm = "^0.2.15"
 cyvcf2 = "^0.31.0"
 zarr = ">=2.17,<3"
 tskit = ">=0.5"
+# analytic two-locus SFS ground truth for the (slow) two-SFS validation test
+phasegen = ">=2.0"
 
 [build-system]
 requires = ["poetry-core"]

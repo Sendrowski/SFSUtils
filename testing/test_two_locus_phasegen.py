@@ -1,0 +1,98 @@
+"""
+Validate the two-site SFS parser against an exact analytic ground truth from PhaseGen.
+
+At recombination rate zero the two loci share one genealogy, so PhaseGen's expected two-locus SFS
+``Coalescent(n, loci=2, recombination_rate=0).sfs2.mean`` is the within-tree cross-moment
+``E[L_i · L_j]`` of the branch lengths. We reproduce this empirically: simulate many independent
+non-recombining trees, drop infinite-sites mutations on each, and pair all sites within a tree with
+sfsutils' two-SFS (fully linked). Pooled over trees and normalised over the polymorphic block, the
+parser's pair counts must converge to PhaseGen's exact matrix. The check covers the Kingman coalescent
+and a Beta (multiple-merger) coalescent, so it exercises the down-projection, the within-tree pairing
+and the monomorphic handling against an independent analytic engine.
+
+Requires the optional ``phasegen`` and ``msprime`` packages; marked ``slow`` (thousands of simulations).
+"""
+import importlib.util
+import logging
+
+import numpy as np
+import pytest
+
+import sfsutils as su
+from sfsutils.settings import Settings
+
+# the pooling loop parses thousands of trees; keep its per-parse INFO logging out of the test output
+logging.getLogger('sfsutils').setLevel(logging.WARNING)
+
+_has_phasegen = importlib.util.find_spec("phasegen") is not None
+_has_msprime = importlib.util.find_spec("msprime") is not None
+
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(not (_has_phasegen and _has_msprime), reason="phasegen or msprime is absent"),
+]
+
+N = 4          # haploid sample size
+L = 1e4        # sequence length per tree (one genealogy, recombination_rate=0)
+THETA = 40.0   # expected mutation intensity per tree
+REPS = 2000
+SEED = 42
+
+
+def _models(name):
+    """Return the matched (phasegen, msprime) coalescent models for a model name."""
+    import msprime
+    import phasegen as pg
+
+    if name == "kingman":
+        return pg.StandardCoalescent(), msprime.StandardCoalescent()
+    if name == "beta":
+        return pg.BetaCoalescent(alpha=1.5), msprime.BetaCoalescent(alpha=1.5)
+    raise ValueError(name)
+
+
+def _empirical_two_sfs(ms_model):
+    """Pool the fully-linked (within-tree) two-SFS over many independent non-recombining trees."""
+    import msprime
+
+    Settings.disable_pbar = True
+    emp = np.zeros((N + 1, N + 1))
+    rate = THETA / (4 * L)
+
+    trees = msprime.sim_ancestry(samples=N, ploidy=1, sequence_length=L, recombination_rate=0,
+                                 model=ms_model, num_replicates=REPS, random_seed=SEED)
+
+    for i, ts in enumerate(trees):
+        mts = msprime.sim_mutations(ts, rate=rate, discrete_genome=False, random_seed=SEED + 1 + i)
+        if mts.num_sites < 2:
+            continue
+        # pair every pair of sites within the tree (a window spanning the whole sequence)
+        two = su.Parser(vcf=mts, n=N, two_sfs=True, two_sfs_distance=int(L) + 1,
+                        skip_non_polarized=False, subsample_mode="random").parse()
+        emp += two.data
+
+    return emp
+
+
+@pytest.mark.parametrize("name", ["kingman", "beta"])
+def test_two_sfs_converges_to_phasegen_expectation(name):
+    import phasegen as pg
+
+    pg_model, ms_model = _models(name)
+
+    # exact analytic ground truth: the within-tree cross-moment E[L_i L_j] at recombination rate 0
+    expected = np.asarray(pg.Coalescent(n=N, loci=2, recombination_rate=0, model=pg_model).sfs2.mean.data)
+    empirical = _empirical_two_sfs(ms_model)
+
+    # both are symmetric by construction
+    np.testing.assert_allclose(empirical, empirical.T)
+    np.testing.assert_allclose(expected, expected.T, atol=1e-9)
+
+    # compare on the polymorphic block (PhaseGen leaves the monomorphic 0 and n bins at zero), each
+    # normalised to sum 1; the parser's counts are proportional to E[L_i L_j] in the low-mutation limit
+    block = (slice(1, N), slice(1, N))
+    e = expected[block] / expected[block].sum()
+    o = empirical[block] / empirical[block].sum()
+
+    assert np.corrcoef(e.ravel(), o.ravel())[0, 1] > 0.99
+    assert np.abs(e - o).max() < 0.03
