@@ -76,7 +76,7 @@ def is_monomorphic_snp(variant: Union['cyvcf2.Variant', 'DummyVariant']) -> bool
     :return: Whether the site is a monomorphic SNP
     """
     return (not (variant.is_snp or variant.is_mnp or variant.is_indel or variant.is_deletion or variant.is_sv)
-            and variant.REF in bases)
+            and not variant.ALT and variant.REF in bases)
 
 
 def count_sites(
@@ -919,9 +919,6 @@ class DummyVariant(Variant):
     Dummy variant class to emulate a mono-allelic site.
     """
 
-    #: The alternate alleles
-    ALT = []
-
     def __init__(self, ref: str, pos: int, chrom: str):
         """
         Initialize the dummy variant.
@@ -930,17 +927,7 @@ class DummyVariant(Variant):
         :param pos: The position
         :param chrom: The contig
         """
-        #: The reference allele
-        self.REF = ref
-
-        #: The position
-        self.POS = pos
-
-        #: The contig
-        self.CHROM = chrom
-
-        #: Info field
-        self.INFO = {}
+        super().__init__(ref=ref, pos=pos, chrom=chrom)
 
 
 class VariantReader(Iterable, ABC):
@@ -961,12 +948,32 @@ class VariantReader(Iterable, ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def seqnames(self) -> List[str]:
+        """
+        The contig (sequence) names present in the source, matching ``cyvcf2.VCF.seqnames``.
+
+        :return: The contig names.
+        """
+        pass
+
     @abstractmethod
     def __iter__(self) -> Iterator[Variant]:
         """
         Iterate over the sites of the source.
 
         :return: An iterator over variants.
+        """
+        pass
+
+    def add_info_to_header(self, data: dict):
+        """
+        Declare an INFO field. On-the-fly annotations that write to :attr:`Variant.INFO` call this to
+        register the field with the underlying VCF header; for non-VCF sources (which are never written
+        back out) there is no header to update, so this is a no-op.
+
+        :param data: The INFO field definition.
         """
         pass
 
@@ -1033,6 +1040,15 @@ class TskitVariantReader(VariantReader):
         :return: The sample names.
         """
         return list(self._sample_names)
+
+    @property
+    def seqnames(self) -> List[str]:
+        """
+        The contig name (tree sequences have a single synthetic contig).
+
+        :return: The contig names.
+        """
+        return [self._contig]
 
     def count_sites(self) -> int:
         """
@@ -1132,6 +1148,15 @@ class ZarrVariantReader(VariantReader):
         :return: The sample names.
         """
         return list(self._sample_ids)
+
+    @property
+    def seqnames(self) -> List[str]:
+        """
+        The contig names declared in the store.
+
+        :return: The contig names.
+        """
+        return list(self._contig_ids)
 
     def count_sites(self) -> int:
         """

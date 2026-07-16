@@ -1424,6 +1424,9 @@ class Parser(MultiHandler):
             self._logger.debug(e)
             return False
 
+        # register the stratum so it appears in the output even if it never forms a within-window pair
+        _ = self._two_sfs_matrices[t]
+
         # reset the buffer when we move to a new contig (pairs never cross contigs)
         if variant.CHROM != self._two_sfs_contig:
             self._two_sfs_buffer.clear()

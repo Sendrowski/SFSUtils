@@ -1862,8 +1862,8 @@ class _OutgroupAncestralAlleleAnnotation(AncestralAlleleAnnotation, ABC):
             'Description': 'Probability that the predicted ancestral allele is correct, as opposed to the other allele.'
         })
 
-        # set reader
-        self._reader = self._handler.load_vcf()
+        # set reader (a fresh pass over the source, whatever its backend)
+        self._reader = self._handler._open_reader()
 
         # prepare masks
         self._prepare_masks(handler._reader.samples)

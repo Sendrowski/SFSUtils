@@ -60,6 +60,27 @@ def test_vcf_zarr_reproduces_vcf():
 
 
 @requires_trees
+def test_contig_stratification_on_tree_sequence():
+    """ContigStratification must work on a tree sequence: its get_types() reads the reader's seqnames,
+    which the tree/zarr readers now expose (previously only cyvcf2.VCF did, so this raised AttributeError)."""
+    Settings.disable_pbar = True
+    spectra = su.Parser(vcf=TREES, n=20, skip_non_polarized=False, subsample_mode="random",
+                        stratifications=[su.ContigStratification()]).parse()
+    # the tree sequence has a single synthetic contig "1"
+    assert spectra.types == ["1"]
+    assert spectra["1"].n_polymorphic > 0
+
+
+@requires_trees
+def test_reader_seqnames_exposed():
+    """Both non-VCF readers expose seqnames (used by ContigStratification and the contig filtration)."""
+    import tskit
+    from sfsutils.io_handlers import TskitVariantReader
+    reader = TskitVariantReader(tskit.load(TREES))
+    assert reader.seqnames == ["1"]
+
+
+@requires_trees
 def test_tree_sequence_joint_matches_vcf():
     """The joint SFS from the tree sequence matches the joint SFS from the VCF (shared sample identity)."""
     Settings.disable_pbar = True

@@ -1371,7 +1371,7 @@ class TwoSFS(AbstractSpectrum):
         if data.shape[0] != data.shape[1]:
             raise ValueError('Matrix has to be square.')
 
-        #: The sample size.
+        #: The matrix dimension along one axis (the sample size plus one, i.e. the number of derived-count bins).
         self.n: int = data.shape[0]
 
         #: The width of one folded half.

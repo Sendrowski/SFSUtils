@@ -151,3 +151,30 @@ def test_stratified_two_sfs_counts_only_within_stratum_pairs(tmp_path):
     # cross-parity pairs (four of the six) are not counted, so the pooled total is 2, not 6
     assert result.all.data.sum() == 2
 
+
+# one even-parity pair (10, 12) but only a single odd-parity site (15): the odd stratum forms no pair.
+PARITY_UNPAIRED_VCF = textwrap.dedent("""\
+    ##fileformat=VCFv4.2
+    ##contig=<ID=1>
+    #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1
+    1\t10\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    1\t12\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    1\t15\t.\tA\tT\t.\t.\t.\tGT\t0/1
+    """)
+
+
+def test_stratified_two_sfs_keeps_strata_without_pairs(tmp_path):
+    p = tmp_path / "parity_unpaired.vcf"
+    p.write_text(PARITY_UNPAIRED_VCF)
+    Settings.disable_pbar = True
+
+    result = su.Parser(vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+                       skip_non_polarized=False, subsample_mode="random",
+                       stratifications=[_ParityStratification()]).parse()
+
+    # the odd stratum has a site but forms no within-window pair; it must still be present (as zeros),
+    # not silently dropped
+    assert sorted(result.types) == ["even", "odd"]
+    assert result["even"].data[1, 1] == 1
+    assert result["odd"].data.sum() == 0
+
