@@ -29,6 +29,11 @@ JOINT_VCF = "resources/msprime/two_epoch_joint.vcf"
 JOINT_SFS = "resources/msprime/two_epoch_joint.jsfs.json"
 JOINT_POPS = "resources/msprime/two_epoch_joint.pops.json"
 
+# joint (three-population) fixtures
+THREE_POP_VCF = "resources/msprime/three_pop_joint.vcf"
+THREE_POP_SFS = "resources/msprime/three_pop_joint.jsfs.json"
+THREE_POP_POPS = "resources/msprime/three_pop_joint.pops.json"
+
 # two-SFS (two-site) fixtures
 TWO_SFS_VCF = "resources/msprime/two_sfs.vcf"
 TWO_SFS_REF = "resources/msprime/two_sfs.ref.json"
@@ -42,6 +47,11 @@ pytestmark = pytest.mark.skipif(
 requires_joint = pytest.mark.skipif(
     not all(os.path.exists(p) for p in (JOINT_VCF, JOINT_SFS, JOINT_POPS)),
     reason="joint msprime fixtures absent",
+)
+
+requires_three_pop = pytest.mark.skipif(
+    not all(os.path.exists(p) for p in (THREE_POP_VCF, THREE_POP_SFS, THREE_POP_POPS)),
+    reason="three-population joint msprime fixtures absent",
 )
 
 requires_two_sfs = pytest.mark.skipif(
@@ -59,6 +69,14 @@ def _load_two_sfs_meta():
 def _load_joint_pops():
     """Load the population -> samples mapping and per-population sample sizes for the joint fixture."""
     with open(JOINT_POPS) as f:
+        cfg = json.load(f)
+
+    return cfg["pops"], cfg["n"]
+
+
+def _load_three_pop():
+    """Load the population -> samples mapping and per-population sample sizes for the three-pop fixture."""
+    with open(THREE_POP_POPS) as f:
         cfg = json.load(f)
 
     return cfg["pops"], cfg["n"]
@@ -205,6 +223,57 @@ def test_joint_subsample_modes_agree():
     mask = rand > 5
     rel_diff = np.abs(prob[mask] - rand[mask]) / rand[mask]
     assert rel_diff.mean() < 0.3
+
+
+@requires_three_pop
+def test_parser_reproduces_msprime_joint_sfs_three_pops():
+    """The parsed three-population joint SFS reproduces the tskit ground truth exactly.
+
+    As for two populations, the full per-population sample size with ``random`` subsampling makes the
+    per-population hypergeometric down-projection deterministic, so the outer-product accumulation
+    matches tskit's three-way ``allele_frequency_spectrum`` bin for bin.
+    """
+    Settings.disable_pbar = True
+    pops, n = _load_three_pop()
+    truth = np.asarray(sf.JointSFS.from_file(THREE_POP_SFS)).astype(int)
+
+    spectra = sf.Parser(vcf=THREE_POP_VCF, pops=pops, n=n, skip_non_polarized=False,
+                        subsample_mode="random").parse()
+
+    assert isinstance(spectra, sf.JointSpectra)
+    assert spectra.n_pops == 3
+    parsed = np.asarray(spectra["all"]).astype(int)
+    assert parsed.shape == truth.shape == (n["A"] + 1, n["B"] + 1, n["C"] + 1)
+    np.testing.assert_array_equal(parsed, truth)
+
+
+@requires_three_pop
+def test_three_pop_marginals_match_pairwise_and_single():
+    """Marginalizing the three-population joint SFS onto a sub-tuple of axes reproduces the joint SFS
+    parsed directly for those populations (pairwise) and for a single population."""
+    Settings.disable_pbar = True
+    pops, n = _load_three_pop()
+
+    joint = sf.Parser(vcf=THREE_POP_VCF, pops=pops, n=n, skip_non_polarized=False,
+                      subsample_mode="random").parse()["all"]
+
+    # marginal onto (A, C) must equal the joint SFS parsed for just A and C
+    marginal_ac = np.asarray(joint.marginalize([0, 2])).astype(int)
+    pops_ac = {k: pops[k] for k in ("A", "C")}
+    n_ac = {k: n[k] for k in ("A", "C")}
+    direct_ac = np.asarray(
+        sf.Parser(vcf=THREE_POP_VCF, pops=pops_ac, n=n_ac, skip_non_polarized=False,
+                  subsample_mode="random").parse()["all"]
+    ).astype(int)
+    np.testing.assert_array_equal(marginal_ac, direct_ac)
+
+    # marginal onto B alone must equal population B's single-population SFS
+    marginal_b = np.asarray(joint.marginalize([1])).astype(int)
+    single_b = np.asarray(
+        sf.Parser(vcf=THREE_POP_VCF, n=n["B"], include_samples=pops["B"],
+                  skip_non_polarized=False, subsample_mode="random").parse()["all"].to_list()
+    ).astype(int)
+    np.testing.assert_array_equal(marginal_b, single_b)
 
 
 @requires_two_sfs

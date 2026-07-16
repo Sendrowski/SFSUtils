@@ -127,6 +127,64 @@ print(f"joint SFS shape: {jsfs.shape}, sum: {jsfs.sum()}")
 print(f"wrote joint fixtures to {OUT}/")
 
 
+# --- joint (three-population) fixture -------------------------------------------------------------
+# A, B and C from two successive splits; tskit's joint AFS over three sample sets is the exact
+# ground-truth three-dimensional joint SFS. Small per-population sample sizes keep the array compact.
+THREE_POP_SEED = 7
+
+demography_three = msprime.Demography()
+demography_three.add_population(name="A", initial_size=10_000)
+demography_three.add_population(name="B", initial_size=5_000)
+demography_three.add_population(name="C", initial_size=8_000)
+demography_three.add_population(name="BC", initial_size=10_000)
+demography_three.add_population(name="ANC", initial_size=10_000)
+demography_three.add_population_split(time=2_000, derived=["B", "C"], ancestral="BC")
+demography_three.add_population_split(time=4_000, derived=["A", "BC"], ancestral="ANC")
+
+ts_three = msprime.sim_ancestry(
+    samples={"A": 3, "B": 3, "C": 2},  # -> 6, 6, 4 haplotypes
+    demography=demography_three,
+    sequence_length=2e6,
+    recombination_rate=1e-8,
+    random_seed=THREE_POP_SEED,
+)
+ts_three = msprime.sim_mutations(ts_three, rate=1e-8, random_seed=THREE_POP_SEED)
+
+non_biallelic_three = [
+    s.id for s in ts_three.sites()
+    if len({s.ancestral_state} | {m.derived_state for m in s.mutations}) != 2
+]
+ts_three = ts_three.delete_sites(non_biallelic_three)
+
+pop_ids_three = {p.metadata["name"]: p.id for p in ts_three.populations() if p.metadata.get("name")}
+nodes_three = {name: ts_three.samples(population=pop_ids_three[name]) for name in ("A", "B", "C")}
+
+jsfs_three = ts_three.allele_frequency_spectrum(
+    sample_sets=[list(nodes_three[name]) for name in ("A", "B", "C")],
+    polarised=True, span_normalise=False,
+).astype(int)
+
+ind_pop_three = {}
+for ind in ts_three.individuals():
+    ind_pop_three.setdefault(ts_three.node(ind.nodes[0]).population, []).append(f"tsk_{ind.id}")
+pops_three = {name: ind_pop_three[pop_ids_three[name]] for name in ("A", "B", "C")}
+n_per_pop_three = {name: len(nodes_three[name]) for name in ("A", "B", "C")}
+
+with open(f"{OUT}/three_pop_joint.vcf", "w") as f:
+    ts_three.write_vcf(f)
+
+JointSFS(jsfs_three, pop_names=["A", "B", "C"]).to_file(f"{OUT}/three_pop_joint.jsfs.json")
+
+with open(f"{OUT}/three_pop_joint.pops.json", "w") as f:
+    json.dump({"pops": pops_three, "n": n_per_pop_three}, f, indent=2)
+
+print()
+print(f"three-pop haplotypes: {n_per_pop_three}")
+print(f"three-pop segregating sites: {ts_three.num_sites}")
+print(f"three-pop SFS shape: {jsfs_three.shape}, sum: {jsfs_three.sum()}")
+print(f"wrote three-pop joint fixtures to {OUT}/")
+
+
 # --- two-SFS (two-site) fixture -------------------------------------------------------------------
 # A single recombining sequence gives linked pairs of segregating sites; the two-SFS counts pairs
 # within a genomic-distance window. The reference matrix is built here by an independent naive
