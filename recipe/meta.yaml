@@ -1,0 +1,52 @@
+{% set name = "sfsutils" %}
+{% set version = "0.1.0b1" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  # sha256 filled in on release (by the conda-forge bot from the PyPI sdist)
+  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv
+  entry_points:
+    - sfsutils = sfsutils.cli:main
+
+requirements:
+  host:
+    - python >=3.10
+    - pip
+    - poetry-core
+  run:
+    - python >=3.10,<3.14
+    - matplotlib-base >=3.9
+    - seaborn >=0.13.2
+    - numpy >=1.24,<3
+    - pandas >=2.2.2
+    - jsonpickle >=3
+    - multiprocess >=0.70.12
+    - tqdm >=4.60
+    - biopython >=1.84
+    - requests >=2.28
+    - scipy >=1.13
+
+test:
+  imports:
+    - sfsutils
+  commands:
+    - sfsutils --help
+
+about:
+  home: https://github.com/Sendrowski/SFSUtils
+  license: GPL-3.0-or-later
+  license_file: LICENSE
+  summary: SFS parsing from VCF files with ancestral-allele and site-degeneracy annotation, stratification and filtering.
+
+extra:
+  recipe-maintainers:
+    - Sendrowski

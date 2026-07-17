@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sfsutils"
-version = "1.0.0"
+version = "0.1.0b1"
 description = "SFS parsing from VCF files with ancestral-allele and site-degeneracy annotation, stratification and filtering."
 authors = ["Sendrowski <sendrowski.janek@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -48,8 +48,10 @@ autodocsumm = "^0.2.15"
 cyvcf2 = "^0.31.0"
 zarr = ">=2.17,<3"
 tskit = ">=0.5"
+# coalescent simulation for the msprime-based validation fixtures and tests
+msprime = ">=1.3"
 # analytic two-locus SFS ground truth for the (slow) two-SFS validation test
-phasegen = ">=2.0"
+phasegen = ">=1.2.0"
 
 [build-system]
 requires = ["poetry-core"]

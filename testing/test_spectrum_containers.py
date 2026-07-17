@@ -128,6 +128,29 @@ def test_sfs2_branch_length_cov_corr_full_spectrum_semantics():
     np.testing.assert_allclose(np.diag(corr)[1:-1], 1.0)         # unit correlation diagonal
 
 
+def test_sfs2_fpmi_polymorphic_only_and_monomorphic_invariant():
+    """fpmi() is the pointwise-mutual-information log-ratio over the polymorphic interior. Unlike cov()/corr() it
+    needs no monomorphic sites: it is exactly invariant to the monomorphic bins (a SNP-only spectrum gives the same
+    result as the all-sites spectrum), is zero for an independent (factorizing) joint, and raises with no
+    polymorphic pairs."""
+    rng = np.random.default_rng(1)
+    block = rng.integers(1, 30, size=(4, 4)).astype(float)
+
+    # a polymorphic-only spectrum and the same spectrum with arbitrary monomorphic mass give identical fPMI
+    snp_only = np.zeros((6, 6)); snp_only[1:-1, 1:-1] = block
+    with_mono = snp_only.copy(); with_mono[0, 0] = 5000.0
+    with_mono[0, 1:-1] = rng.random(4) * 50; with_mono[1:-1, 0] = with_mono[0, 1:-1]
+    np.testing.assert_array_equal(su.TwoSFS(snp_only).fpmi().data, su.TwoSFS(with_mono).fpmi().data)
+
+    # independence on the interior -> zero fPMI
+    f = np.array([0.0, 5.0, 3.0, 2.0, 1.0, 0.0])
+    np.testing.assert_allclose(su.TwoSFS(np.outer(f, f)).fpmi().data[1:-1, 1:-1], 0.0, atol=1e-12)
+
+    # no polymorphic pairs -> raises
+    with pytest.raises(ValueError):
+        su.TwoSFS(np.zeros((6, 6))).fpmi()
+
+
 def test_sfs2_plot_smoke():
     s = su.TwoSFS(np.arange(16).reshape(4, 4).astype(float))
     assert s.plot(show=False) is not None
@@ -321,3 +344,42 @@ def test_twospectra_empty_raises():
             getattr(empty, accessor)
     with pytest.raises(ValueError):
         _ = empty.all
+
+
+def test_sfs2_plot_colour_scale_counts_vs_signed():
+    """The 2-SFS heatmap chooses its colour scale by the data: a sequential log scale for raw pair counts (which
+    carry monomorphic mass and span orders of magnitude, so they are not washed out) and a diverging
+    symmetric-log scale for the class-resolved cov/corr/fpmi results (monomorphic bins zeroed)."""
+    from matplotlib.colors import LogNorm, SymLogNorm
+    import matplotlib.pyplot as plt
+
+    # raw counts: a huge monomorphic (0, 0) bin and a positive interior -> sequential log / viridis
+    counts = np.zeros((6, 6)); counts[0, 0] = 1e8
+    counts[1:-1, 1:-1] = np.array([[300., 120, 80, 60], [120, 90, 50, 40], [80, 50, 70, 30], [60, 40, 30, 55]])
+    ax = su.TwoSFS(counts + counts.T).plot(show=False)
+    assert isinstance(ax.collections[0].norm, LogNorm)
+    assert ax.collections[0].get_cmap().name == 'viridis'
+    plt.close('all')
+
+    # a cov/corr result (monomorphic bins zeroed by the embed) -> diverging symmetric-log / PuOr_r
+    full = np.zeros((6, 6)); full[0, 0] = 1000.0; full[1:-1, 1:-1] = 2.0; full[1, 2] = full[2, 1] = 5.0
+    ax = su.TwoSFS(full).corr().plot(show=False)
+    assert isinstance(ax.collections[0].norm, SymLogNorm)
+    assert ax.collections[0].get_cmap().name == 'PuOr_r'
+    plt.close('all')
+
+
+def test_jointsfs_plot_defaults_to_log_colour():
+    """JointSFS.plot uses a logarithmic colour scale by default (the joint SFS is heavily skewed)."""
+    from matplotlib.colors import LogNorm
+    import matplotlib.pyplot as plt
+
+    j = su.JointSFS(np.arange(1, 37).reshape(6, 6).astype(float), pop_names=['A', 'B'])
+    ax = j.plot(show=False)
+    assert isinstance(ax.collections[0].norm, LogNorm)
+    plt.close('all')
+
+
+def test_spectrum_kingman_alias():
+    """Spectrum.kingman is an alias of the (deprecated) Spectrum.standard_kingman."""
+    np.testing.assert_array_equal(su.Spectrum.kingman(10).to_list(), su.Spectrum.standard_kingman(10).to_list())

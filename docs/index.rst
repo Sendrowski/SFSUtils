@@ -51,8 +51,8 @@ Contents
 
    reference/Python/installation
    reference/Python/quickstart
-   reference/Python/input_output
    reference/Python/parser
+   reference/Python/input_output
    reference/Python/stratifications
    reference/Python/annotations
    reference/Python/filtrations
@@ -83,9 +83,6 @@ Contents
    :maxdepth: 1
 
    modules/spectrum
-   modules/spectra
-   modules/jointsfs
-   modules/two_sfs
    modules/parser
    modules/annotation
    modules/filtration

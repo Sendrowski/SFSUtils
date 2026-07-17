@@ -194,7 +194,7 @@ def _run_parse(args: argparse.Namespace) -> int:
         seed=args.seed,
         subsample_mode=args.subsample_mode,
         two_sfs=args.two_sfs,
-        two_sfs_distance=args.two_sfs_distance,
+        d=args.two_sfs_distance,
         two_sfs_offset=args.two_sfs_offset,
     ).parse()
 

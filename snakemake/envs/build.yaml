@@ -1,0 +1,10 @@
+name: build-sfsutils
+channels:
+  - conda-forge
+dependencies:
+  - python<3.13
+  - urllib3<2.0.0
+  - pip
+  - pip:
+      - poetry # experienced problems with poetry in conda-forge
+      - poetry-plugin-export

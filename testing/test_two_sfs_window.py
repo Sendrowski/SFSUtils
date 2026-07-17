@@ -57,7 +57,7 @@ def vcf_path(tmp_path):
 
 def _two_sfs(vcf_path, distance, offset=0):
     Settings.disable_pbar = True
-    return su.Parser(vcf=vcf_path, n=2, two_sfs=True, two_sfs_distance=distance, two_sfs_offset=offset,
+    return su.Parser(vcf=vcf_path, n=2, two_sfs=True, d=distance, two_sfs_offset=offset,
                      skip_non_polarized=False, subsample_mode="random").parse()
 
 
@@ -117,7 +117,7 @@ def test_two_sfs_includes_monomorphic_sites(tmp_path):
     p.write_text(ALL_SITES_VCF)
     Settings.disable_pbar = True
 
-    sfs2 = su.Parser(vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+    sfs2 = su.Parser(vcf=str(p), n=2, two_sfs=True, d=100,
                      skip_non_polarized=False, subsample_mode="random").parse()
 
     # derived counts: 0 (monomorphic), 1 (het), 2 (hom-alt), 0 (monomorphic)
@@ -162,7 +162,7 @@ def test_two_sfs_no_warning_with_all_sites_input(tmp_path):
     p.write_text(_all_sites_vcf(n_mono=40, n_poly=1))
     Settings.disable_pbar = True
     messages = _capture_sfsutils_logs(lambda: su.Parser(
-        vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+        vcf=str(p), n=2, two_sfs=True, d=100,
         skip_non_polarized=False, subsample_mode="random").parse())
     assert not any(_MONO_WARNING in m for m in messages)
 
@@ -197,7 +197,7 @@ def test_stratified_two_sfs_counts_only_within_stratum_pairs(tmp_path):
     p.write_text(PARITY_VCF)
     Settings.disable_pbar = True
 
-    result = su.Parser(vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+    result = su.Parser(vcf=str(p), n=2, two_sfs=True, d=100,
                        skip_non_polarized=False, subsample_mode="random",
                        stratifications=[_ParityStratification()]).parse()
 
@@ -229,7 +229,7 @@ def test_stratified_two_sfs_keeps_strata_without_pairs(tmp_path):
     p.write_text(PARITY_UNPAIRED_VCF)
     Settings.disable_pbar = True
 
-    result = su.Parser(vcf=str(p), n=2, two_sfs=True, two_sfs_distance=100,
+    result = su.Parser(vcf=str(p), n=2, two_sfs=True, d=100,
                        skip_non_polarized=False, subsample_mode="random",
                        stratifications=[_ParityStratification()]).parse()
 

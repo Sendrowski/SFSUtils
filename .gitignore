@@ -18,6 +18,23 @@ out/
 .coverage
 .coverage.*
 
+# local reference literature (not part of the package)
+/Literature/
+
 # notebook-generated example outputs
 docs/reference/Python/*.vcf.gz
 docs/reference/Python/*.vcf.gz.tbi
+
+# heavy uncommitted test resources relocated from fastDFE (see testing/ @requires)
+/resources/EST-SFS/cmake-build-debug/
+/resources/genome/betula/all.subset.100000.vcf.gz
+/resources/genome/betula/all.with_outgroups.subset.200000.vcf.gz
+/resources/genome/betula/biallelic.with_outgroups.subset.50000.vcf.gz
+/resources/genome/betula/genome.fasta
+/resources/genome/papio/metadata.csv
+/resources/genome/sapiens/chr21.fasta
+/resources/genome/sapiens/chr21.sorted.gff3
+/resources/genome/sapiens/chr21_test.vcf.gz
+/resources/genome/sapiens/hg38.sorted.gtf.gz
+/resources/genome/sapiens/hgdp.anc.deg.vcf.gz
+/snakemake/results/

@@ -287,7 +287,7 @@ def test_parser_reproduces_msprime_two_sfs():
     meta = _load_two_sfs_meta()
     ref = np.asarray(su.TwoSFS.from_file(TWO_SFS_REF))
 
-    sfs2 = su.Parser(vcf=TWO_SFS_VCF, n=meta["n"], two_sfs=True, two_sfs_distance=meta["distance"],
+    sfs2 = su.Parser(vcf=TWO_SFS_VCF, n=meta["n"], two_sfs=True, d=meta["distance"],
                      two_sfs_offset=meta["offset"], skip_non_polarized=False,
                      subsample_mode="random").parse()
 
@@ -305,7 +305,7 @@ def test_two_sfs_pair_count_is_projection_invariant():
     meta = _load_two_sfs_meta()
     ref_total = np.asarray(su.TwoSFS.from_file(TWO_SFS_REF)).sum()
 
-    sfs2 = su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, two_sfs_distance=meta["distance"],
+    sfs2 = su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, d=meta["distance"],
                      skip_non_polarized=False, subsample_mode="probabilistic").parse()
 
     assert sfs2.data.shape == (11, 11)
@@ -315,14 +315,7 @@ def test_two_sfs_pair_count_is_projection_invariant():
 
 @requires_two_sfs
 def test_two_sfs_rejects_incompatible_options():
-    """The two-SFS is single-population, so populations are rejected at construction; and it does not support a
-    TargetSiteCounter (its covariance/correlation require the real monomorphic sites of an all-sites input, which a
-    target-site extrapolation cannot supply), so combining the two raises at parse time, with and without
-    stratifications."""
+    """The two-SFS is single-population, so populations are rejected at construction. (A TargetSiteCounter IS
+    supported for the unstratified two-SFS, extrapolating the monomorphic pairs; see test_tsc_extrapolation.)"""
     with pytest.raises(NotImplementedError):
         su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, pops={"A": ["tsk_0"]})
-
-    for extra in ({}, dict(stratifications=[su.ContigStratification()])):
-        with pytest.raises(NotImplementedError, match="two_sfs"):
-            su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, skip_non_polarized=False, **extra,
-                      target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=100)).parse()
