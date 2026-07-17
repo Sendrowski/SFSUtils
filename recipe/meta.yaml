@@ -1,4 +1,4 @@
-{% set name = "sfsutils" %}
+{% set name = "sfs-utils" %}
 {% set version = "0.1.0b1" %}
 
 package:

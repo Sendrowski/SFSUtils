@@ -5,11 +5,11 @@ Installation
 
 PyPI
 ^^^^
-To install the ``sfsutils`` package via pip:
+``sfsutils`` is distributed on PyPI as ``sfs-utils`` (the import name stays ``sfsutils``). To install it via pip:
 
 .. code-block:: bash
 
-   pip install sfsutils
+   pip install sfs-utils
 
 ``sfsutils`` is compatible with Python 3.10 through 3.13.
 
@@ -21,7 +21,7 @@ To install the ``sfsutils`` package via pip:
 
    .. code-block:: bash
 
-      pip install sfsutils[vcf,zarr,arg]
+      pip install sfs-utils[vcf,zarr,arg]
 
 Conda
 ^^^^^
@@ -29,7 +29,7 @@ Conda
 
 .. code-block:: bash
 
-   mamba create -n sfsutils -c conda-forge sfsutils
+   mamba create -n sfsutils -c conda-forge sfs-utils
    mamba activate sfsutils
 
 .. note::
@@ -39,7 +39,7 @@ Conda
 
    .. code-block:: bash
 
-      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils cyvcf2 zarr tskit
+      mamba create -n sfsutils -c conda-forge -c bioconda sfs-utils cyvcf2 zarr tskit
 
    Alternatively, to ensure reproducibility, create a file ``environment.yml``:
 
@@ -50,7 +50,7 @@ Conda
        - conda-forge
        - bioconda
      dependencies:
-       - sfsutils
+       - sfs-utils
        - cyvcf2
        - zarr
        - tskit
