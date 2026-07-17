@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "sfsutils"
+name = "sfs-utils"
 version = "0.1.0b1"
 description = "SFS parsing with site filtration and annotation, from VCF, Zarr, or tree sequences"
 authors = ["Sendrowski <sendrowski.janek@gmail.com>"]
