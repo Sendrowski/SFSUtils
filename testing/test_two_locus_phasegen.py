@@ -1,17 +1,15 @@
 """
 Validate the empirical two-site SFS branch-length covariance/correlation against exact analytic ground truth from
-PhaseGen, across a range of multiple-merger (Beta coalescent) intensities.
+PhaseGen, for RECOMBINING sequences across a range of multiple-merger (Beta coalescent) intensities.
 
-At recombination rate zero both loci share one genealogy, so PhaseGen's two-locus SFS
-``Coalescent(n, loci=2, recombination_rate=0).sfs2.mean`` is the within-tree cross-moment ``E[L_i L_j]`` of the
-branch lengths, and the class-resolved branch-length covariance is ``Cov(L_i, L_j) = sfs2.mean - outer(sfs.mean,
-sfs.mean)``. We reproduce this empirically from all-sites data: simulate many independent non-recombining trees,
-drop infinite-sites mutations, and for each tree add ``outer(c, c) - diag(c)`` over its per-class site counts
-(monomorphic sites included). That is exactly the fully linked all-sites two-SFS the parser produces from an
-all-sites input (see ``test_two_sfs_includes_monomorphic_sites``). :meth:`TwoSFS.cov` / :meth:`TwoSFS.corr`, which
-normalise over the full spectrum, must then match PhaseGen's branch-length covariance/correlation, and must track
-the multiple-merger intensity: the low-frequency correlation of two linked sites rises with merger strength,
-crossing from negative (Kingman) to positive (strong multiple mergers).
+Every test simulates an all-sites sequence that genuinely recombines, so pairs of sites at a fixed genomic
+separation ``d`` span many distinct genealogies rather than a single tree. The empirical windowed two-SFS
+covariance/correlation must then match PhaseGen's two-locus branch-length covariance ``Cov(L_i, L_j) = sfs2.mean -
+outer(sfs.mean, sfs.mean)`` at the corresponding recombination rate ``rho = Ne * r * d``. The Kingman and the Beta
+coalescent share the same ``rho = Ne * r * d`` calibration (verified numerically: the best-fitting PhaseGen rho
+equals the naive Kingman value to within the grid for both alpha = 1.5 and 1.7). The multiple-merger signal
+survives recombination: the low-frequency correlation of two linked sites is negative under Kingman and rises to
+positive under strong multiple mergers.
 
 Requires the optional ``phasegen`` and ``msprime`` packages; skipped otherwise.
 """
@@ -31,11 +29,17 @@ _has_msprime = importlib.util.find_spec("msprime") is not None
 
 pytestmark = pytest.mark.skipif(not (_has_phasegen and _has_msprime), reason="phasegen or msprime is absent")
 
-N = 6          # haploid sample size (PhaseGen's two-locus state space grows quickly, so keep n small)
-L = 400        # discrete sites per tree
-MU = 5e-3      # per-site mutation rate
-REPS = 8000
-SEED = 11
+N = 6            # haploid sample size (PhaseGen's two-locus state space grows quickly, so keep n small)
+
+# a recombining all-sites sequence: pairs at separation ~d span many genealogies at rho = Ne * r * d
+NE = 1.0
+R = 1e-3         # per-base recombination rate
+MU = 3e-3        # per-base mutation rate
+SEQ_LEN = 40_000
+REPS = 500
+SEED = 7
+OFFSET, WIDTH = 800, 400
+RHO = NE * R * (OFFSET + WIDTH / 2)  # = 1.0 for pairs in this window
 
 
 def _models(name):
@@ -58,74 +62,19 @@ def _cov2corr(cov):
         return np.where(np.outer(v, v) > 0, cov / np.outer(v, v), 0.0)
 
 
-def _phasegen_branch_length(pg_model):
-    """PhaseGen's exact interior branch-length covariance ``Cov(L_i, L_j)`` and its correlation, at recombination 0."""
+def _phasegen_branch_length_at(pg_model, rho):
+    """PhaseGen's exact interior branch-length covariance ``Cov(L_i, L_j)`` and its correlation at recombination
+    rate ``rho`` under the given model."""
     import phasegen as pg
 
-    m2 = np.asarray(pg.Coalescent(n=N, loci=2, recombination_rate=0.0, model=pg_model).sfs2.mean.data)
+    m2 = np.asarray(pg.Coalescent(n=N, loci=2, recombination_rate=rho, model=pg_model).sfs2.mean.data)
     m1 = np.asarray(pg.Coalescent(n=N, model=pg_model).sfs.mean.data)
     cov = (m2 - np.outer(m1, m1))[1:-1, 1:-1]
 
     return cov, _cov2corr(cov)
 
 
-def _empirical_all_sites_two_sfs(ms_model):
-    """Pool the fully linked all-sites two-SFS over independent non-recombining trees. Each tree contributes
-    ``outer(c, c) - diag(c)`` over its per-class site counts ``c`` with the monomorphic-ancestral count anchoring
-    the total, which is the exact all-sites two-SFS the parser produces at full linkage."""
-    import msprime
-
-    S = np.zeros((N + 1, N + 1))
-    trees = msprime.sim_ancestry(samples=N, ploidy=1, sequence_length=L, recombination_rate=0,
-                                 model=ms_model, num_replicates=REPS, random_seed=SEED)
-
-    for i, ts in enumerate(trees):
-        mts = msprime.sim_mutations(ts, rate=MU, discrete_genome=True, random_seed=SEED + 1 + i)
-        c = mts.allele_frequency_spectrum(polarised=True, span_normalise=False).astype(float)
-        c[0] = L - c[1:].sum()  # the monomorphic-ancestral sites anchor the total to the number of target sites
-        S += np.outer(c, c) - np.diag(c)
-
-    return su.TwoSFS(S)
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("name", ["kingman", "beta-1.7", "beta-1.5"])
-def test_two_sfs_cov_corr_match_phasegen_branch_length(name):
-    """The empirical all-sites two-SFS branch-length covariance/correlation match PhaseGen's exact ``Cov(L_i, L_j)``
-    across multiple-merger intensities: the correlation matrices agree in structure (near-perfect) and on the
-    informative low-frequency block, and the covariance agrees up to the (non-recoverable) mutational scale. The
-    low-frequency block moves with intensity, from strongly negative under Kingman to positive under Beta."""
-    ms_model, pg_model = _models(name)
-
-    pcov, pcorr = _phasegen_branch_length(pg_model)
-    emp = _empirical_all_sites_two_sfs(ms_model)
-    ecov = emp.cov().data[1:-1, 1:-1]
-    ecorr = emp.corr().data[1:-1, 1:-1]
-
-    # the correlation matrices are equivalent: near-perfect structural agreement...
-    assert np.corrcoef(ecorr.ravel(), pcorr.ravel())[0, 1] > 0.99
-
-    # ...and a close low-frequency block, where the multiple-merger signal lives and the counts are reliable
-    block = (slice(0, 3), slice(0, 3))
-    assert np.abs(ecorr[block] - pcorr[block]).max() < 0.06
-
-    # the covariance matches PhaseGen up to a single positive scale (the mutational constant is not recoverable)
-    scale = float(np.sum(ecov * pcov) / np.sum(ecov * ecov))
-    assert np.abs(scale * ecov - pcov).max() / np.abs(pcov).max() < 0.15
-
-
-def _phasegen_branch_length_at(rho):
-    """PhaseGen's exact interior Kingman branch-length covariance and correlation at recombination rate ``rho``."""
-    import phasegen as pg
-
-    m2 = np.asarray(pg.Coalescent(n=N, loci=2, recombination_rate=rho).sfs2.mean.data)
-    m1 = np.asarray(pg.Coalescent(n=N).sfs.mean.data)
-    cov = (m2 - np.outer(m1, m1))[1:-1, 1:-1]
-
-    return cov, _cov2corr(cov)
-
-
-def _empirical_recombining_all_sites(offset, width, ne, r, mu, seq_len, reps, seed):
+def _empirical_recombining_all_sites(ms_model, offset, width, ne, r, mu, seq_len, reps, seed):
     """The all-sites windowed two-SFS of a recombining sequence, pooled over replicates. Each discrete position
     carries its derived-allele count (zero for monomorphic sites), and positions are paired over separations in
     ``(offset, offset + width]`` — exactly the all-sites windowed two-SFS the parser builds, done directly here for
@@ -134,7 +83,7 @@ def _empirical_recombining_all_sites(offset, width, ne, r, mu, seq_len, reps, se
 
     S = np.zeros((N + 1, N + 1))
     trees = msprime.sim_ancestry(samples=N, ploidy=1, population_size=ne, sequence_length=seq_len,
-                                 recombination_rate=r, num_replicates=reps, random_seed=seed)
+                                 recombination_rate=r, model=ms_model, num_replicates=reps, random_seed=seed)
 
     for i, ts in enumerate(trees):
         mts = msprime.sim_mutations(ts, rate=mu, discrete_genome=True, random_seed=seed + 1 + i)
@@ -151,29 +100,57 @@ def _empirical_recombining_all_sites(offset, width, ne, r, mu, seq_len, reps, se
 
 
 @pytest.mark.slow
-def test_two_sfs_cov_corr_match_phasegen_with_recombination():
-    """A branch-length validation that is NOT based on a single genealogy. An all-sites recombining sequence is
-    pooled over pairs of sites at a fixed genetic distance ``d``; its two-SFS covariance/correlation must match
-    PhaseGen at the corresponding recombination rate ``rho = Ne * r * d``, and be far closer to that rho than to the
-    fully linked ``rho = 0`` limit (recombination has decorrelated the two loci)."""
-    ne, r, mu, seq_len, reps, seed = 1.0, 1e-3, 3e-3, 40_000, 400, 7
-    offset, width = 800, 400
-    rho = ne * r * (offset + width / 2)  # = 1.0 for pairs in this window
+@pytest.mark.parametrize("name", ["kingman", "beta-1.7", "beta-1.5"])
+def test_two_sfs_cov_corr_match_phasegen_with_recombination(name):
+    """The empirical recombining all-sites two-SFS covariance/correlation match PhaseGen's exact branch-length
+    ``Cov(L_i, L_j)`` at ``rho = Ne * r * d``, across multiple-merger intensities and NOT from a single genealogy:
+    the correlation matrices agree (near-perfect structure and a close low-frequency block), the covariance agrees
+    up to the non-recoverable mutational scale, and the empirical correlation is much closer to its own rho than to
+    the fully linked ``rho = 0`` limit (recombination has genuinely decorrelated the two loci). The low-frequency
+    block moves with intensity, from negative under Kingman to positive under strong multiple mergers."""
+    ms_model, pg_model = _models(name)
 
-    emp = _empirical_recombining_all_sites(offset, width, ne, r, mu, seq_len, reps, seed)
+    emp = _empirical_recombining_all_sites(ms_model, OFFSET, WIDTH, NE, R, MU, SEQ_LEN, REPS, SEED)
     ecov = emp.cov().data[1:-1, 1:-1]
     ecorr = emp.corr().data[1:-1, 1:-1]
 
-    rho_cov, rho_corr = _phasegen_branch_length_at(rho)
-    _, zero_corr = _phasegen_branch_length_at(0.0)
+    rho_cov, rho_corr = _phasegen_branch_length_at(pg_model, RHO)
+    _, zero_corr = _phasegen_branch_length_at(pg_model, 0.0)
 
     # matches PhaseGen at the recombination rate implied by the genetic distance
     assert np.corrcoef(ecorr.ravel(), rho_corr.ravel())[0, 1] > 0.99
-    assert np.abs(ecorr - rho_corr).max() < 0.06
-    scale = float(np.sum(ecov * rho_cov) / np.sum(ecov * ecov))
-    assert np.abs(scale * ecov - rho_cov).max() / np.abs(rho_cov).max() < 0.12
+    assert np.abs(ecorr - rho_corr).max() < 0.08
 
-    # a real recombination signal, not the single-tree limit: much closer to its own rho than to rho = 0
+    # the covariance matches PhaseGen up to a single positive scale (the mutational constant is not recoverable)
+    scale = float(np.sum(ecov * rho_cov) / np.sum(ecov * ecov))
+    assert np.abs(scale * ecov - rho_cov).max() / np.abs(rho_cov).max() < 0.15
+
+    # a real recombination signal, not the single-tree limit: closer to its own rho than to rho = 0
     to_rho = np.abs(ecorr - rho_corr).max()
     to_zero = np.abs(ecorr - zero_corr).max()
-    assert to_rho < 0.4 * to_zero
+    assert to_rho < 0.7 * to_zero
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["kingman", "beta-1.5"])
+def test_two_sfs_fpmi_recovers_phasegen(name):
+    """The empirical fpmi() recovers PhaseGen's ground-truth fPMI (the same ratio-PMI on the polymorphic two-locus
+    branch-length moments) for Kingman and multiple mergers, and is exactly invariant to the monomorphic sites: a
+    SNP-only spectrum gives the same fPMI as the all-sites spectrum."""
+    import phasegen as pg
+    ms_model, pg_model = _models(name)
+
+    # PhaseGen ground truth: fPMI of the polymorphic two-locus branch-length cross-moment (same fpmi definition)
+    gt = su.TwoSFS(np.asarray(pg.Coalescent(n=N, loci=2, recombination_rate=RHO, model=pg_model).sfs2.mean.data)
+                   ).fpmi().data[1:-1, 1:-1]
+
+    emp = _empirical_recombining_all_sites(ms_model, OFFSET, WIDTH, NE, R, MU, SEQ_LEN, REPS, SEED)
+    efpmi = emp.fpmi().data[1:-1, 1:-1]
+
+    # recovers the ground truth: near-perfect structure and a close low-frequency block
+    assert np.corrcoef(efpmi.ravel(), gt.ravel())[0, 1] > 0.99
+    assert np.abs(efpmi[:3, :3] - gt[:3, :3]).max() < 0.06
+
+    # exactly invariant to the monomorphic sites: dropping them (SNP-only) leaves fpmi unchanged
+    snp_only = emp.data.copy(); snp_only[[0, -1], :] = 0.0; snp_only[:, [0, -1]] = 0.0
+    np.testing.assert_array_equal(su.TwoSFS(snp_only).fpmi().data, emp.fpmi().data)

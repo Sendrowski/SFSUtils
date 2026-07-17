@@ -38,6 +38,37 @@ def _sfs(source):
     return np.array(su.Parser(vcf=source, **_KW).parse().all.to_list()).astype(int)
 
 
+@pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
+def test_source_and_vcf_alias_agree():
+    """The preferred ``source=`` and the deprecated ``vcf=`` alias yield the same SFS."""
+    Settings.disable_pbar = True
+    from_source = np.array(su.Parser(source=VCF, **_KW).parse().all.to_list()).astype(int)
+    from_vcf = np.array(su.Parser(vcf=VCF, **_KW).parse().all.to_list()).astype(int)
+    np.testing.assert_array_equal(from_source, from_vcf)
+
+
+def test_source_vcf_mutually_exclusive_and_required():
+    """Providing both ``source`` and ``vcf``, or neither, is an error raised at construction."""
+    with pytest.raises(ValueError):
+        su.Parser(source=VCF, vcf=VCF, **_KW)
+
+    with pytest.raises(ValueError):
+        su.Parser(**_KW)  # neither source nor vcf
+
+
+@requires_trees
+def test_parser_from_variant_reader():
+    """A pre-built VariantReader (an iterable of sites) can be passed directly as ``source`` and reproduces
+    the SFS parsed from the .trees fixture."""
+    import tskit
+    from sfsutils.io_handlers import TskitVariantReader
+
+    Settings.disable_pbar = True
+    reader = TskitVariantReader(tskit.load(TREES))
+    from_reader = np.array(su.Parser(source=reader, **_KW).parse().all.to_list()).astype(int)
+    np.testing.assert_array_equal(from_reader, _sfs(TREES))
+
+
 @requires_trees
 def test_tree_sequence_reproduces_vcf():
     """Parsing the tree sequence gives the same SFS as parsing the VCF written from it."""

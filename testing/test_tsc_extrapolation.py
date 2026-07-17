@@ -1,14 +1,12 @@
 """
-Ground-truth tests for the TargetSiteCounter extrapolation of monomorphic sites into the joint SFS, and for its
-refusal to combine with the two-SFS.
+Ground-truth tests for the TargetSiteCounter extrapolation of monomorphic sites into the joint SFS and the two-SFS.
 
-For the joint SFS the monomorphic corner is fixed exactly by the target-site count. The two-SFS is different: its
-covariance/correlation require the real monomorphic sites (an all-sites input), so a TargetSiteCounter is not
-supported together with ``two_sfs=True`` and must raise. The two-SFS branch-length covariance/correlation are
-validated against PhaseGen in ``test_two_locus_phasegen.py``.
+For the joint SFS the monomorphic corner is fixed exactly by the target-site count. For the two-SFS the counter
+extrapolates the monomorphic-involving pairs from the target-site count (only approximate for the branch-length
+covariance/correlation, which prefer a real all-sites input; the ratio-based ``fpmi`` needs no monomorphic sites).
+The two-SFS branch-length covariance/correlation are validated against PhaseGen in ``test_two_locus_phasegen.py``.
 """
 import os
-import textwrap
 
 import numpy as np
 import pytest
@@ -17,29 +15,40 @@ import sfsutils as su
 from sfsutils.settings import Settings
 
 
-def _write_vcf(path, positions, derived):
-    """Write a one-diploid-sample VCF: derived count 1 -> 0/1, 2 -> 1/1 (monomorphic sites are omitted)."""
-    header = textwrap.dedent("""\
-        ##fileformat=VCFv4.2
-        ##contig=<ID=1>
-        #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1
-        """)
-    gt = {1: "0/1", 2: "1/1"}
-    rows = "".join(f"1\t{p}\t.\tA\tT\t.\t.\t.\tGT\t{gt[d]}\n" for p, d in zip(positions, derived))
-    path.write_text(header + rows)
+def test_two_sfs_target_site_counter_extrapolates_monomorphic_pairs():
+    """A TargetSiteCounter's two-SFS extrapolation adds the monomorphic-involving pairs from the target-site count:
+    the monomorphic (row/column 0) bins are populated and scale with the target-site count, while the polymorphic
+    interior is left unchanged."""
+    poly = np.zeros((5, 5)); poly[1:-1, 1:-1] = np.array([[3.0, 2, 1], [2, 4, 2], [1, 2, 3]])
+    marginal = np.array([0.0, 6.0, 8.0, 6.0, 0.0])  # polymorphic SFS (no monomorphic sites)
+
+    def extrapolated(n_target):
+        return su.TargetSiteCounter(n_target_sites=n_target)._extrapolate_two_sfs(
+            poly.copy(), marginal, region_length=1000.0, distance=100)
+
+    a = extrapolated(10_000)
+    b = extrapolated(20_000)
+    assert a[0, 0] > 0 and a[0, 1:-1].sum() > 0                  # monomorphic-involving pairs added
+    assert b[0, 0] > a[0, 0]                                     # scale with the target-site count
+    np.testing.assert_allclose(a[1:-1, 1:-1], poly[1:-1, 1:-1])  # polymorphic interior unchanged
 
 
-def test_target_site_counter_not_supported_with_two_sfs(tmp_path):
-    """The two-SFS covariance/correlation require the real monomorphic sites, so a target-site extrapolation is
-    refused: combining a :class:`~sfsutils.parser.TargetSiteCounter` with ``two_sfs=True`` raises."""
+@pytest.mark.skipif(not (os.path.exists("resources/msprime/two_epoch.ref.fasta.gz")
+                         and os.path.exists("resources/msprime/two_epoch.vcf")),
+                    reason="the reference FASTA / VCF fixture is absent")
+def test_two_sfs_target_site_counter_populates_monomorphic_bins():
+    """A TargetSiteCounter is supported with the two-SFS: parsing a SNP-only VCF with one populates the monomorphic
+    (row/column 0) bins of the two-SFS, which are empty without it."""
     Settings.disable_pbar = True
-    vcf = tmp_path / "poly.vcf"
-    _write_vcf(vcf, positions=[10, 30, 60, 90], derived=[1, 2, 1, 1])
+    kw = dict(vcf="resources/msprime/two_epoch.vcf", n=20, two_sfs=True, d=1000,
+              skip_non_polarized=False, subsample_mode="random", fasta="resources/msprime/two_epoch.ref.fasta.gz")
 
-    with pytest.raises(NotImplementedError, match="two_sfs"):
-        su.Parser(vcf=str(vcf), n=2, two_sfs=True, two_sfs_distance=100, skip_non_polarized=False,
-                  subsample_mode="random",
-                  target_site_counter=su.TargetSiteCounter(n_target_sites=10_000)).parse()
+    without = su.Parser(**kw).parse().data
+    with_tsc = su.Parser(**kw, target_site_counter=su.TargetSiteCounter(
+        n_samples=50_000, n_target_sites=500_000)).parse().data
+
+    assert without[0].sum() == 0                          # the msprime VCF has no monomorphic sites
+    assert with_tsc[0].sum() > 0 and with_tsc[0, 0] > 0   # the counter extrapolated the monomorphic pairs
 
 
 # --- joint SFS: the monomorphic corner is fixed exactly by the target-site count -------------------

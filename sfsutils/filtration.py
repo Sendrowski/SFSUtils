@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 
 from .annotation import DegeneracyAnnotation
-from .io_handlers import get_major_base, MultiHandler, get_called_bases, DummyVariant, Site, VariantWriter, \
-    open_writer
+from .io_handlers import get_major_base, MultiHandler, get_called_bases, DummyVariant, Site, VariantReader, \
+    VariantWriter, open_writer
 
 # get logger
 logger = logging.getLogger('sfsutils')
@@ -658,7 +658,7 @@ class Filterer(MultiHandler):
 
         # only keep variants in coding sequences
         f = su.Filterer(
-            vcf="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
+            source="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
                 "1000_genomes_project/release/20181203_biallelic_SNV/"
                 "ALL.chr21.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz",
             gff="http://ftp.ensembl.org/pub/release-109/gff3/homo_sapiens/"
@@ -674,8 +674,8 @@ class Filterer(MultiHandler):
 
     def __init__(
             self,
-            vcf: str,
-            output: str,
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
+            output: str = None,
             gff: str | None = None,
             fasta: str | None = None,
             filtrations: List[Filtration] = [],
@@ -683,12 +683,16 @@ class Filterer(MultiHandler):
             max_sites: int = np.inf,
             seed: int | None = 0,
             cache: bool = True,
-            aliases: Dict[str, List[str]] = {}
+            aliases: Dict[str, List[str]] = {},
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
     ):
         """
         Create a new filter instance.
 
-        :param vcf: The VCF file, possibly gzipped or a URL.
+        :param source: The variant source: a VCF file (gzipped or a URL), a VCF-Zarr store (a ``.vcz`` or
+            ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
+            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
+            sites. Read through the same streamed site interface as all handlers.
         :param output: The output file.
         :param gff: The GFF file, possibly gzipped or a URL. This argument is required for some filtrations.
         :param fasta: The FASTA reference file, possibly gzipped or a URL. This argument is required for
@@ -699,8 +703,11 @@ class Filterer(MultiHandler):
         :param seed: The seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from urls.
         :param aliases: Dictionary of aliases for the contigs in the VCF file, e.g. ``{'chr1': ['1']}``.
+        :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
+            ``source`` or ``vcf``, not both.
         """
         super().__init__(
+            source=source,
             vcf=vcf,
             gff=gff,
             fasta=fasta,

@@ -166,7 +166,7 @@ def test_run_parse_two_sfs(tmp_path):
     assert sfs2.data.shape == (21, 21)
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
     # the CLI must produce the same two-SFS as the equivalent Parser call
-    direct = su.Parser(vcf=TWO_SFS_VCF, n=20, two_sfs=True, two_sfs_distance=1000,
+    direct = su.Parser(vcf=TWO_SFS_VCF, n=20, two_sfs=True, d=1000,
                        skip_non_polarized=False, subsample_mode="random").parse()
     np.testing.assert_array_equal(sfs2.data, direct.data)
     assert sfs2.data.sum() > 0

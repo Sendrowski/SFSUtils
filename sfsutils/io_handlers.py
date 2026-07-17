@@ -717,6 +717,10 @@ class VCFHandler(FileHandler):
         if self._is_zarr_store(self.vcf):
             return ZarrVariantReader(self.vcf, info_ancestral=self.info_ancestral)
 
+        # a pre-built VariantReader (or any iterable of sites) passed directly as the source
+        if not isinstance(self.vcf, str):
+            return self.vcf
+
         return self.load_vcf()
 
     @staticmethod
@@ -778,6 +782,12 @@ class VCFHandler(FileHandler):
         if self._is_tree_sequence(self.vcf) or self._is_zarr_store(self.vcf):
             return int(min(self._reader.count_sites(), self.max_sites))
 
+        # a pre-built VariantReader (or any iterable of sites) passed directly as the source
+        if not isinstance(self.vcf, str):
+            reader = self._reader
+            n = reader.count_sites() if isinstance(reader, VariantReader) else len(list(reader))
+            return int(min(n, self.max_sites))
+
         return count_sites(
             vcf=self.download_if_url(self.vcf),
             max_sites=self.max_sites,
@@ -806,19 +816,22 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
 
     def __init__(
             self,
-            vcf: "str | 'tskit.TreeSequence'",
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
             fasta: str | None = None,
             gff: str | None = None,
             info_ancestral: str = 'AA',
             max_sites: int = np.inf,
             seed: int | None = 0,
             cache: bool = True,
-            aliases: Dict[str, List[str]] = {}
+            aliases: Dict[str, List[str]] = {},
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
     ):
         """
         Create a new MultiHandler instance.
 
-        :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), or a tskit tree sequence (a .trees path or a TreeSequence object)
+        :param source: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a
+            tskit tree sequence (a .trees path or a TreeSequence object), or a pre-built :class:`VariantReader`
+            / iterable of sites.
         :param fasta: The path to the FASTA file.
         :param gff: The path to the GFF file.
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
@@ -826,11 +839,16 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files that are downloaded from URLs
         :param aliases: The contig aliases.
+        :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
+            ``source`` or ``vcf``, not both.
+        :raises ValueError: If both ``source`` and ``vcf`` are given, or if neither is given.
         """
+        source = self._resolve_source(source, vcf)
+
         # initialize vcf handler
         VCFHandler.__init__(
             self,
-            vcf=vcf,
+            vcf=source,
             info_ancestral=info_ancestral,
             max_sites=max_sites,
             seed=seed,
@@ -853,6 +871,31 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
             cache=cache,
             aliases=aliases
         )
+
+        #: The variant source. Alias of :attr:`vcf`, which is kept for backward compatibility.
+        self.source = self.vcf
+
+    @staticmethod
+    def _resolve_source(source, vcf):
+        """
+        Reconcile the ``source`` parameter with its deprecated ``vcf`` alias.
+
+        :param source: The variant source.
+        :param vcf: The deprecated ``vcf`` alias.
+        :return: The resolved variant source.
+        :raises ValueError: If both ``source`` and ``vcf`` are given, or if neither is given.
+        """
+        if source is not None and vcf is not None:
+            raise ValueError(
+                "Provide either 'source' or the deprecated 'vcf' alias, not both."
+            )
+
+        if source is None and vcf is None:
+            raise ValueError(
+                "A variant source must be provided via 'source' (or the deprecated 'vcf' alias)."
+            )
+
+        return source if source is not None else vcf
 
     def _require_fasta(self, class_name: str):
         """
@@ -1017,9 +1060,9 @@ class VariantReader(Iterable, ABC):
     def sequence_length(self) -> Optional[float]:
         """
         The total length (bp) of the source region, when the source knows it (as a tree sequence does).
-        Used to estimate the site density when extrapolating monomorphic pairs of the two-SFS from a
-        target-site count. Returns ``None`` when no reliable length is available (e.g. a VCF-Zarr store),
-        in which case the observed variant span is used instead.
+        Used to estimate the site density when extrapolating monomorphic sites from a target-site count.
+        Returns ``None`` when no reliable length is available (e.g. a VCF-Zarr store), in which case the
+        observed variant span is used instead.
 
         :return: The sequence length, or ``None``.
         """
@@ -1310,7 +1353,7 @@ class ZarrVariantReader(VariantReader):
 
 class VariantWriter(ABC):
     """
-    Abstract sink mirroring :class:`VariantReader`: it consumes the same streamed :class:`Variant` interface
+    Abstract writer mirroring :class:`VariantReader`: it consumes the same streamed :class:`Variant` interface
     and writes it to a concrete on-disk format. :class:`Filterer` and :class:`Annotator` write through this,
     so the output format is chosen by the output file's extension (see :func:`open_writer`) rather than being
     hard-coded to VCF.

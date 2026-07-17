@@ -82,3 +82,16 @@ def test_ml_ancestral_runs_with_priors(prior):
 def test_ml_ancestral_empty_dataframe_raises():
     with pytest.raises(ValueError):
         ML.from_dataframe(pd.DataFrame(), n_ingroups=10)
+
+
+def test_ml_ancestral_outgroup_divergence(fitted):
+    rates = fitted.get_outgroup_divergence()
+    assert rates.shape == (fitted.n_outgroups,)
+    assert np.all(np.isfinite(rates))
+
+
+def test_ml_ancestral_outgroup_divergence_without_fit_raises():
+    a = ML.from_dataframe(_synthetic_sites(n=50, seed=3), n_ingroups=8, n_runs=1,
+                          model=JCSubstitutionModel(), parallelize=False, seed=0)
+    with pytest.raises(RuntimeError, match="No maximum likelihood parameters"):
+        a.get_outgroup_divergence()

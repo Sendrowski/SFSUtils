@@ -431,6 +431,33 @@ rule download_gff_chr_sapiens:
 
 
 # ======================================================================================
+# Packaging: refresh the Poetry lock file and the docs requirements export
+# ======================================================================================
+
+# Lock the current dependency constraints and re-export the pinned docs requirements.
+# `poetry lock` resolves against the constraints in pyproject.toml without bumping
+# already-locked versions (unlike `poetry update`), so re-running it is stable.
+# The docs export mirrors the docs build env: dev group (Sphinx/myst-nb stack, plus
+# cyvcf2/zarr/tskit/phasegen) with the vcf extra active for cyvcf2. The hand-curated
+# snakemake/envs/requirements.txt (loose direct-dep ranges) is intentionally not
+# regenerated here.
+rule generate_requirements_poetry:
+    input:
+        pyproject="../pyproject.toml"
+    output:
+        lock="../poetry.lock",
+        docs="../docs/requirements.txt"
+    conda:
+        "envs/build.yaml"
+    shell:
+        """
+        cd ..
+        poetry lock
+        poetry export --with dev --extras vcf --without-hashes -f requirements.txt -o docs/requirements.txt
+        """
+
+
+# ======================================================================================
 # EST-SFS ancestral-allele inference (scatter/gather module)
 # ======================================================================================
 

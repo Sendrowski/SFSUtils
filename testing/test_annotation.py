@@ -150,6 +150,8 @@ class AnnotationTestCase(TestCase):
         # assert number of sites is the same
         self.assertEqual(10000, count_sites(ann.output))
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/sapiens/chr21_test.vcf.gz', 'resources/genome/sapiens/hg38.sorted.gtf.gz')
     @staticmethod
     def test_degeneracy_annotation_human_test_genome():
@@ -177,6 +179,8 @@ class AnnotationTestCase(TestCase):
         assert deg.n_annotated == 7
         assert ann.n_sites == 1517
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/sapiens/chr21_test.vcf.gz', 'resources/genome/sapiens/hg38.sorted.gtf.gz')
     @staticmethod
     def test_degeneracy_annotation_human_test_genome_uncached():
@@ -205,6 +209,8 @@ class AnnotationTestCase(TestCase):
         assert deg.n_annotated == 7
         assert ann.n_sites == 1517
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/sapiens/chr21_test.vcf.gz', 'resources/genome/sapiens/hg38.sorted.gtf.gz')
     @staticmethod
     def test_degeneracy_annotation_human_test_genome_remote_fasta_gzipped():
@@ -229,6 +235,8 @@ class AnnotationTestCase(TestCase):
         assert deg.n_annotated == 7
         assert ann.n_sites == 1517
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/all.subset.100000.vcf.gz', 'resources/genome/betula/genome.gff.gz', 'resources/genome/betula/genome.subset.20.fasta')
     @staticmethod
     def test_degeneracy_annotation_betula_subset():
@@ -297,6 +305,7 @@ class AnnotationTestCase(TestCase):
 
     @requires('resources/genome/sapiens/chr21.fasta', 'resources/genome/sapiens/chr21.sorted.gff3')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_compare_synonymy_annotation_with_vep_human_chr21(self):
         """
         Compare the synonymy annotation with VEP for human chromosome 21.
@@ -319,6 +328,7 @@ class AnnotationTestCase(TestCase):
 
     @requires('resources/genome/sapiens/chr21.fasta', 'resources/genome/sapiens/hg38.sorted.gtf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_compare_synonymy_annotation_with_snpeff_human_chr21(self):
         """
         Compare the synonymy annotation with snpEff for human chromosome 21.
@@ -341,6 +351,7 @@ class AnnotationTestCase(TestCase):
 
     @requires('results/fasta/hgdp/21.fasta.gz', 'results/gff/hgdp/21.gff3.gz', 'results/vcf/sapiens/chr21.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_compare_synonymy_annotation_with_vep_hgdp_chr21(self):
         """
         Compare the synonymy annotation with VEP for HGDP chromosome 21.
@@ -932,6 +943,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/EST-SFS/test-betula-biallelic-100000.txt', 'resources/genome/betula/biallelic.with_outgroups.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_run_inference_full_betula_dataset(self):
         """
         Test the get_likelihood function.
@@ -1180,6 +1192,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_papio_thorough_two_outgroups(self):
         """
         Test the MLEAncestralAlleleAnnotation class on the Papio vcf file.
@@ -1215,6 +1228,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_papio_thorough_three_outgroups(self):
         """
         Test the MLEAncestralAlleleAnnotation class on the Papio vcf file.
@@ -1265,6 +1279,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_papio_thorough_three_outgroups_adaptive_prior(self):
         """
         Test the MLEAncestralAlleleAnnotation class on the Papio vcf file.
@@ -1340,6 +1355,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/betula/all.with_outgroups.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_betula_thorough_two_outgroups(self):
         """
         Test the MLEAncestralAlleleAnnotation class on the betula vcf file.
@@ -1372,6 +1388,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/betula/all.with_outgroups.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_betula_thorough_one_outgroup(self):
         """
         Test the MLEAncestralAlleleAnnotation class on the betula vcf file.
@@ -1675,6 +1692,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
     @requires('resources/genome/betula/all.with_outgroups.vcf.gz')
     @staticmethod
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_compute_priors_from_betula_vcf_odd_even_number_of_ingroups():
         """
         Test the EST-SFS wrapper.
@@ -1714,6 +1732,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz', 'resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_compare_with_est_sfs_betula(self):
         """
         Compare MLE params and site probabilities with EST-SFS using the betula dataset.
@@ -1824,6 +1843,8 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         pass
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/EST-SFS/test-data-no-poly-allelic.txt',
               'resources/EST-SFS/cmake-build-debug/EST_SFS_no_prior')
     def test_compare_with_est_sfs_test_set(self):
@@ -2555,6 +2576,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_papio_sfs_for_different_number_of_outgroups(self):
         """
         Test the SFS for different numbers of outgroups.
@@ -2605,6 +2627,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_papio_sfs_for_different_subsample_size(self):
         """
         Test the SFS for different subsample sizes.
@@ -2647,6 +2670,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_papio_sfs_for_different_priors(self):
         """
         Test the SFS for different priors.
@@ -2693,6 +2717,8 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         pass
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/all.with_outgroups.subset.200000.vcf.gz', 'resources/genome/betula/biallelic.with_outgroups.subset.50000.vcf.gz')
     def test_add_monomorphic_site_counts(self):
         """
@@ -2732,6 +2758,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/EST-SFS/cmake-build-debug/EST_SFS_with_prior', 'resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz', 'resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_betula_est_sfs_biallelic_vs_monomorphic_compare_rates(self):
         """
         Test the SFS for dataset including monomorphic sites vs. dataset without monomorphic sites using EST-SFS.
@@ -2834,6 +2861,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz', 'resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz', 'resources/genome/betula/genome.subset.20.fasta', 'resources/genome/betula/sample_sets/pendula.args', 'resources/genome/betula/sample_sets/pubescens.args', 'resources/genome/papio/Papio_anubis.fasta', 'resources/genome/papio/metadata.csv', 'resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_sfs_for_different_datasets(self):
         """
         Compare the SFS for different datasets.
@@ -3449,6 +3477,8 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         self.assertIsNone(a.prior)
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz', 'resources/genome/betula/genome.fasta')
     @pytest.mark.inference
     def test_betula_validate_prob_aa_field(self):
@@ -3489,6 +3519,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
     @requires('resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz', 'resources/genome/betula/genome.fasta')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_n_samples_target_sites_argument(self):
         """
         Test that the n_samples_target_sites is properly extrapolated to n_target_sites
@@ -3533,6 +3564,8 @@ class FastAnnotationTestCase(TestCase):
     paths in well under a second rather than the multi-second real-data tests.
     """
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/all.subset.100000.vcf.gz', 'resources/genome/betula/genome.gff.gz', 'resources/genome/betula/genome.subset.20.fasta')
     def test_degeneracy_annotation(self):
         """Codon-degeneracy annotation (FASTA + GFF) over a tiny slice."""

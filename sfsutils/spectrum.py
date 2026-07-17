@@ -596,18 +596,32 @@ class Spectrum(AbstractSpectrum):
         )
 
     @staticmethod
-    def standard_kingman(n: int, n_monomorphic: int = 0) -> 'Spectrum':
+    def kingman(n: int, n_monomorphic: int = 0) -> 'Spectrum':
         """
-        Get standard Kingman SFS.
+        The standard (Kingman) neutral site-frequency spectrum for a sample of size ``n``.
 
         :param n: sample size
-        :param n_monomorphic: Number of monomorphic sites.
-        :return: Standard Kingman SFS
+        :param n_monomorphic: number of monomorphic sites placed in the zero-frequency bin
+        :return: the Kingman SFS
         """
         sfs = standard_kingman(n)
         sfs.data[0] = n_monomorphic
 
         return sfs
+
+    @staticmethod
+    def standard_kingman(n: int, n_monomorphic: int = 0) -> 'Spectrum':
+        """
+        Alias of :meth:`kingman`.
+
+        .. deprecated::
+            Use :meth:`kingman` instead.
+
+        :param n: sample size
+        :param n_monomorphic: Number of monomorphic sites.
+        :return: Standard Kingman SFS
+        """
+        return Spectrum.kingman(n, n_monomorphic)
 
     @staticmethod
     def get_neutral(
@@ -1582,9 +1596,13 @@ class TwoSFS(AbstractSpectrum):
         the constant mutational scale) and reproduces the multiple-merger signal, unlike a polymorphic-only
         normalization.
 
-        This requires the monomorphic sites to be present: parse an all-sites input with the monomorphic
-        (invariant) sites specified. For a valid two-SFS the interior diagonal is a nonnegative branch-length
-        variance; an arbitrary (non-coalescent) input can give a non-positive-semidefinite result.
+        This requires the monomorphic-site counts: parse an all-sites input with the monomorphic (invariant) sites
+        specified. With only a :class:`~sfsutils.parser.TargetSiteCounter` (extrapolated, not real, monomorphic
+        counts) the result is approximate and can be unreliable, as the interior residual is hypersensitive to the
+        target-site count; use a real all-sites input for an accurate covariance, or :meth:`fpmi` for a
+        monomorphic-free statistic on polymorphic-only data. For a valid two-SFS the interior diagonal is a
+        nonnegative branch-length variance; an arbitrary (non-coalescent) input can give a non-positive-semidefinite
+        result.
 
         :return: The branch-length covariance over the interior, embedded in a full-size :class:`TwoSFS`.
         :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
@@ -1597,9 +1615,11 @@ class TwoSFS(AbstractSpectrum):
         sqrt(Var(L_i) Var(L_j))`` over the segregating interior, standardized by the branch-length variances (the
         interior diagonal of the full-spectrum covariance). For a valid (coalescent) two-SFS this is a proper
         correlation, matching PhaseGen's branch-length correlation, with entries in ``[-1, 1]`` and a unit diagonal.
-        Like :meth:`cov`, it requires the monomorphic sites. Classes with negligible branch-length variance are
-        returned as zero, and because the underlying quantity is a cross-covariance between the two loci (not a
-        within-locus covariance matrix), the entries are clipped to ``[-1, 1]`` as a safeguard for arbitrary input.
+        Like :meth:`cov`, it requires the monomorphic-site counts and is only approximate under a
+        :class:`~sfsutils.parser.TargetSiteCounter` (see :meth:`cov`; :meth:`fpmi` needs no monomorphic sites).
+        Classes with negligible branch-length variance are returned as zero, and because the underlying quantity is a
+        cross-covariance between the two loci (not a within-locus covariance matrix), the entries are clipped to
+        ``[-1, 1]`` as a safeguard for arbitrary input.
 
         :return: The branch-length correlation over the interior, embedded in a full-size :class:`TwoSFS`.
         :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
@@ -1618,6 +1638,45 @@ class TwoSFS(AbstractSpectrum):
 
         # the standardized cross-covariance is not Cauchy-Schwarz bounded for a non-coalescent input, so clip
         return self._embed(np.clip(r, -1.0, 1.0)[1:-1, 1:-1])
+
+    def fpmi(self) -> 'TwoSFS':
+        """
+        The frequency pointwise mutual information (fPMI) of two linked sites, over the segregating interior. For the
+        normalized joint distribution ``p(i, j)`` of the derived-allele classes of paired polymorphic sites, entry
+        ``(i, j)`` is ``log[p(i, j) / (p(i) p(j))]``, the log-ratio of the observed joint to the product of its
+        marginals: positive where classes ``i`` and ``j`` co-occur more often than under independence, negative
+        where they co-occur less, and zero for independent loci.
+
+        Unlike :meth:`cov` / :meth:`corr`, fPMI is a ratio computed purely from the polymorphic interior, so it
+        needs no monomorphic sites and is exactly invariant to them: a polymorphic-only (SNP) spectrum gives the
+        same result as the all-sites spectrum. It is the statistic of Fenton, Rice, Novembre and Desai (2025,
+        *Genetics* 229(4):iyaf023, https://doi.org/10.1093/genetics/iyaf023) for detecting departures from Kingman
+        coalescence; its low-frequency associations shift toward positive under multiple-merger genealogies.
+
+        :return: The fPMI over the interior, embedded in a full-size :class:`TwoSFS`; classes absent from the
+            spectrum are returned as zero.
+        :raises ValueError: If the 2-SFS is empty or non-finite, or has no polymorphic pairs.
+        """
+        # a two-SFS counts unordered site pairs, so symmetrize; take the polymorphic interior only (fPMI is a ratio
+        # over the segregating classes and ignores the monomorphic bins, hence needs no all-sites input)
+        interior = (self.data + self.data.T)[1:-1, 1:-1]
+
+        if not np.isfinite(interior).all():
+            raise ValueError('The 2-SFS contains non-finite values (NaN or inf).')
+
+        total = interior.sum()
+        if total == 0:
+            raise ValueError('The 2-SFS has no polymorphic pairs, so the fPMI is undefined.')
+
+        p = interior / total
+        outer = np.outer(p.sum(axis=0), p.sum(axis=1))
+
+        # classes that never occur (zero joint or zero marginal) are left at zero rather than log(0)
+        pmi = np.zeros_like(p)
+        mask = (p > 0) & (outer > 0)
+        pmi[mask] = np.log(p[mask] / outer[mask])
+
+        return self._embed(pmi)
 
     def fill_monomorphic(self, fill_value=np.nan) -> 'TwoSFS':
         """
@@ -1656,7 +1715,7 @@ class TwoSFS(AbstractSpectrum):
         :return: Axes.
         """
         import matplotlib.pyplot as plt
-        from matplotlib.colors import SymLogNorm
+        from matplotlib.colors import SymLogNorm, LogNorm
         import seaborn as sns
 
         if self.n < 3:
@@ -1666,28 +1725,28 @@ class TwoSFS(AbstractSpectrum):
         if cbar_kws is None:
             cbar_kws = dict(pad=0.05)
 
-        if max_abs is None:
-            max_abs = self.get_max_abs() or 1
-
-        # remove monomorphic sites
+        # keep only the segregating interior (the monomorphic bins dominate a raw pair-count spectrum); this is
+        # what is plotted, and the colour scale is based on it rather than on the whole matrix
         data = self.data[1:-1, 1:-1]
 
         # truncate data if folded
         if self.is_folded():
             data = data[:self.w - 1, :self.w - 1]
 
-        # plot heatmap using a symmetric log norm
-        ax = sns.heatmap(
-            data,
-            norm=SymLogNorm(
-                linthresh=max_abs / 10,
-                vmin=-max_abs,
-                vmax=max_abs
-            ),
-            cmap='PuOr_r',
-            cbar_kws=cbar_kws,
-            ax=ax
-        )
+        # a raw pair-count spectrum carries mass in the monomorphic bins (row/column 0 and n); the class-resolved
+        # results (cov / corr / fpmi) are embedded with those bins zeroed. Use that to choose the colour scale:
+        # a sequential log scale for the heavy-tailed counts, a diverging symmetric-log scale centred at zero for
+        # the (possibly signed) derived quantities.
+        is_counts = np.nansum(np.abs(np.r_[self.data[[0, -1], :].ravel(), self.data[:, [0, -1]].ravel()])) > 0
+        if is_counts:
+            positive = data[np.isfinite(data) & (data > 0)]
+            norm = LogNorm(vmin=positive.min() if positive.size else 1, vmax=np.nanmax(data) or 1)
+            cmap = 'viridis'
+        else:
+            m = max_abs if max_abs is not None else (np.nanmax(np.abs(data)) or 1)
+            norm, cmap = SymLogNorm(linthresh=m / 10, vmin=-m, vmax=m), 'PuOr_r'
+
+        ax = sns.heatmap(data, norm=norm, cmap=cmap, cbar_kws=cbar_kws, ax=ax)
 
         # invert y-axis and remove ticks
         ax.invert_yaxis()
@@ -1973,19 +2032,20 @@ class JointSFS(AbstractSpectrum):
             pops: Tuple[int, int] = (0, 1),
             ax: 'plt.Axes' = None,
             title: str = None,
-            log_scale: bool = False,
+            log_scale: bool = True,
             mask_monomorphic: bool = True,
             cbar_kws: Dict = None,
             show: bool = True,
     ) -> 'plt.Axes':
         """
         Plot the joint SFS as a 2-dimensional heatmap. For more than two populations, the joint SFS is first
-        marginalized onto the two requested populations (summing over the others).
+        marginalized onto the two requested populations (summing over the others). The colour scale is
+        logarithmic by default, since the joint SFS is heavily skewed toward the low-frequency corner.
 
         :param pops: The two population indices to plot (y-axis, x-axis).
         :param ax: Axes to plot on.
         :param title: Title of the plot.
-        :param log_scale: Whether to use a logarithmic color scale.
+        :param log_scale: Whether to use a logarithmic color scale (default ``True``).
         :param mask_monomorphic: Whether to mask the monomorphic corners (all-zero and all-derived).
         :param cbar_kws: Keyword arguments for the color bar.
         :param show: Whether to show the plot.

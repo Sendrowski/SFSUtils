@@ -84,8 +84,9 @@ filter
 
 Write only the sites that pass the given filtrations. The output format follows the ``--out`` extension: a VCF
 (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store
-can be written from any input. A VCF output requires a VCF input, and a tree sequence a tree-sequence input (the
-surviving sites are kept via ``delete_sites``), since a genealogy cannot be reconstructed from genotype data.
+can be written from any input. A tree-sequence output requires a tree-sequence input, since a genealogy cannot be
+reconstructed from genotype data (the surviving sites are kept via ``delete_sites``). A VCF output requires a VCF
+input because the writer copies the header (contigs, INFO/FORMAT definitions) from the source VCF.
 
 .. code-block:: bash
 
@@ -120,10 +121,11 @@ surviving sites are kept via ``delete_sites``), since a genealogy cannot be reco
 annotate
 --------
 
-Write the input back with added site-level information: site degeneracy from a reference, or the ancestral allele
-inferred from outgroups under a maximum-likelihood substitution model. As for ``filter``, the output format follows
-the ``--out`` extension: a VCF (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence
-(``.trees``). A VCF-Zarr store can be written from any input; a VCF requires a VCF input and a tree sequence a
+Write the input back with added site-level information: site degeneracy from a reference (``degeneracy``), or the
+ancestral allele inferred from outgroups under a maximum-likelihood substitution model
+(``maximum-likelihood-ancestral``). As for ``filter``, the output format follows the ``--out`` extension: a VCF
+(``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store can
+be written from any input; a VCF requires a VCF input (its header is copied from the source) and a tree sequence a
 tree-sequence input.
 
 .. code-block:: bash

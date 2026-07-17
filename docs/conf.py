@@ -20,7 +20,7 @@ project = 'sfsutils'
 year = datetime.datetime.now().year
 copyright = f'{year}, Janek Sendrowski'
 author = 'Janek Sendrowski'
-release = '1.0.0'
+release = '0.1.0b1'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -56,6 +56,9 @@ pygments_style = 'default'
 
 # disable notebook execution
 nb_execution_mode = 'off'
+
+# enable dollar-delimited and AMS math in MyST markdown (notebooks and .md)
+myst_enable_extensions = ['dollarmath', 'amsmath']
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'reference/Python/resources']

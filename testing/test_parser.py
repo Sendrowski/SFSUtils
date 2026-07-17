@@ -128,6 +128,7 @@ class ParserTestCase(TestCase):
 
     @requires('results/vcf/sapiens/chr21.vep.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_vep_stratification(self):
         """
         Test the VEP for human chr21.
@@ -166,6 +167,7 @@ class ParserTestCase(TestCase):
 
     @requires('results/vcf/sapiens/chr21.snpeff.vcf.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_snpeff_stratification(self):
         """
         Test the synonymy stratification against SNPEFF for human chr21.
@@ -272,6 +274,7 @@ class ParserTestCase(TestCase):
         assert set(sfs.types).issubset(set(p.stratifications[0].get_types()))
 
     @requires('resources/genome/sapiens/chr21_test.vcf.gz', 'resources/genome/sapiens/hg38.sorted.gtf.gz')
+    @pytest.mark.very_slow
     def test_parse_vcf_chr21_test(self):
         """
         Parse human chr21 test VCF file.
@@ -386,6 +389,7 @@ class ParserTestCase(TestCase):
 
     @requires('resources/genome/betula/biallelic.polarized.vcf.gz', 'resources/genome/betula/genome.fasta', 'resources/genome/betula/genome.gff.gz')
     @pytest.mark.slow
+    @pytest.mark.very_slow
     def test_parse_betula_complete_vcf_biallelic_synonymy(self):
         """
         Parse the VCF file of Betula spp.
@@ -771,6 +775,7 @@ class ParserTestCase(TestCase):
             np.testing.assert_array_equal(sfs_prob.all.data, sfs_fixed.all.data)
 
     @requires('resources/genome/sapiens/hgdp.anc.deg.vcf.gz')
+    @pytest.mark.very_slow
     def test_compare_probabilistic_polarization_vs_fixed_random_subsampling(self):
         """
         Compare probabilistic polarization with fixed polarization.
@@ -807,6 +812,7 @@ class ParserTestCase(TestCase):
             self.assertLess(np.abs((sfs_prob.all.data - sfs_fixed.all.data) / sfs_fixed.all.data).mean(), 0.3)
 
     @requires('resources/genome/sapiens/hgdp.anc.deg.vcf.gz')
+    @pytest.mark.very_slow
     def test_compare_probabilistic_polarization_vs_fixed_probabilistic_subsampling(self):
         """
         Compare probabilistic polarization with fixed polarization.
@@ -899,6 +905,8 @@ class FastParserTestCase(TestCase):
         """The random subsample mode with an explicit seed."""
         self._parse([], subsample_mode='random', seed=3)
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/all.subset.100000.vcf.gz', 'resources/genome/betula/genome.gff.gz')
     def test_inline_annotation_and_stratification(self):
         """An inline degeneracy annotation + stratification during the parse (FASTA + GFF)."""
@@ -933,6 +941,8 @@ class FastParserTestCase(TestCase):
         # monomorphic counts were filled in from the reference, so the SFS is non-empty
         self.assertGreater(sfs.all.data.sum(), 0)
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/all.subset.100000.vcf.gz', 'resources/genome/betula/genome.gff.gz')
     def test_inline_synonymy_annotation_and_stratification(self):
         """

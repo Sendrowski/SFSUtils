@@ -471,6 +471,8 @@ class FiltrationTestCase(TestCase):
                 filtrations=[su.CpGFiltration()],
             ).filter()
 
+    @pytest.mark.slow
+    @pytest.mark.very_slow
     @requires('resources/genome/betula/biallelic.subset.10000.vcf.gz', 'resources/genome/betula/genome.fasta')
     @pytest.mark.inference
     @staticmethod

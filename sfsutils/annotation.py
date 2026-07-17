@@ -30,7 +30,7 @@ from Bio.SeqRecord import SeqRecord
 from scipy.stats import hypergeom
 from tqdm import tqdm
 
-from .io_handlers import DummyVariant, Site, MultiHandler, FASTAHandler
+from .io_handlers import DummyVariant, Site, MultiHandler, FASTAHandler, VariantReader
 from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter, open_writer
 from ._parallelization import parallelize as parallelize_func, check_bounds
 from .settings import Settings
@@ -149,7 +149,7 @@ class DegeneracyAnnotation(Annotation):
         import sfsutils as su
 
         ann = su.Annotator(
-            vcf="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
+            source="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
                 "1000_genomes_project/release/20181203_biallelic_SNV/"
                 "ALL.chr21.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz",
             fasta="http://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/"
@@ -2143,7 +2143,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         import sfsutils as su
 
         ann = su.Annotator(
-            vcf="path/to/variants.with_outgroups.vcf.gz",
+            source="path/to/variants.with_outgroups.vcf.gz",
             annotations=[su.MaximumLikelihoodAncestralAnnotation(
                 outgroups=["ERR2103730"],
                 n_ingroups=15
@@ -4370,7 +4370,7 @@ class Annotator(MultiHandler):
         import sfsutils as su
 
         ann = su.Annotator(
-            vcf="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
+            source="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
                 "1000_genomes_project/release/20181203_biallelic_SNV/"
                 "ALL.chr21.shapeit2_integrated_v1a.GRCh38.20181129.phased.vcf.gz",
             fasta="http://ftp.ensembl.org/pub/release-109/fasta/homo_sapiens/"
@@ -4388,9 +4388,9 @@ class Annotator(MultiHandler):
 
     def __init__(
             self,
-            vcf: str,
-            output: str,
-            annotations: List[Annotation],
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
+            output: str = None,
+            annotations: List[Annotation] = None,
             gff: str | None = None,
             fasta: str | None = None,
             info_ancestral: str = 'AA',
@@ -4398,11 +4398,15 @@ class Annotator(MultiHandler):
             seed: int | None = 0,
             cache: bool = True,
             aliases: Dict[str, List[str]] = {},
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
     ):
         """
         Create a new annotator instance.
 
-        :param vcf: The path to the VCF file, can be gzipped, urls are also supported
+        :param source: The variant source: a VCF file (gzipped or a URL), a VCF-Zarr store (a ``.vcz`` or
+            ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
+            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
+            sites. Read through the same streamed site interface as all handlers.
         :param output: The path to the output file
         :param annotations: The annotations to apply.
         :param gff: The path to the GFF file, can be gzipped, urls are also supported. Required for
@@ -4415,9 +4419,12 @@ class Annotator(MultiHandler):
         :param cache: Whether to cache files downloaded from urls
         :param aliases: Dictionary of aliases for the contigs in the VCF file, e.g. ``{'chr1': ['1']}``.
             This is used to match the contig names in the VCF file with the contig names in the FASTA file and GFF file.
+        :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
+            ``source`` or ``vcf``, not both.
 
         """
         super().__init__(
+            source=source,
             vcf=vcf,
             gff=gff,
             fasta=fasta,
