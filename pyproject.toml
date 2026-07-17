@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "sfsutils"
 version = "0.1.0b1"
-description = "SFS parsing from VCF files with ancestral-allele and site-degeneracy annotation, stratification and filtering."
+description = "SFS parsing with site filtration and annotation, from VCF, Zarr, or tree sequences"
 authors = ["Sendrowski <sendrowski.janek@gmail.com>"]
 license = "GPL-3.0-or-later"
 readme = "README.md"
