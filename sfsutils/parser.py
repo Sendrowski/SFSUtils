@@ -809,7 +809,7 @@ class TargetSiteCounter:
 
                     # create dummy variant
                     variant = DummyVariant(
-                        ref=record.seq[pos - 1],  # fasta is 0-based
+                        ref=record.seq[pos - 1].upper(),  # fasta is 0-based; upper-case soft-masked bases
                         pos=pos,  # VCF is 1-based
                         chrom=contig
                     )
