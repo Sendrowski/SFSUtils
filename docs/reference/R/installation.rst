@@ -32,7 +32,7 @@ The ``sfsutils`` R package serves as a wrapper around the Python library but re-
 
    .. code-block:: r
 
-      reticulate::py_install("sfs-utils[vcf,zarr,arg]", pip = TRUE)
+      reticulate::py_install("sfsutils-popgen[vcf,zarr,arg]", pip = TRUE)
 
 .. note::
 
@@ -42,7 +42,7 @@ The ``sfsutils`` R package serves as a wrapper around the Python library but re-
 
    .. code-block:: bash
 
-      mamba create -n sfsutils -c conda-forge -c bioconda sfs-utils cyvcf2 zarr tskit
+      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils-popgen cyvcf2 zarr tskit
 
    Then point reticulate at that environment before loading the package:
 
