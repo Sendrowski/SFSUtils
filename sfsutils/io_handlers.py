@@ -117,7 +117,7 @@ def is_monomorphic_snp(variant: Site) -> bool:
     """
     Whether the given variant is a monomorphic SNP.
 
-    :param variant: The vcf site
+    :param variant: The site
     :return: Whether the site is a monomorphic SNP
     """
     return (not (variant.is_snp or variant.is_mnp or variant.is_indel or variant.is_deletion or variant.is_sv)
@@ -130,9 +130,9 @@ def count_sites(
         desc: str = 'Counting sites'
 ) -> int:
     """
-    Count the number of sites in the VCF.
+    Count the number of sites in the input.
 
-    :param vcf: The path to the VCF file or an iterable of variants
+    :param vcf: The path to the input or an iterable of variants
     :param max_sites: Maximum number of sites to consider
     :param desc: Description for the progress bar
     :return: Number of sites
@@ -161,9 +161,9 @@ def count_sites(
 
 def download_if_url(path: str, cache: bool = True, desc: str = 'Downloading file') -> str:
     """
-    Download the VCF file if it is a URL.
+    Download the file if it is a URL.
 
-    :param path: The path to the VCF file.
+    :param path: The path to the file.
     :param cache: Whether to cache the file.
     :param desc: Description for the progress bar
     :return: The path to the downloaded file or the original path.
@@ -245,9 +245,9 @@ class FileHandler:
 
     def download_if_url(self, path: str) -> str:
         """
-        Download the VCF file if it is a URL.
+        Download the file if it is a URL.
 
-        :param path: The path to the VCF file.
+        :param path: The path to the file.
         :return: The path to the downloaded file or the original path.
         """
         return download_if_url(path, cache=self.cache, desc=f'{self.__class__.__name__}>Downloading file')
@@ -624,7 +624,7 @@ class GFFHandler(FileHandler):
 
 class VCFHandler(FileHandler):
     """
-    Base class for VCF handling.
+    Base class for variant source handling.
     """
 
     def __init__(
@@ -637,7 +637,7 @@ class VCFHandler(FileHandler):
             aliases: Dict[str, List[str]] = {}
     ):
         """
-        Create a new VCF instance.
+        Create a new variant handler instance.
 
         :param vcf: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), or a tskit tree sequence (a .trees path or a TreeSequence object)
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
@@ -649,7 +649,7 @@ class VCFHandler(FileHandler):
         FileHandler.__init__(self, cache=cache, aliases=aliases)
 
         #: The variant source (a path or a tskit TreeSequence object)
-        self.vcf = vcf
+        self.vcf = os.fspath(vcf) if isinstance(vcf, os.PathLike) else vcf
 
         #: The tag in the INFO field that contains the ancestral allele
         self.info_ancestral: str = info_ancestral
@@ -766,7 +766,7 @@ class VCFHandler(FileHandler):
     @cached_property
     def n_sites(self) -> int:
         """
-        Get the number of sites in the VCF.
+        Get the number of sites in the input.
 
         :return: Number of sites
         """
@@ -811,7 +811,7 @@ class VCFHandler(FileHandler):
 
 class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
     """
-    Handle VCF, FASTA and GFF files.
+    Handle variant sources, FASTA and GFF files.
     """
 
     def __init__(
@@ -1355,9 +1355,44 @@ class VariantWriter(ABC):
     """
     Abstract writer mirroring :class:`VariantReader`: it consumes the same streamed :class:`Variant` interface
     and writes it to a concrete on-disk format. :class:`Filterer` and :class:`Annotator` write through this,
-    so the output format is chosen by the output file's extension (see :func:`open_writer`) rather than being
+    so the output format is chosen by the output file's extension (see :meth:`VariantWriter.open`) rather than being
     hard-coded to VCF.
     """
+
+    @staticmethod
+    def open(
+            output: str,
+            reader: Union['cyvcf2.VCF', VariantReader],
+            info_ancestral: str = 'AA'
+    ) -> 'VariantWriter':
+        """
+        Open the variant writer matching the output file's extension: a VCF-Zarr store for ``.vcz``/``.zarr`` (from
+        any input), a tskit tree sequence for ``.trees`` (only when the input is itself a tree sequence, since a
+        genealogy cannot be reconstructed from genotype data), and a VCF otherwise.
+
+        :param output: The output path; its extension selects the format.
+        :param reader: The open input reader (a cyvcf2 VCF or a :class:`VariantReader`).
+        :param info_ancestral: The INFO tag holding the ancestral allele, for the VCF-Zarr writer.
+        :return: The writer.
+        :raises ValueError: If a ``.trees`` output is requested from a non-tree-sequence input.
+        """
+        fmt = _output_format(output)
+
+        if fmt == 'zarr':
+            return ZarrVariantWriter(output, samples=list(reader.samples), seqnames=list(reader.seqnames),
+                                     info_ancestral=info_ancestral)
+
+        if fmt == 'tskit':
+            if not isinstance(reader, TskitVariantReader):
+                raise ValueError(
+                    "Writing a tree sequence (.trees) is only supported when the input is itself a tree sequence: "
+                    "a genealogy cannot be reconstructed from genotype data without ARG inference. Use a .vcz/.zarr "
+                    "or VCF output instead."
+                )
+
+            return TskitVariantWriter(reader.tree_sequence, output)
+
+        return VCFVariantWriter(output, reader)
 
     def write(self, variant: Site) -> None:
         """
@@ -1652,38 +1687,3 @@ def _output_format(output: str) -> str:
         return 'tskit'
 
     return 'vcf'
-
-
-def open_writer(
-        output: str,
-        reader: Union['cyvcf2.VCF', VariantReader],
-        info_ancestral: str = 'AA'
-) -> VariantWriter:
-    """
-    Open the variant writer matching the output file's extension: a VCF-Zarr store for ``.vcz``/``.zarr`` (from
-    any input), a tskit tree sequence for ``.trees`` (only when the input is itself a tree sequence, since a
-    genealogy cannot be reconstructed from genotype data), and a VCF otherwise.
-
-    :param output: The output path; its extension selects the format.
-    :param reader: The open input reader (a cyvcf2 VCF or a :class:`VariantReader`).
-    :param info_ancestral: The INFO tag holding the ancestral allele, for the VCF-Zarr writer.
-    :return: The writer.
-    :raises ValueError: If a ``.trees`` output is requested from a non-tree-sequence input.
-    """
-    fmt = _output_format(output)
-
-    if fmt == 'zarr':
-        return ZarrVariantWriter(output, samples=list(reader.samples), seqnames=list(reader.seqnames),
-                                 info_ancestral=info_ancestral)
-
-    if fmt == 'tskit':
-        if not isinstance(reader, TskitVariantReader):
-            raise ValueError(
-                "Writing a tree sequence (.trees) is only supported when the input is itself a tree sequence: "
-                "a genealogy cannot be reconstructed from genotype data without ARG inference. Use a .vcz/.zarr "
-                "or VCF output instead."
-            )
-
-        return TskitVariantWriter(reader.tree_sequence, output)
-
-    return VCFVariantWriter(output, reader)

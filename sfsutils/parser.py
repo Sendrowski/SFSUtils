@@ -43,7 +43,7 @@ def _count_valid_type(func: Callable) -> Callable:
         Wrapper function.
 
         :param self: Class instance
-        :param variant: The vcf site
+        :param variant: The site
         :return: The result of the decorated function
         """
         res = func(self, variant)
@@ -98,7 +98,7 @@ class Stratification(ABC):
         given by :meth:`get_types()` are valid, or ``None`` if
         no type could be determined.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Type of the variant
         """
         pass
@@ -152,8 +152,8 @@ class BaseContextStratification(Stratification, FASTAHandler):
 
         :param fasta: The fasta file path, possibly gzipped or a URL
         :param n_flanking: The number of flanking bases
-        :param aliases: Dictionary of aliases for the contigs in the VCF file, e.g. ``{'chr1': ['1']}``.
-            This is used to match the contig names in the VCF file with the contig names in the FASTA file and GFF file.
+        :param aliases: Dictionary of aliases for the contigs in the input, e.g. ``{'chr1': ['1']}``.
+            This is used to match the contig names in the input with the contig names in the FASTA file and GFF file.
         :param cache: Whether to cache files that are downloaded from URLs
         """
         Stratification.__init__(self)
@@ -180,7 +180,7 @@ class BaseContextStratification(Stratification, FASTAHandler):
         """
         Get the base context for a given mutation
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Base context of the mutation
         """
         pos = variant.POS - 1
@@ -234,7 +234,7 @@ class BaseTransitionStratification(SNPStratification):
         """
         Get the base transition for the given variant.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Base transition
         :raises NoTypeException: if not type could be determined
         """
@@ -272,7 +272,7 @@ class TransitionTransversionStratification(BaseTransitionStratification):
         """
         Get the mutation type (transition or transversion) for a given mutation.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Mutation type
         """
         if variant.is_snp:
@@ -310,7 +310,7 @@ class AncestralBaseStratification(Stratification):
         """
         Get the type which is the reference allele.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: reference allele
         """
         return self.parser._get_ancestral(variant)
@@ -353,7 +353,7 @@ class DegeneracyStratification(Stratification):
         """
         Get degeneracy based on 'Degeneracy' tag.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Type of the mutation
         """
         degeneracy = variant.INFO.get('Degeneracy')
@@ -374,7 +374,7 @@ class DegeneracyStratification(Stratification):
         """
         Get the degeneracy.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Type of the mutation
         :raises NoTypeException: If the mutation is not synonymous or non-synonymous
         """
@@ -412,7 +412,7 @@ class SynonymyStratification(SNPStratification):
         """
         Get the synonymy using the custom synonymy annotation.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Type of the mutation, either ``neutral`` or ``selected``
         """
         synonymy = variant.INFO.get('Synonymy')
@@ -453,7 +453,7 @@ class VEPStratification(SynonymyStratification):
         """
         Get the synonymy of a site.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Type of the mutation, either ``neutral`` or ``selected``
         """
         synonymy = variant.INFO.get(self.info_tag, '')
@@ -492,7 +492,7 @@ class ContigStratification(GenomePositionDependentStratification):
         """
         Initialize the stratification.
 
-        :param contigs: List of contigs to stratify by. Defaults to all contigs in the VCF file.
+        :param contigs: List of contigs to stratify by. Defaults to all contigs in the input.
         """
         super().__init__()
 
@@ -504,7 +504,7 @@ class ContigStratification(GenomePositionDependentStratification):
         """
         Get the contig.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: The contig name
         """
         if self.contigs is not None and variant.CHROM not in self.contigs:
@@ -574,7 +574,7 @@ class ChunkedStratification(GenomePositionDependentStratification):
         """
         Get the type.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: The type
         """
         # find the index of the chunk to which the current site belongs
@@ -620,7 +620,7 @@ class RandomStratification(Stratification):
         """
         Assign the variant to a random bin.
 
-        :param variant: The VCF site
+        :param variant: The site
         :return: Randomly chosen bin label
         """
         return f"bin{self.rng.randint(0, self.num_bins - 1)}"
@@ -636,18 +636,18 @@ class RandomStratification(Stratification):
 
 class TargetSiteCounter:
     """
-    Class for counting the number of target sites when parsing a VCF file that does not contain monomorphic sites.
+    Class for counting the number of target sites when parsing an input that does not contain monomorphic sites.
     This class is used in conjunction with :class:`~sfsutils.parser.Parser` and samples sites from the given fasta
-    file that are found in between variants on the same contig that were parsed in the VCF.
-    Ideally, we obtain the SFS by parsing VCF files that contain both mono- and polymorphic sites. This is because
+    file that are found in between variants on the same contig that were parsed from the input.
+    Ideally, we obtain the SFS by parsing inputs that contain both mono- and polymorphic sites. This is because
     we need to know about the number of mutational opportunities for synonymous and non-synonymous sites which
     contain plenty of information on the strength of selection. It is recommended to use a SNPFiltration when
-    using this class to avoid biasing the result by monomorphic sites present in the VCF file.
+    using this class to avoid biasing the result by monomorphic sites present in the input.
 
     .. warning::
-        This class is not compatible with stratifications based on info tags that are pre-defined in the VCF file, as
+        This class is not compatible with stratifications based on info tags that are pre-defined in the input, as
         opposed to those added dynamically using the ``annotations`` argument of the parser. We also need to
-        stratify mono-allelic sites which, in this case, won't be present in the VCF file so that they have no
+        stratify mono-allelic sites which, in this case, won't be present in the input so that they have no
         info tags when sampling from the FASTA file, and are thus ignored by the stratifications. However, using the
         ``annotations`` argument of the parser, the info tags the stratifications are based on are added on-the-fly,
         also for monomorphic sites sampled from the FASTA file.
@@ -668,9 +668,9 @@ class TargetSiteCounter:
         """
         Initialize counter.
 
-        :param n_target_sites: The total number of sites (mono- and polymorphic) that would be present in the VCF file
+        :param n_target_sites: The total number of sites (mono- and polymorphic) that would be present in the input
             if it contained monomorphic sites. This number should be considerably larger than the number of polymorphic
-            sites in the VCF file. this value is not extremely important for downstream inference, the ratio of synonymous
+            sites in the input. this value is not extremely important for downstream inference, the ratio of synonymous
             to non-synonymous sites being more informative, but the order of magnitude should be correct, in any case.
         :param n_samples: The number of sites to sample from the fasta file. Many sampled sites will not be valid as
             they are non-coding. To obtain good estimates, a few thousand sites should be sampled per type of site
@@ -679,7 +679,7 @@ class TargetSiteCounter:
         #: The logger
         self._logger = logger.getChild(self.__class__.__name__)
 
-        #: The total number of sites considered when parsing the VCF
+        #: The total number of sites considered when parsing the input
         self.n_target_sites: int | None = int(n_target_sites)
 
         #: Number of samples
@@ -946,7 +946,8 @@ class TargetSiteCounter:
         :return: The two-SFS with the monomorphic-involving pairs added.
         """
         two_sfs = np.array(two_sfs, dtype=float)
-        n_polymorphic = float(marginal[1:].sum())
+        # bins 0 (all-ancestral) and -1 (all-derived) are monomorphic; only 1..n-1 are polymorphic
+        n_polymorphic = float(marginal[1:-1].sum())
         n_monomorphic = self.n_target_sites - n_polymorphic
 
         if n_monomorphic <= 0:
@@ -964,6 +965,7 @@ class TargetSiteCounter:
         # partners within the window; and monomorphic-monomorphic pairs for the (0, 0) entry
         contribution = marginal * rho_m * distance
         contribution[0] = 0.0
+        contribution[-1] = 0.0
         two_sfs[0, :] += contribution
         two_sfs[:, 0] += contribution
         two_sfs[0, 0] += n_monomorphic * rho_m * distance
@@ -979,7 +981,7 @@ class Parser(MultiHandler):
     the correct polarization. Polymorphic sites for which this tag is not well-defined are by default
     ignored (see ``skip_non_polarized``).
 
-    This class also offers on-the-fly annotation of the VCF sites such as site degeneracy and
+    This class also offers on-the-fly annotation of the sites such as site degeneracy and
     ancestral allele state. This is done by providing a list of annotations to the parser which are
     applied in the order they are provided.
 
@@ -990,12 +992,12 @@ class Parser(MultiHandler):
     In addition, the parser allows to stratify the SFS by providing a list of stratifications. This is useful
     to obtain the SFS separately for different types of sites.
 
-    To correctly determine the number of target sites when parsing a VCF file that does not contain monomorphic sites,
+    To correctly determine the number of target sites when parsing an input that does not contain monomorphic sites,
     we can use a :class:`~sfsutils.parser.TargetSiteCounter`. This class is used in conjunction with the parser and
     samples sites from the given FASTA file that are found in between variants on the same contig that were parsed
-    in the VCF.
+    from the input.
 
-    Note that we assume the sites in the VCF file to be sorted by position in ascending order (per contig).
+    Note that we assume the sites in the input to be sorted by position in ascending order (per contig).
 
     Example usage:
 
@@ -1087,7 +1089,7 @@ class Parser(MultiHandler):
             joint (multi-population) SFS (see ``pops``), this is the per-population sample size, given either as a
             single ``int`` applied to every population, a list aligned with ``pops`` (in insertion order), or a
             dictionary keyed by population name.
-        :param pops: Mapping of population name to the list of VCF sample names making up that population. When given,
+        :param pops: Mapping of population name to the list of sample names making up that population. When given,
             :meth:`parse` returns a :class:`~sfsutils.spectrum.JointSpectra` holding the joint SFS across these
             populations (one :class:`~sfsutils.spectrum.JointSFS` per stratification type) instead of the
             one-dimensional :class:`~sfsutils.spectrum.Spectra`. The joint SFS is obtained by down-projecting each
@@ -1109,11 +1111,11 @@ class Parser(MultiHandler):
             are used. Note that this restriction does not apply to the annotations and filtrations.
         :param exclude_samples: List of sample names to exclude when determining the SFS. If ``None``, no samples
             are excluded. Note that this restriction does not apply to the annotations and filtrations.
-        :param max_sites: Maximum number of sites to parse from the VCF file.
+        :param max_sites: Maximum number of sites to parse from the input.
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from URLs.
-        :param aliases: Dictionary of aliases for the contigs in the VCF file, e.g. ``{'chr1': ['1']}``.
-            This is used to match the contig names in the VCF file with the contig names in the FASTA file and GFF file.
+        :param aliases: Dictionary of aliases for the contigs in the input, e.g. ``{'chr1': ['1']}``.
+            This is used to match the contig names in the input with the contig names in the FASTA file and GFF file.
         :param target_site_counter: The target site counter, used to recover the number of monomorphic sites when the
             input contains only polymorphic sites. If ``None``, no target sites are added. It applies to the
             one-dimensional SFS (sampling monomorphic sites from the FASTA), the joint SFS (scaling the all-ancestral
@@ -1304,7 +1306,7 @@ class Parser(MultiHandler):
         """
         Determine the ancestral allele.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: Ancestral allele
         :raises NoTypeException: If the site is not polarized and ``skip_non_polarized`` is ``True`` or if
             the ancestral allele or reference allele (in case of monomorphic sites) is not a valid base.
@@ -1333,7 +1335,7 @@ class Parser(MultiHandler):
         """
         Determine the ancestral allele probabilistically.
 
-        :param variant: The vcf site
+        :param variant: The site
         :return: The probability of the ancestral allele being the true ancestral allele
         """
         if variant.is_snp and self.polarize_probabilistically and variant.INFO.get(
@@ -1683,7 +1685,7 @@ class Parser(MultiHandler):
                 mask = np.isin(samples, self.pops[name])
 
                 if not mask.any():
-                    raise ValueError(f"None of the samples for population '{name}' were found in the VCF file.")
+                    raise ValueError(f"None of the samples for population '{name}' were found in the input.")
 
                 self._pop_masks.append(mask)
 
@@ -1776,7 +1778,7 @@ class Parser(MultiHandler):
         else:
             n_included = self.n_sites - self.n_skipped
 
-            self._logger.info(f'Included {n_included} out of {self.n_sites} sites in total from the VCF file.')
+            self._logger.info(f'Included {n_included} out of {self.n_sites} sites in total from the input.')
 
             if self.polarize_probabilistically:
                 self._logger.info(f'Considered {self.n_aa_prob} sites with valid ancestral allele probability.')

@@ -1,9 +1,9 @@
 .. _modules.filtration:
 
-VCF filtration
---------------
+Site filtration
+---------------
 
-The :class:`~sfsutils.filtration.Filterer` streams a VCF through a sequence of :class:`~sfsutils.filtration.Filtration` passes, writing out only the sites that pass every filter.
+A :class:`~sfsutils.filtration.Filtration` drops sites that violate downstream modelling assumptions. Filtrations can be applied on the fly by the :class:`~sfsutils.parser.Parser` while it builds a spectrum, or run through the :class:`~sfsutils.filtration.Filterer` to write the retained sites to a file.
 
 .. autosummary::
    :nosignatures:

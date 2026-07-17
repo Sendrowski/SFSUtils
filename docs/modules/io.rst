@@ -17,7 +17,6 @@ The :class:`~sfsutils.parser.Parser`, :class:`~sfsutils.filtration.Filterer` and
    ~sfsutils.io_handlers.VCFVariantWriter
    ~sfsutils.io_handlers.ZarrVariantWriter
    ~sfsutils.io_handlers.TskitVariantWriter
-   ~sfsutils.io_handlers.open_writer
 
 Site
 ~~~~
@@ -72,8 +71,3 @@ TskitVariantWriter
 
 .. autoclass:: sfsutils.io_handlers.TskitVariantWriter
    :members:
-
-open_writer
-~~~~~~~~~~~
-
-.. autofunction:: sfsutils.io_handlers.open_writer

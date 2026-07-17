@@ -1,5 +1,5 @@
 """
-VCF annotations and an annotator to apply them.
+Annotations and an annotator to apply them.
 """
 
 __author__ = "Janek Sendrowski"
@@ -31,7 +31,7 @@ from scipy.stats import hypergeom
 from tqdm import tqdm
 
 from .io_handlers import DummyVariant, Site, MultiHandler, FASTAHandler, VariantReader
-from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter, open_writer
+from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter
 from ._parallelization import parallelize as parallelize_func, check_bounds
 from .settings import Settings
 from .spectrum import Spectra
@@ -225,7 +225,7 @@ class DegeneracyAnnotation(Annotation):
         handler._reader.add_info_to_header({
             'ID': 'Degeneracy_Info',
             'Number': '.',
-            'Type': 'Integer',
+            'Type': 'String',
             'Description': 'Additional information about degeneracy annotation'
         })
 
@@ -259,7 +259,7 @@ class DegeneracyAnnotation(Annotation):
         # the codon positions
         codon_pos = [codon_start, codon_start + 1, codon_start + 2]
 
-        if (self._cd_prev is None or self._cd_next.start == self._pos_mock) and codon_pos[0] < self._cd.start:
+        if self._cd_prev is None and codon_pos[0] < self._cd.start:
             raise IndexError(f'Codon at site {variant.CHROM}:{variant.POS} overlaps with '
                              f'start position of current CDS and no previous CDS was given.')
 
@@ -307,7 +307,7 @@ class DegeneracyAnnotation(Annotation):
         # the codon positions
         codon_pos = [codon_start, codon_start - 1, codon_start - 2]
 
-        if (self._cd_prev is None or self._cd_next.start == self._pos_mock) and codon_pos[2] < self._cd.start:
+        if self._cd_prev is None and codon_pos[2] < self._cd.start:
             raise IndexError(f'Codon at site {variant.CHROM}:{variant.POS} overlaps with '
                              f'start position of current CDS and no previous CDS was given.')
 
@@ -442,8 +442,8 @@ class DegeneracyAnnotation(Annotation):
             if self._cd.start == self._pos_mock and self.n_annotated == 0:
                 self._logger.warning(f"No coding sequence found on all of contig '{v.CHROM}' and no previous "
                                      f'sites were annotated. Are you sure that this is the correct GFF file '
-                                     f'and that the contig names match the chromosome names in the VCF file? '
-                                     f'Note that you can also specify aliases for contig names in the VCF file.')
+                                     f'and that the contig names match the chromosome names in the input? '
+                                     f'Note that you can also specify aliases for contig names in the input.')
 
         # check if variant is located within coding sequence
         if self._cd is None or not (self._cd.start <= v.POS <= self._cd.end):
@@ -542,8 +542,8 @@ class SynonymyAnnotation(DegeneracyAnnotation):
     """
     Synonymy annotation. This class annotates a variant with the synonymous/non-synonymous status.
 
-    This annotation adds the info fields ``Synonymous`` and ``Synonymous_Info``, which hold
-    the synonymy (Synonymous [0] or non-synonymous [1]) and the codon information, respectively.
+    This annotation adds the info fields ``Synonymy`` and ``Synonymy_Info``, which hold
+    the synonymy (synonymous [1] or non-synonymous [0]) and the codon information, respectively.
     To be used with :class:`~sfsutils.parser.SynonymyStratification`.
 
     For this annotation to work, we require a FASTA and GFF file (passed to :class:`~sfsutils.parser.Parser` or
@@ -602,7 +602,7 @@ class SynonymyAnnotation(DegeneracyAnnotation):
             'ID': 'Synonymy',
             'Number': '.',
             'Type': 'Integer',
-            'Description': 'Synonymous (0) or non-synonymous (1)'
+            'Description': 'Synonymous (1) or non-synonymous (0)'
         })
 
         handler._reader.add_info_to_header({
@@ -1747,13 +1747,13 @@ class _OutgroupAncestralAlleleAnnotation(AncestralAlleleAnnotation, ABC):
         Create a new ancestral allele annotation instance.
 
         :param outgroups: The outgroup samples to consider when determining the ancestral allele. A list of
-            sample names as they appear in the VCF file.
+            sample names as they appear in the input.
         :param n_ingroups:  The minimum number of ingroups that must be present at a site for it to be considered
             for ancestral allele inference.
         :param ingroups: The ingroup samples to consider when determining the ancestral allele. A list of
-            sample names as they appear in the VCF file. If ``None``, all samples except the outgroups are
+            sample names as they appear in the input. If ``None``, all samples except the outgroups are
             considered.
-        :param exclude: Samples to exclude from the ingroup. A list of sample names as they appear in the VCF file.
+        :param exclude: Samples to exclude from the ingroup. A list of sample names as they appear in the input.
         :param seed: The seed for the random number generator.
         :param subsample_mode: The subsampling mode. Either 'random' or 'probabilistic'.
         """
@@ -1824,7 +1824,7 @@ class _OutgroupAncestralAlleleAnnotation(AncestralAlleleAnnotation, ABC):
             # get missing outgroups
             missing = np.array(self.outgroups)[~np.isin(self.outgroups, samples)]
 
-            raise ValueError(f"The specified outgroups ({', '.join(missing)}) are not present in the VCF file.")
+            raise ValueError(f"The specified outgroups ({', '.join(missing)}) are not present in the input.")
 
         # outgroup indices
         # we ignore the order when using the mask
@@ -1900,7 +1900,7 @@ class _OutgroupAncestralAlleleAnnotation(AncestralAlleleAnnotation, ABC):
         """
         Get the outgroup bases for a variant.
 
-        :param genotypes: The VCF genotype strings.
+        :param genotypes: The genotype strings.
         :param n_outgroups: The number of outgroups.
         :return: The outgroup bases.
         """
@@ -1971,7 +1971,7 @@ class _OutgroupAncestralAlleleAnnotation(AncestralAlleleAnnotation, ABC):
 
     def _parse_variant(self, variant: Site) -> List[SiteConfig]:
         """
-        Parse a VCF variant. We only consider sites that are at most bi-allelic in the in- and outgroups.
+        Parse a variant. We only consider sites that are at most bi-allelic in the in- and outgroups.
 
         :param variant: The variant.
         :return: List of site configurations containing a single element if subsample_mode is ``random`` or
@@ -2102,12 +2102,12 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
     :meth:`from_est_sfs` methods.
 
     Initially, the branch rates are determined using MLE. Similar to :class:`Parser`, we can also specify the number of
-    mutational target sites (see the ``n_target_sites`` argument) in case our VCF file does not contain the full set of
+    mutational target sites (see the ``n_target_sites`` argument) in case our input does not contain the full set of
     monomorphic sites. This is necessary to obtain realistic branch rate estimates. You can also choose a prior for the
     polarization probabilities (see :class:`PolarizationPrior`). Eventually, for every site, the probability that the
     major allele is ancestral is calculated.
 
-    When annotating the variants of a VCF file, we check the most likely ancestral allele against a naive
+    When annotating the variants of an input, we check the most likely ancestral allele against a naive
     ad-hoc ancestral allele annotation, and record the sites for which we have disagreement. You might want to
     sanity-check the mismatches to make sure the model has been properly specified (see :attr:`mismatches`).
 
@@ -2193,7 +2193,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         Create a new ancestral allele annotation instance.
 
         :param outgroups: The outgroup samples to consider when determining the ancestral allele in the order of
-            increasing divergence. A list of sample names as they appear in the VCF file. The order of the outgroups
+            increasing divergence. A list of sample names as they appear in the input. The order of the outgroups
             is important as it determines the order of the branches in the tree, whose rates are optimized, and whose
             topology is predetermined. The first outgroup is the closest outgroup to the ingroups, and the last
             outgroup is the most distant outgroup. More outgroups lead to a more accurate inference of the ancestral
@@ -2217,9 +2217,9 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
             if the number of major alleles is equal to the number of minor alleles. To avoid this, you can use an odd
             number of ingroups.
         :param ingroups: The ingroup samples to consider when determining the ancestral allele. If ``None``,
-            all (non-outgroup) samples are considered. A list of sample names as they appear in the VCF file.
+            all (non-outgroup) samples are considered. A list of sample names as they appear in the input.
             Has to be at least as large as ``n_ingroups``.
-        :param exclude: Samples to exclude from the ingroup. A list of sample names as they appear in the VCF file.
+        :param exclude: Samples to exclude from the ingroup. A list of sample names as they appear in the input.
         :param n_runs: The number of optimization runs to perform when determining the branch rates. You can
             check that the likelihoods of the different runs are similar by calling :meth:`plot_likelihoods`.
         :param model: The substitution model to use. By default, :class:`K2SubstitutionModel` is used.
@@ -2249,15 +2249,15 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
             both mono- and bi-allelic sites. Ignoring mono-allelic sites will lead to overestimation of the rate
             parameters. For this to work, a FASTA file must be provided from which the mono-allelic sites can be
             sampled. Sampling takes place between the variants of the last and first site on every contig considered
-            in the VCF file. Use ``None`` to disable this feature. Note that the number of target sites is automatically
+            in the input. Use ``None`` to disable this feature. Note that the number of target sites is automatically
             carried over if not specified and this class is used together with :class:`Parser`. In order to use this
             feature, you also need to specify a FASTA file to :class:`Parser` or :class:`Annotator`. Also note that
             by default we extrapolate the number of mono-allelic sites to be sampled from the FASTA file based on the
-            ratio of sites with called outgroup bases parsed from the VCF file (``adjust_target_sites``).
+            ratio of sites with called outgroup bases parsed from the input (``adjust_target_sites``).
         :param n_samples_target_sites: The number of sites to sample from the FASTA file when determining the number of
             target sites (``n_target_sites``). From this the total number of target sites is extrapolated.
-        :param adjust_target_sites: Whether to adjust the number of target sites based on the parsed VCF sites relative
-            to the total number of sites in the VCF. Defaults to ``True``.
+        :param adjust_target_sites: Whether to adjust the number of target sites based on the parsed sites relative
+            to the total number of sites in the input. Defaults to ``True``.
         :param subsample_mode: The subsampling mode. For ``random``, we draw once without replacement from the set of
             all available ingroup genotypes per site. For ``probabilistic``, we integrate over the hypergeometric
             distribution when parsing and computing the ancestral probabilities. Probabilistic subsampling requires a
@@ -2338,7 +2338,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         self.params_mle_runs: pd.DataFrame | None = None
 
         #: Mismatches between the most likely ancestral allele and the ad-hoc ancestral allele.
-        # This is only computed when annotating a VCF file, and only contains the mismatches
+        # This is only computed when annotating an input, and only contains the mismatches
         # for sites that were actually annotated.
         self.mismatches: List[SiteInfo] = []
 
@@ -2348,7 +2348,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         #: The number of sites to sample from the FASTA file when determining the number of target sites.
         self.n_samples_target_sites: int = n_samples_target_sites
 
-        #: Whether to adjust the number of target sites based on the number of sites parsed from the VCF file.
+        #: Whether to adjust the number of target sites based on the number of sites parsed from the input.
         self.adjust_target_sites: bool = adjust_target_sites
 
         #: The monomorphic site counts sampled from the FASTA file.
@@ -2356,7 +2356,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
     def _setup(self, handler: MultiHandler):
         """
-        Parse the VCF file and perform the optimization.
+        Parse the input and perform the optimization.
 
         :param handler: The handler.
         """
@@ -2478,7 +2478,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
                 while i < n:
                     pos = self.rng.integers(*bounds)
 
-                    base = record.seq[pos - 1]
+                    base = record.seq[pos - 1].upper()
 
                     if base in bases:
                         # increase counters
@@ -3034,7 +3034,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
     def _parse_vcf(self):
         """
-        Parse variants from VCF file.
+        Parse variants from the input.
         """
         # initialize data frame
         self.configs = pd.DataFrame(columns=list(self._dtypes.keys()))
@@ -3122,7 +3122,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         """
         Infer the ancestral allele probabilities for the data provided. This method is only supposed to be called
         manually if the data is provided directly, e.g. using :meth:`from_data`, :meth:`from_dataframe` or
-        :meth:`from_est_sfs`. If the data is provided using a VCF file, this method is called automatically.
+        :meth:`from_est_sfs`. If the data is provided using an input source, this method is called automatically.
         """
         from scipy.optimize import minimize, OptimizeResult
 
@@ -4361,7 +4361,7 @@ class _ESTSFSAncestralAnnotation(AncestralAlleleAnnotation):  # pragma: no cover
 
 class Annotator(MultiHandler):
     """
-    Annotate a VCF file with the given annotations.
+    Annotate the input with the given annotations.
 
     Example usage:
 
@@ -4417,8 +4417,8 @@ class Annotator(MultiHandler):
         :param max_sites: Maximum number of sites to consider
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from urls
-        :param aliases: Dictionary of aliases for the contigs in the VCF file, e.g. ``{'chr1': ['1']}``.
-            This is used to match the contig names in the VCF file with the contig names in the FASTA file and GFF file.
+        :param aliases: Dictionary of aliases for the contigs in the input, e.g. ``{'chr1': ['1']}``.
+            This is used to match the contig names in the input with the contig names in the FASTA file and GFF file.
         :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
             ``source`` or ``vcf``, not both.
 
@@ -4452,7 +4452,7 @@ class Annotator(MultiHandler):
             annotation._setup(self)
 
         # create the writer for the format implied by the output extension
-        self._writer = open_writer(self.output, self._reader, info_ancestral=self.info_ancestral)
+        self._writer = VariantWriter.open(self.output, self._reader, info_ancestral=self.info_ancestral)
 
     def _teardown(self):
         """
@@ -4468,7 +4468,7 @@ class Annotator(MultiHandler):
 
     def annotate(self):
         """
-        Annotate the VCF file.
+        Annotate the input.
         """
         self._logger.info('Start annotating')
 

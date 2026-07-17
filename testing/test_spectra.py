@@ -875,3 +875,13 @@ class SpectraTestCase(TestCase):
             sfs.scale_theta(0.02).data,
             Spectrum.get_neutral(theta=0.02, n=10, n_sites=10*6).data
         )
+
+        # a spectrum carrying divergence: scaling must conserve n_sites (the div bin is part of it),
+        # preserve the divergence count, land on the requested theta, and only shift the ancestral bin
+        div = Spectrum.from_polydfe([100, 50, 25], n_sites=10000, n_div=200)
+        scaled = div.scale_theta(2 * div.theta)
+        self.assertAlmostEqual(scaled.n_sites, 10000)          # was 10200 before the fix
+        self.assertAlmostEqual(scaled.data[-1], 200)           # divergence bin unchanged
+        self.assertAlmostEqual(scaled.data[0], 9450)           # all-ancestral complement (was 9650)
+        self.assertAlmostEqual(scaled.theta, 2 * div.theta)    # theta actually doubled
+        np.testing.assert_array_almost_equal(scaled.data[1:-1], [200, 100, 50])
