@@ -1,4 +1,5 @@
-{% set name = "sfsutils-popgen" %}
+{% set name = "sfsutils" %}
+{% set pypi_name = "sfsutils-popgen" %}
 {% set version = "0.1.0b1" %}
 
 package:
@@ -6,9 +7,10 @@ package:
   version: {{ version }}
 
 source:
-  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
-  # sha256 filled in on release (by the conda-forge bot from the PyPI sdist)
-  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  # The PyPI distribution is 'sfsutils-popgen' (the 'sfsutils' name is taken on PyPI by an unrelated
+  # project); the conda-forge package can still be the clean 'sfsutils'. The import name is 'sfsutils'.
+  url: https://pypi.org/packages/source/{{ pypi_name[0] }}/{{ pypi_name }}/{{ pypi_name|replace('-', '_') }}-{{ version }}.tar.gz
+  sha256: 107364f0696216d2224471b691b68a11b781fb5e4d7e20cb3816cbf1979f5796
 
 build:
   noarch: python
@@ -45,7 +47,7 @@ about:
   home: https://github.com/Sendrowski/SFSUtils
   license: GPL-3.0-or-later
   license_file: LICENSE
-  summary: SFS parsing from VCF files with ancestral-allele and site-degeneracy annotation, stratification and filtering.
+  summary: SFS parsing with site filtration and annotation, from VCF, Zarr, or tree sequences
 
 extra:
   recipe-maintainers:
