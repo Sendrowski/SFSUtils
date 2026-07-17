@@ -42,7 +42,7 @@ The ``sfsutils`` R package serves as a wrapper around the Python library but re-
 
    .. code-block:: bash
 
-      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils-popgen cyvcf2 zarr tskit
+      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils cyvcf2 zarr tskit
 
    Then point reticulate at that environment before loading the package:
 

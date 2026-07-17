@@ -5,7 +5,7 @@ Installation
 
 PyPI
 ^^^^
-``sfsutils`` is distributed on PyPI as ``sfsutils-popgen`` (the import name stays ``sfsutils``). To install it via pip:
+``sfsutils`` is distributed on PyPI as ``sfsutils-popgen`` and on conda-forge as ``sfsutils`` (the import name stays ``sfsutils`` throughout). To install it via pip:
 
 .. code-block:: bash
 
@@ -29,7 +29,7 @@ Conda
 
 .. code-block:: bash
 
-   mamba create -n sfsutils -c conda-forge sfsutils-popgen
+   mamba create -n sfsutils -c conda-forge sfsutils
    mamba activate sfsutils
 
 .. note::
@@ -39,7 +39,7 @@ Conda
 
    .. code-block:: bash
 
-      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils-popgen cyvcf2 zarr tskit
+      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils cyvcf2 zarr tskit
 
    Alternatively, to ensure reproducibility, create a file ``environment.yml``:
 
@@ -50,7 +50,7 @@ Conda
        - conda-forge
        - bioconda
      dependencies:
-       - sfsutils-popgen
+       - sfsutils
        - cyvcf2
        - zarr
        - tskit
