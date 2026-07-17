@@ -1,31 +1,32 @@
 {% set name = "sfsutils" %}
 {% set pypi_name = "sfsutils-popgen" %}
 {% set version = "0.1.0b1" %}
+{% set python_min = "3.10" %}
 
 package:
   name: {{ name|lower }}
   version: {{ version }}
 
 source:
-  # The PyPI distribution is 'sfsutils-popgen' (the 'sfsutils' name is taken on PyPI by an unrelated
-  # project); the conda-forge package can still be the clean 'sfsutils'. The import name is 'sfsutils'.
+  # The PyPI distribution is 'sfsutils-popgen' (the bare 'sfsutils' name on PyPI belongs to an unrelated
+  # project); the import name and this conda package are 'sfsutils'.
   url: https://pypi.org/packages/source/{{ pypi_name[0] }}/{{ pypi_name }}/{{ pypi_name|replace('-', '_') }}-{{ version }}.tar.gz
   sha256: 107364f0696216d2224471b691b68a11b781fb5e4d7e20cb3816cbf1979f5796
 
 build:
   noarch: python
   number: 0
-  script: {{ PYTHON }} -m pip install . -vv
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
   entry_points:
     - sfsutils = sfsutils.cli:main
 
 requirements:
   host:
-    - python >=3.10
+    - python {{ python_min }}
     - pip
     - poetry-core
   run:
-    - python >=3.10,<3.14
+    - python >={{ python_min }},<3.14
     - matplotlib-base >=3.9
     - seaborn >=0.13.2
     - numpy >=1.24,<3
@@ -41,13 +42,25 @@ test:
   imports:
     - sfsutils
   commands:
+    - pip check
     - sfsutils --help
+  requires:
+    - pip
+    - python {{ python_min }}
 
 about:
   home: https://github.com/Sendrowski/SFSUtils
   license: GPL-3.0-or-later
   license_file: LICENSE
   summary: SFS parsing with site filtration and annotation, from VCF, Zarr, or tree sequences
+  description: |
+    sfsutils parses site-frequency spectra (SFS) from VCF, VCF-Zarr, or tskit tree-sequence
+    input, with versatile stratification, ancestral-allele and site-degeneracy annotation, and
+    filtering. It also derives the joint SFS across several populations and the two-site SFS of
+    linked pairs of sites. The import name is `sfsutils`; on PyPI the distribution is
+    `sfsutils-popgen`.
+  doc_url: https://sfsutils.readthedocs.io/
+  dev_url: https://github.com/Sendrowski/SFSUtils
 
 extra:
   recipe-maintainers:
