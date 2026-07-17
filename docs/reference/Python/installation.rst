@@ -11,7 +11,7 @@ To install the ``sfsutils`` package via pip:
 
    pip install sfsutils
 
-``sfsutils`` is compatible with Python 3.10 through 3.12.
+``sfsutils`` is compatible with Python 3.10 through 3.13.
 
 .. note::
 

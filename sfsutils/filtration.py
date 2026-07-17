@@ -1,5 +1,5 @@
 """
-VCF filtrations and a filterer to apply them.
+Filtrations and a filterer to apply them.
 """
 
 __author__ = "Janek Sendrowski"
@@ -16,7 +16,7 @@ import pandas as pd
 
 from .annotation import DegeneracyAnnotation
 from .io_handlers import get_major_base, MultiHandler, get_called_bases, DummyVariant, Site, VariantReader, \
-    VariantWriter, open_writer
+    VariantWriter
 
 # get logger
 logger = logging.getLogger('sfsutils')
@@ -342,7 +342,7 @@ class CodingSequenceFiltration(Filtration):
             if self.n_processed == 0 and self.cd.start == DegeneracyAnnotation._pos_mock:
                 self._logger.warning(f'No subsequent coding sequence found on the same contig as the first variant. '
                                      f'Please make sure this is the correct GFF file with contig names matching '
-                                     f'the VCF file. You can use the aliases parameter to match contig names.')
+                                     f'the input. You can use the aliases parameter to match contig names.')
 
         self.n_processed += 1
 
@@ -388,7 +388,7 @@ class DeviantOutgroupFiltration(Filtration):
         #: Whether to retain monomorphic sites.
         self.retain_monomorphic: bool = retain_monomorphic
 
-        #: The samples found in the VCF file.
+        #: The samples found in the input.
         self.samples: Optional[np.ndarray] = None
 
         #: The ingroup mask.
@@ -421,7 +421,7 @@ class DeviantOutgroupFiltration(Filtration):
 
         # make sure all outgroups are present
         if self.outgroup_mask.sum() != len(self.outgroups):
-            raise ValueError(f'Not all outgroup samples are present in the VCF file: {self.outgroups}')
+            raise ValueError(f'Not all outgroup samples are present in the input: {self.outgroups}')
 
         # create ingroup mask
         if self.ingroups is None:
@@ -479,7 +479,7 @@ class ExistingOutgroupFiltration(Filtration):
         #: Minimum number of missing outgroups required to filter out a site.
         self.n_missing: int = n_missing
 
-        #: The samples found in the VCF file.
+        #: The samples found in the input.
         self.samples: Optional[np.ndarray] = None
 
         #: The outgroup mask.
@@ -648,7 +648,7 @@ class ContigFiltration(Filtration):
 
 class Filterer(MultiHandler):
     """
-    Filter a VCF file using a list of filtrations.
+    Filter the input using a list of filtrations.
 
     Example usage:
 
@@ -702,7 +702,7 @@ class Filterer(MultiHandler):
         :param max_sites: The maximum number of sites to process.
         :param seed: The seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from urls.
-        :param aliases: Dictionary of aliases for the contigs in the VCF file, e.g. ``{'chr1': ['1']}``.
+        :param aliases: Dictionary of aliases for the contigs in the input, e.g. ``{'chr1': ['1']}``.
         :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
             ``source`` or ``vcf``, not both.
         """
@@ -754,7 +754,7 @@ class Filterer(MultiHandler):
             f._setup(self)
 
         # create the writer for the format implied by the output extension
-        self._writer = open_writer(self.output, self._reader, info_ancestral=self.info_ancestral)
+        self._writer = VariantWriter.open(self.output, self._reader, info_ancestral=self.info_ancestral)
 
     def _teardown(self):
         """
@@ -770,7 +770,7 @@ class Filterer(MultiHandler):
 
     def filter(self):
         """
-        Filter the VCF.
+        Filter the input.
         """
         self._logger.info('Start filtering')
 

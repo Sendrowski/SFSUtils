@@ -27,7 +27,7 @@ def standard_kingman(n: int) -> 'Spectrum':
     """
     Get standard Kingman SFS for theta = 1.
 
-    :param n: Standard Kingman SFS
+    :param n: Sample size (number of haplotypes)
     :return: Spectrum
     """
     return Spectrum(pad(1 / np.arange(1, int(n))))
@@ -52,10 +52,10 @@ class AbstractSpectrum(ABC):
     """
     Abstract base class for site-frequency spectrum containers.
 
-    A concrete spectrum wraps a numpy array in :attr:`data`: the one-dimensional :class:`Spectrum`, the square
-    two-dimensional :class:`TwoSFS` (and its two-locus specialization :class:`TwoLocusSFS`), and the multi-population
-    :class:`JointSFS`. This base provides the shared array interface (shape, total number of sites, iteration,
-    copying) and JSON serialization; subclasses add their dimension-specific behaviour such as folding and plotting.
+    A concrete spectrum wraps a numpy array in :attr:`data`: the one-dimensional :class:`Spectrum`, the
+    two-dimensional :class:`TwoSFS` (with its :class:`TwoLocusSFS` specialization), and the multi-population
+    :class:`JointSFS`. This base supplies the shared array interface and JSON serialization; subclasses add
+    dimension-specific behaviour such as folding and plotting.
     """
 
     #: The underlying array holding the spectrum.
@@ -674,19 +674,18 @@ class Spectrum(AbstractSpectrum):
         data = self.data.copy()
 
         data[1:-1] *= theta / self.theta
-        data[0] = self.n_sites - data[1:-1].sum()
+        data[0] = self.n_sites - data[1:-1].sum() - data[-1]
 
         return Spectrum(data)
 
 
 class AbstractSpectra(ABC):
     """
-    Abstract base class for a collection of site-frequency spectra keyed by type (for example the SFS stratified
-    into neutral and selected sites). The two concrete backings share this interface but not their storage: the
-    one-dimensional :class:`Spectra` is DataFrame-backed and 1-D-specialized, while the multi-population
-    :class:`JointSpectra` is dict-backed and holds n-dimensional :class:`JointSFS` objects. Consumers that only need
-    the common collection operations (looking up a type, summing to the ``all`` spectrum, iterating types,
-    serializing) can be written against this base regardless of the spectrum's dimensionality.
+    Abstract base class for a collection of site-frequency spectra keyed by type, for example the SFS stratified
+    into neutral and selected sites. The concrete backings share this interface but not their storage:
+    :class:`Spectra` is DataFrame-backed and one-dimensional, while :class:`JointSpectra` is dict-backed and holds
+    multi-population :class:`JointSFS` objects. Code needing only the common collection operations can be written
+    against this base regardless of dimensionality.
     """
 
     @property
@@ -2117,7 +2116,8 @@ class JointSFS(AbstractSpectrum):
             show: bool = True,
     ) -> 'plt.Axes':
         """
-        Plot the joint SFS as a 3-dimensional surface. For more than two populations, the joint SFS is first
+        Plot the joint SFS of two populations as a surface, with the two allele-count axes on the horizontal
+        plane and the number of sites as height. For more than two populations, the joint SFS is first
         marginalized onto the two requested populations (summing over the others).
 
         :param pops: The two population indices to plot (y-axis, x-axis).

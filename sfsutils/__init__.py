@@ -120,7 +120,7 @@ from .parser import Parser, Stratification, BaseTransitionStratification, BaseCo
     RandomStratification, TargetSiteCounter
 from .io_handlers import VCFHandler, FASTAHandler, GFFHandler, FileHandler, \
     Site, Variant, VariantReader, TskitVariantReader, ZarrVariantReader, \
-    VariantWriter, VCFVariantWriter, ZarrVariantWriter, TskitVariantWriter, open_writer
+    VariantWriter, VCFVariantWriter, ZarrVariantWriter, TskitVariantWriter
 from .annotation import Annotator, Annotation, MaximumParsimonyAncestralAnnotation, SiteInfo, \
     MaximumLikelihoodAncestralAnnotation, DegeneracyAnnotation, SynonymyAnnotation, SubstitutionModel, \
     K2SubstitutionModel, JCSubstitutionModel, PolarizationPrior, KingmanPolarizationPrior, AdaptivePolarizationPrior
@@ -192,5 +192,4 @@ __all__ = [
     'VCFVariantWriter',
     'ZarrVariantWriter',
     'TskitVariantWriter',
-    'open_writer',
 ]

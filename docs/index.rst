@@ -2,7 +2,7 @@
 
 Introduction
 ============
-``sfsutils`` is a Python toolkit for deriving site-frequency spectra (SFS) from raw variant data. It provides a configurable VCF-to-SFS parser together with the annotations and filters commonly required to prepare population-genetic data for downstream analysis. The package is object-oriented, thoroughly documented, and designed so that spectra obtained from different datasets are directly comparable.
+``sfsutils`` is a Python toolkit for deriving site-frequency spectra (SFS) from raw variant data. It provides a configurable variant-to-SFS parser together with the annotations and filters commonly required to prepare population-genetic data for downstream analysis. The package is object-oriented, thoroughly documented, and designed so that spectra obtained from different datasets are directly comparable.
 
 Motivation
 ----------
@@ -19,10 +19,10 @@ Features
 
 **Parsing**: streamlining the extraction of spectra from raw variant data:
 
-- Built-in VCF-to-SFS parser, with support for versatile stratification
+- Built-in variant-to-SFS parser, with support for versatile stratification
 - Joint site-frequency spectra across several populations and two-site spectra of linked pairs of sites
 - Stratification by degeneracy, synonymy, base transition or transversion type, ancestral base, genomic context, contig, and more
-- Utilities to determine the number of mutational target sites when monomorphic sites are not present in the provided VCF file
+- Utilities to determine the number of mutational target sites when monomorphic sites are not present in the provided input
 - Serialization of spectra and parser configurations
 - A command-line interface for parsing, filtering, and annotating
 - Object-oriented and customizable design
@@ -66,6 +66,7 @@ Contents
    reference/R/installation
    reference/R/quickstart
    reference/R/parser
+   reference/R/input_output
    reference/R/stratifications
    reference/R/annotations
    reference/R/filtrations
@@ -84,6 +85,7 @@ Contents
 
    modules/spectrum
    modules/parser
+   modules/stratification
    modules/annotation
    modules/filtration
    modules/io

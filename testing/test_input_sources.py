@@ -56,6 +56,13 @@ def test_source_vcf_mutually_exclusive_and_required():
         su.Parser(**_KW)  # neither source nor vcf
 
 
+@pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
+def test_pathlike_source():
+    """An ``os.PathLike`` (``pathlib.Path``) source parses like the equivalent string path."""
+    import pathlib
+    np.testing.assert_array_equal(_sfs(VCF), _sfs(pathlib.Path(VCF)))
+
+
 @requires_trees
 def test_parser_from_variant_reader():
     """A pre-built VariantReader (an iterable of sites) can be passed directly as ``source`` and reproduces

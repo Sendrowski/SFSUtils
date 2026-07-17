@@ -1,9 +1,9 @@
 .. _modules.annotation:
 
-VCF annotation
---------------
+Site annotation
+---------------
 
-The :class:`~sfsutils.annotation.Annotator` applies one or more :class:`~sfsutils.annotation.Annotation` passes to a VCF, adding degeneracy, synonymy and ancestral-allele information used downstream by the parser.
+An :class:`~sfsutils.annotation.Annotation` adds site-level information such as degeneracy, synonymy or the ancestral allele. Annotations can be applied on the fly by the :class:`~sfsutils.parser.Parser` while it builds a spectrum, or run through the :class:`~sfsutils.annotation.Annotator` to write the annotated variants to a file.
 
 .. autosummary::
    :nosignatures:

@@ -52,7 +52,7 @@ The ``sfsutils`` R package serves as a wrapper around the Python library but re-
 
 Alternatively, you can also follow the instructions in the `Python installation guide <../Python/installation.html>`_ to install the Python package.
 
-After installing the Python package, the ``sfsutils`` wrapper module can be loaded into your R environment using the following command:
+Once installed, the ``sfsutils`` wrapper module can be loaded into your R environment using the following command:
 
 .. code-block:: r
 
