@@ -109,6 +109,33 @@ def test_twosfs_cov_no_monomorphic_raises():
 
 # --- TwoSFS folding / masking / plotting -------------------------------------------------------
 
+def test_twosfs_fold_even_and_odd_sample_size():
+    """TwoSFS.fold matches an independent per-axis reference for both even and odd sample sizes.
+
+    An even sample size (odd bin count) has a self-reflecting middle bin; an odd sample size
+    (even bin count) does not, so both parities exercise different fold boundaries.
+    """
+    def _fold_axis(data, axis):
+        data = np.moveaxis(data, axis, 0).astype(float)
+        length = data.shape[0]
+        mid = length // 2
+        out = data.copy()
+        for k in range(mid):
+            out[k] = data[k] + data[length - 1 - k]
+        out[length - mid:] = 0
+        return np.moveaxis(out, 0, axis)
+
+    def ref_fold(m):
+        return _fold_axis(_fold_axis(m, 0), 1)
+
+    rng = np.random.default_rng(1)
+    for n_bins in (5, 6):  # N = 4 (even sample, middle bin) and N = 5 (odd sample, no middle bin)
+        data = rng.random((n_bins, n_bins))
+        folded = TwoSFS(data).fold()
+        np.testing.assert_allclose(folded.data, ref_fold(data))
+        assert np.isclose(np.nansum(folded.data), data.sum())  # folding preserves the total
+
+
 def test_twosfs_fold_symmetrize_masks():
     a = _two_sfs()
     assert a.fold().data.shape == (5, 5)

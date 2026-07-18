@@ -1,0 +1,17 @@
+name: docs-sfsutils
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python<3.14
+  - pip
+  # notebook execution toolchain
+  - jupyter
+  - nbconvert
+  - ipykernel
+  # optional input backends exercised by the reference notebooks
+  - cyvcf2  # bioconda (needs htslib); vcf backend
+  - zarr    # vcf-zarr backend
+  - tskit   # tree-sequence / ARG backend
+  # the local sfsutils package (and its pure-python runtime deps) is installed
+  # editable in the rule's shell step, where the working directory is the repo root

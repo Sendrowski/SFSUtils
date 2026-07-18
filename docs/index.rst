@@ -2,7 +2,7 @@
 
 Introduction
 ============
-``sfsutils`` is a Python toolkit for deriving site-frequency spectra (SFS) from raw variant data. It provides a configurable variant-to-SFS parser together with the annotations and filters commonly required to prepare population-genetic data for downstream analysis. The package is object-oriented, thoroughly documented, and designed so that spectra obtained from different datasets are directly comparable.
+``sfsutils`` is a Python toolkit for deriving site-frequency spectra (SFS) from raw variant data. It provides a configurable variant-to-SFS parser together with the annotations and filters commonly required to prepare population-genetic data for downstream analysis. The package is object-oriented and thoroughly documented, and because it applies the same polarisation, filtering, and projection to a common sample size across datasets, the resulting spectra are directly comparable.
 
 Motivation
 ----------
@@ -10,7 +10,7 @@ The SFS condenses population genetic variation by quantifying the number of alle
 
 How it works
 ------------
-``sfsutils`` reads variants from VCF files, VCF-Zarr stores, or tskit tree sequences (ARGs) through a single streamed site interface, and counts derived-allele frequencies into one or more spectra. Rather than depending on pre-annotated input, it can derive the required site-level information itself. Ancestral alleles may be taken from an existing ``AA`` info tag, or inferred from one or more outgroups either by maximum parsimony or under a maximum-likelihood substitution model; site degeneracy and synonymy are computed directly from FASTA and GFF references. These annotations in turn drive on-the-fly stratification, for instance to contrast putatively neutral and selected sites. A collection of filters excludes sites that violate downstream modelling assumptions, including non-biallelic and non-SNV sites, sites outside coding sequences, CpG sites, and sites affected by GC-biased gene conversion or by deviant outgroups. Beyond the ordinary one-dimensional spectrum, the same parser derives the joint SFS across several populations and the two-site SFS of linked pairs of sites. The one-dimensional spectra are represented by the :class:`~sfsutils.spectrum.Spectrum` and :class:`~sfsutils.spectrum.Spectra` classes, which support folding, polarising, resampling, and visualisation, while the joint and two-site spectra use the :class:`~sfsutils.spectrum.JointSFS` and :class:`~sfsutils.spectrum.TwoSFS` classes, which support marginalisation, folding, and visualisation. Stratifying the two-site SFS counts only within-stratum pairs, yielding a :class:`~sfsutils.spectrum.TwoSpectra` collection. Parsing, filtering, and annotating are also available from the command line (see the :doc:`CLI reference <reference/CLI/usage>`).
+``sfsutils`` reads variants from VCF files, VCF-Zarr stores, or tskit tree sequences (ARGs) through a single streamed site interface, and counts derived-allele frequencies into one or more spectra. Rather than depending on pre-annotated input, it can derive the required site-level information itself. Ancestral alleles may be taken from an existing ``AA`` info tag, or inferred from one or more outgroups either by maximum parsimony or under a maximum-likelihood substitution model; site degeneracy and synonymy can be computed directly from FASTA and GFF references. The same annotations let the parser stratify sites as it counts them, producing a separate spectrum per category, for example a synonymous and a non-synonymous spectrum, or one spectrum per degeneracy class. A collection of filters excludes sites that violate downstream modelling assumptions, including non-biallelic and non-SNV sites, sites outside coding sequences, CpG sites, and sites affected by GC-biased gene conversion or by deviant outgroups. Beyond the ordinary one-dimensional spectrum, the same parser can also derive the joint SFS across several populations and the two-site SFS of linked pairs of sites. All of these spectra support the operations needed to inspect and reshape them, including folding, polarising, marginalising, resampling, and visualisation. Parsing, filtering, and annotating are also available from the command line (see the :doc:`CLI reference <reference/CLI/usage>`).
 
 Features
 --------
@@ -53,12 +53,11 @@ Contents
    reference/Python/quickstart
    reference/Python/parser
    reference/Python/input_output
-   reference/Python/stratifications
    reference/Python/annotations
    reference/Python/filtrations
+   reference/Python/spectra
    reference/Python/joint
    reference/Python/two_sfs
-   reference/Python/spectra
 
 .. toctree::
    :caption: R Reference
@@ -67,12 +66,11 @@ Contents
    reference/R/quickstart
    reference/R/parser
    reference/R/input_output
-   reference/R/stratifications
    reference/R/annotations
    reference/R/filtrations
+   reference/R/spectra
    reference/R/joint
    reference/R/two_sfs
-   reference/R/spectra
 
 .. toctree::
    :caption: CLI Reference

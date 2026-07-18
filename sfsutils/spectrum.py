@@ -2026,6 +2026,38 @@ class JointSFS(AbstractSpectrum):
 
         return JointSFS(np.transpose(data, order), [self._names()[p] for p in keep])
 
+    def fold(self) -> 'JointSFS':
+        """
+        Fold the joint SFS by folding each population axis independently. Along every axis the entry with ``k``
+        derived alleles is combined with its reflection at ``n_p - k``, summing the two halves into the minor
+        (lower) half and zeroing the reflected upper half, generalising :meth:`Spectrum.fold` and
+        :meth:`TwoSFS.fold` to an arbitrary number of populations. Note that this only makes sense for counts or
+        frequencies. Folding an already folded joint SFS is a no-op.
+
+        :return: Folded joint SFS.
+        """
+        data = self.data.copy()
+
+        for axis in range(data.ndim):
+            mid = data.shape[axis] // 2
+
+            lower = tuple(slice(0, mid) if i == axis else slice(None) for i in range(data.ndim))
+            upper = tuple(slice(data.shape[axis] - mid, None) if i == axis else slice(None) for i in range(data.ndim))
+
+            # add the reflected upper half into the lower half and empty the upper half
+            data[lower] += np.flip(data[upper], axis=axis)
+            data[upper] = 0
+
+        return JointSFS(data, self.pop_names)
+
+    def is_folded(self) -> bool:
+        """
+        Check if the joint SFS is folded.
+
+        :return: Whether the joint SFS is folded.
+        """
+        return bool(np.all(self.data == self.fold().data))
+
     def plot(
             self,
             pops: Tuple[int, int] = (0, 1),

@@ -45,7 +45,7 @@ class Site(Protocol):
     Structural interface for a single streamed variant site: the abstraction layer over the input backends.
     Both :class:`cyvcf2.Variant` (the VCF backend) and the concrete :class:`Variant` emitted by the
     tree-sequence and VCF-Zarr backends satisfy it structurally, so the parser, filtrations, annotations and
-    stratifications are typed against ``Site`` alone rather than a union of the concrete backend types.
+    stratifications are typed against :class:`Site` alone rather than a union of the concrete backend types.
     """
 
     #: The contig.

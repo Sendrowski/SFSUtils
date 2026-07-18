@@ -979,7 +979,7 @@ class Parser(MultiHandler):
 
     By default, the parser looks at the ``AA`` tag in the VCF file's info field to retrieve
     the correct polarization. Polymorphic sites for which this tag is not well-defined are by default
-    ignored (see ``skip_non_polarized``).
+    ignored (see :attr:`skip_non_polarized`).
 
     This class also offers on-the-fly annotation of the sites such as site degeneracy and
     ancestral allele state. This is done by providing a list of annotations to the parser which are

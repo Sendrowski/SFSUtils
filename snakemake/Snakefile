@@ -510,3 +510,45 @@ rule plot_spectra:
         "envs/base.yaml"
     script:
         "scripts/plot_spectra.py"
+
+
+# ======================================================================================
+# Docs: regenerate the executed reference notebooks
+# ======================================================================================
+
+# The Python reference notebooks are committed with their outputs and are NOT executed at
+# docs-build time (nb_execution_mode='off' in docs/conf.py). Regenerate them here after a
+# code change that affects their outputs: each notebook is executed in place and its tqdm
+# progress bars are coalesced into a single clean stderr stream (docs/coalesce_streams.py),
+# matching how the fastdfe notebooks store theirs. They run one at a time because the parser
+# parallelises internally, so this deliberately does not fan out. The R notebooks are not
+# executed (no reticulate/IRkernel here) and are mirrored by hand.
+#
+# Run explicitly:  snakemake -j1 --use-conda execute_reference_notebooks
+REFERENCE_NOTEBOOKS = [
+    "quickstart", "parser", "input_output", "annotations",
+    "filtrations", "spectra", "joint", "two_sfs",
+]
+
+rule execute_reference_notebooks:
+    input:
+        pkg="../sfsutils",
+        coalesce="../docs/coalesce_streams.py",
+    output:
+        touch("../docs/reference/Python/.notebooks-executed")
+    conda:
+        "envs/docs.yaml"
+    params:
+        notebooks=" ".join(REFERENCE_NOTEBOOKS)
+    shell:
+        r"""
+        cd ..
+        pip install -e . --quiet
+        cd docs/reference/Python
+        for nb in {params.notebooks}; do
+            echo "=== executing $nb ==="
+            jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=1200 "$nb.ipynb"
+            python ../../coalesce_streams.py "$nb.ipynb"
+        done
+        """
+
