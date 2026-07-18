@@ -203,6 +203,57 @@ def test_jointsfs_marginalize():
         j.marginalize([5])
 
 
+def test_jointsfs_fold():
+    # a genuinely different, loop-based reference fold to cross-check the flip-based implementation
+    def _fold_axis(data, axis):
+        data = np.moveaxis(data, axis, 0).astype(float)
+        L = data.shape[0]
+        mid = L // 2
+        out = data.copy()
+        for k in range(mid):
+            out[k] = data[k] + data[L - 1 - k]
+        out[L - mid:] = 0
+        return np.moveaxis(out, 0, axis)
+
+    # rectangular, higher-dimensional joint SFS with all-distinct entries
+    rng = np.random.default_rng(0)
+    data = rng.random((3, 4, 5))
+    j = su.JointSFS(data, pop_names=["A", "B", "C"])
+
+    folded = j.fold()
+
+    # matches the independent reference on every axis
+    expected = data.copy()
+    for axis in range(data.ndim):
+        expected = _fold_axis(expected, axis)
+    assert np.allclose(folded.data, expected)
+
+    # folding preserves the total number of sites and reports as folded
+    assert folded.n_sites == pytest.approx(j.n_sites)
+    assert folded.is_folded() is True
+    assert j.is_folded() is False
+    assert type(folded) is su.JointSFS and folded.pop_names == ["A", "B", "C"]
+
+    # the reflected upper half of every axis is emptied into the lower half
+    for axis, L in enumerate(folded.shape):
+        mid = L // 2
+        upper = tuple(slice(L - mid, None) if i == axis else slice(None) for i in range(folded.data.ndim))
+        assert np.all(folded.data[upper] == 0)
+
+    # folding is idempotent (re-folding a folded spectrum is a no-op)
+    assert np.array_equal(folded.fold().data, folded.data)
+
+
+def test_jointsfs_fold_symmetric_is_noop():
+    # a joint SFS already symmetric about the fold boundary is unchanged and reports as folded
+    data = np.zeros((3, 3))
+    data[0, 0] = 5.0  # middle bins reflect onto themselves; only the lower corner is populated
+    j = su.JointSFS(data)
+
+    assert j.is_folded() is True
+    assert np.array_equal(j.fold().data, data)
+
+
 def test_jointsfs_roundtrip_and_copy_type(tmp_path):
     j = su.JointSFS(np.arange(6).reshape(2, 3), pop_names=["A", "B"])
     f = tmp_path / "jsfs.json"

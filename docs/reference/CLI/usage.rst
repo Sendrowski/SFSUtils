@@ -20,7 +20,7 @@ parse
 
 Derive a one-dimensional, joint (multi-population), or two-site SFS from a VCF, a VCF-Zarr store, or a tskit
 tree sequence. The output format follows the spectrum: a single-population SFS is written as CSV, a joint or
-two-site SFS as JSON.
+two-site SFS as JSON. Several filters and annotations can be stacked and applied in a single pass.
 
 .. code-block:: bash
 
@@ -164,4 +164,4 @@ See also
 --------
 
 The subcommands wrap :class:`~sfsutils.parser.Parser`, :class:`~sfsutils.filtration.Filterer`, and
-:class:`~sfsutils.annotation.Annotator`; see the Python reference for the full set of options.
+:class:`~sfsutils.annotation.Annotator`; see the :doc:`API reference <../../modules/parser>` for the full set of options.

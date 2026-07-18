@@ -1,9 +1,12 @@
 .. _modules.citing:
 
+.. role:: raw-html(raw)
+   :format: html
+
 Citing sfsutils
 ===============
 
-``sfsutils`` was created as part of the ``fastdfe`` project. If you use ``sfsutils`` in your research, please consider citing the following paper, as part of which ``sfsutils`` was originally developed:
+``sfsutils`` was created as part of the :raw-html:`<a href="https://fastdfe.readthedocs.io"><code class="docutils literal notranslate">fastdfe</code></a>` project. If you use ``sfsutils`` in your research, please consider citing the following paper, as part of which it was originally developed:
 
 .. code-block:: bibtex
 

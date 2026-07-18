@@ -29,6 +29,15 @@ table.autosummary tbody tr:nth-child(2n):hover {
     background-color: var(--pst-color-table-row-zebra-high-bg);
 }
 
+/* Same no-op hover for the CLI-reference list-tables (rendered as table.docutils). */
+table.docutils tbody tr:nth-child(odd):hover {
+    background-color: var(--pst-color-table-row-zebra-low-bg);
+}
+
+table.docutils tbody tr:nth-child(2n):hover {
+    background-color: var(--pst-color-table-row-zebra-high-bg);
+}
+
 /* Make output cells scrollable */
 /* div.cell_output {
     max-height: 500px;
