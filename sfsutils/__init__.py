@@ -7,9 +7,9 @@ ancestral-allele / site-degeneracy annotation.
 
 __author__ = "Janek Sendrowski"
 __contact__ = "sendrowski.janek@gmail.com"
-__date__ = "2026-07-17"
+__date__ = "2026-07-19"
 
-__version__ = '0.1.0b1'
+__version__ = '0.1.0b2'
 
 import logging
 import sys

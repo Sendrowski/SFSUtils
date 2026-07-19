@@ -20,7 +20,7 @@ project = 'sfsutils'
 year = datetime.datetime.now().year
 copyright = f'{year}, Janek Sendrowski'
 author = 'Janek Sendrowski'
-release = '0.1.0b1'
+release = '0.1.0b2'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
