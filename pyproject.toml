@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sfsutils-popgen"
-version = "0.1.0b1"
+version = "0.1.0b2"
 description = "SFS parsing with site filtration and annotation, from VCF, Zarr, or tree sequences"
 authors = ["Sendrowski <sendrowski.janek@gmail.com>"]
 license = "GPL-3.0-or-later"
