@@ -129,7 +129,7 @@ if __name__ == "__main__":
         n_snps = generate(model, seed, path)
         print(f"{name}: wrote {n_snps} segregating sites to {path}", flush=True)
 
-        sfs2 = su.Parser(vcf=path, n=N_DIPLOID * 2, two_sfs=True, d=1000).parse()
+        sfs2 = su.Parser(source=path, n=N_DIPLOID * 2, two_sfs=True, d=1000).parse()["all"]
         block = sfs2.corr().data[1:5, 1:5]
         mono_frac = 1 - n_snps / (N_CONTIGS * L)
         print(f"{name}: {n_snps} SNPs, monomorphic fraction {mono_frac:.4f}", flush=True)

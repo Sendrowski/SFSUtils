@@ -88,7 +88,7 @@ def _parsed_and_expected():
     n = len(expected) - 1
     # skip_non_polarized=False -> use REF (the tskit ancestral allele) as ancestral;
     # subsample_mode='random' takes all haplotypes exactly at full sample size.
-    spectra = su.Parser(n=n, vcf=VCF, skip_non_polarized=False, subsample_mode="random").parse()
+    spectra = su.Parser(n=n, source=VCF, skip_non_polarized=False, subsample_mode="random").parse()
     parsed = np.array(spectra["all"].to_list()).astype(int)
     return parsed, expected, n
 
@@ -108,9 +108,9 @@ def test_subsample_modes_agree():
     """Probabilistic and random subsampling produce close spectra (replaces the betula test)."""
     Settings.disable_pbar = True
     nn = 10
-    prob = su.Parser(vcf=VCF, n=nn, stratifications=[], subsample_mode="probabilistic",
+    prob = su.Parser(source=VCF, n=nn, stratifications=[], subsample_mode="probabilistic",
                      skip_non_polarized=False).parse().all
-    rand = su.Parser(vcf=VCF, n=nn, stratifications=[], subsample_mode="random", seed=2,
+    rand = su.Parser(source=VCF, n=nn, stratifications=[], subsample_mode="random", seed=2,
                      skip_non_polarized=False).parse().all
     poly = rand.data[1:nn] > 0
     rel_diff = np.abs(prob.data[1:nn] - rand.data[1:nn])[poly] / rand.data[1:nn][poly]
@@ -122,7 +122,7 @@ def test_target_site_counter_sets_total_n_sites():
     """The TargetSiteCounter scales the spectrum to the requested number of target sites."""
     Settings.disable_pbar = True
     spectra = su.Parser(
-        vcf=VCF, n=20, stratifications=[], skip_non_polarized=False, subsample_mode="random",
+        source=VCF, n=20, stratifications=[], skip_non_polarized=False, subsample_mode="random",
         fasta=REF,
         target_site_counter=su.TargetSiteCounter(n_samples=100_000, n_target_sites=50_000),
     ).parse()
@@ -137,7 +137,7 @@ def test_parser_loads_vcf_from_url_offline():
     n = len(expected) - 1
     with patch("sfsutils.io_handlers.download_if_url",
                side_effect=lambda path, *a, **k: VCF if path == url else path):
-        spectra = su.Parser(vcf=url, n=n, stratifications=[], skip_non_polarized=False,
+        spectra = su.Parser(source=url, n=n, stratifications=[], skip_non_polarized=False,
                             subsample_mode="random").parse()
     np.testing.assert_array_equal(np.array(spectra["all"].to_list()).astype(int)[1:n], expected[1:n])
 
@@ -153,7 +153,7 @@ def test_parser_reproduces_msprime_joint_sfs():
     pops, n = _load_joint_pops()
     truth = np.asarray(su.JointSFS.from_file(JOINT_SFS)).astype(int)
 
-    spectra = su.Parser(vcf=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
+    spectra = su.Parser(source=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
                         subsample_mode="random").parse()
 
     assert isinstance(spectra, su.JointSpectra)
@@ -168,14 +168,14 @@ def test_joint_marginal_matches_single_population():
     Settings.disable_pbar = True
     pops, n = _load_joint_pops()
 
-    joint = su.Parser(vcf=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
+    joint = su.Parser(source=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
                       subsample_mode="random").parse()
 
     # marginalize onto population A (axis 0) by summing over the other population
     marginal_a = np.asarray(joint["all"].marginalize([0])).astype(int)
 
     # parse population A alone from the same VCF
-    sfs_a = su.Parser(vcf=JOINT_VCF, n=n["A"], include_samples=pops["A"],
+    sfs_a = su.Parser(source=JOINT_VCF, n=n["A"], include_samples=pops["A"],
                       skip_non_polarized=False, subsample_mode="random").parse()
     one_d_a = np.asarray(sfs_a["all"].to_list()).astype(int)
 
@@ -189,10 +189,10 @@ def test_joint_composes_with_stratifications_and_filtrations():
     Settings.disable_pbar = True
     pops, n = _load_joint_pops()
 
-    base = su.Parser(vcf=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
+    base = su.Parser(source=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
                      subsample_mode="random", filtrations=[su.SNPFiltration()]).parse()
 
-    stratified = su.Parser(vcf=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
+    stratified = su.Parser(source=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
                            subsample_mode="random", filtrations=[su.SNPFiltration()],
                            stratifications=[su.RandomStratification(n_bins=3, seed=1)]).parse()
 
@@ -210,9 +210,9 @@ def test_joint_subsample_modes_agree():
     pops, _ = _load_joint_pops()
     nn = {"A": 6, "B": 4}
 
-    prob = np.asarray(su.Parser(vcf=JOINT_VCF, pops=pops, n=nn, skip_non_polarized=False,
+    prob = np.asarray(su.Parser(source=JOINT_VCF, pops=pops, n=nn, skip_non_polarized=False,
                                 subsample_mode="probabilistic").parse()["all"])
-    rand = np.asarray(su.Parser(vcf=JOINT_VCF, pops=pops, n=nn, skip_non_polarized=False,
+    rand = np.asarray(su.Parser(source=JOINT_VCF, pops=pops, n=nn, skip_non_polarized=False,
                                 subsample_mode="random", seed=3).parse()["all"])
 
     assert prob.shape == (7, 5)
@@ -237,7 +237,7 @@ def test_parser_reproduces_msprime_joint_sfs_three_pops():
     pops, n = _load_three_pop()
     truth = np.asarray(su.JointSFS.from_file(THREE_POP_SFS)).astype(int)
 
-    spectra = su.Parser(vcf=THREE_POP_VCF, pops=pops, n=n, skip_non_polarized=False,
+    spectra = su.Parser(source=THREE_POP_VCF, pops=pops, n=n, skip_non_polarized=False,
                         subsample_mode="random").parse()
 
     assert isinstance(spectra, su.JointSpectra)
@@ -254,7 +254,7 @@ def test_three_pop_marginals_match_pairwise_and_single():
     Settings.disable_pbar = True
     pops, n = _load_three_pop()
 
-    joint = su.Parser(vcf=THREE_POP_VCF, pops=pops, n=n, skip_non_polarized=False,
+    joint = su.Parser(source=THREE_POP_VCF, pops=pops, n=n, skip_non_polarized=False,
                       subsample_mode="random").parse()["all"]
 
     # marginal onto (A, C) must equal the joint SFS parsed for just A and C
@@ -262,7 +262,7 @@ def test_three_pop_marginals_match_pairwise_and_single():
     pops_ac = {k: pops[k] for k in ("A", "C")}
     n_ac = {k: n[k] for k in ("A", "C")}
     direct_ac = np.asarray(
-        su.Parser(vcf=THREE_POP_VCF, pops=pops_ac, n=n_ac, skip_non_polarized=False,
+        su.Parser(source=THREE_POP_VCF, pops=pops_ac, n=n_ac, skip_non_polarized=False,
                   subsample_mode="random").parse()["all"]
     ).astype(int)
     np.testing.assert_array_equal(marginal_ac, direct_ac)
@@ -270,7 +270,7 @@ def test_three_pop_marginals_match_pairwise_and_single():
     # marginal onto B alone must equal population B's single-population SFS
     marginal_b = np.asarray(joint.marginalize([1])).astype(int)
     single_b = np.asarray(
-        su.Parser(vcf=THREE_POP_VCF, n=n["B"], include_samples=pops["B"],
+        su.Parser(source=THREE_POP_VCF, n=n["B"], include_samples=pops["B"],
                   skip_non_polarized=False, subsample_mode="random").parse()["all"].to_list()
     ).astype(int)
     np.testing.assert_array_equal(marginal_b, single_b)
@@ -287,10 +287,12 @@ def test_parser_reproduces_msprime_two_sfs():
     meta = _load_two_sfs_meta()
     ref = np.asarray(su.TwoSFS.from_file(TWO_SFS_REF))
 
-    sfs2 = su.Parser(vcf=TWO_SFS_VCF, n=meta["n"], two_sfs=True, d=meta["distance"],
-                     two_sfs_offset=meta["offset"], skip_non_polarized=False,
-                     subsample_mode="random").parse()
+    result = su.Parser(source=TWO_SFS_VCF, n=meta["n"], two_sfs=True, d=meta["distance"],
+                       two_sfs_offset=meta["offset"], skip_non_polarized=False,
+                       subsample_mode="random").parse()
 
+    assert isinstance(result, su.TwoSpectra)
+    sfs2 = result["all"]
     assert isinstance(sfs2, su.TwoSFS)
     assert sfs2.data.shape == ref.shape
     # the matrix is symmetric by construction
@@ -305,8 +307,8 @@ def test_two_sfs_pair_count_is_projection_invariant():
     meta = _load_two_sfs_meta()
     ref_total = np.asarray(su.TwoSFS.from_file(TWO_SFS_REF)).sum()
 
-    sfs2 = su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, d=meta["distance"],
-                     skip_non_polarized=False, subsample_mode="probabilistic").parse()
+    sfs2 = su.Parser(source=TWO_SFS_VCF, n=10, two_sfs=True, d=meta["distance"],
+                     skip_non_polarized=False, subsample_mode="probabilistic").parse()["all"]
 
     assert sfs2.data.shape == (11, 11)
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
@@ -318,4 +320,4 @@ def test_two_sfs_rejects_incompatible_options():
     """The two-SFS is single-population, so populations are rejected at construction. (A TargetSiteCounter IS
     supported for the unstratified two-SFS, extrapolating the monomorphic pairs; see test_tsc_extrapolation.)"""
     with pytest.raises(NotImplementedError):
-        su.Parser(vcf=TWO_SFS_VCF, n=10, two_sfs=True, pops={"A": ["tsk_0"]})
+        su.Parser(source=TWO_SFS_VCF, n=10, two_sfs=True, pops={"A": ["tsk_0"]})

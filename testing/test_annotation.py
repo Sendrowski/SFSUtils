@@ -137,7 +137,7 @@ class AnnotationTestCase(TestCase):
         Test the maximum parsimony annotator with the betula dataset.
         """
         ann = su.Annotator(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             output='scratch/test_maximum_parsimony_annotation.vcf',
             annotations=[su.MaximumParsimonyAncestralAnnotation()],
             max_sites=10000
@@ -163,7 +163,7 @@ class AnnotationTestCase(TestCase):
         vcf = "resources/genome/sapiens/chr21_test.vcf.gz"
 
         ann = su.Annotator(
-            vcf=vcf,
+            source=vcf,
             output='scratch/test_degeneracy_annotation_human_test_genome.vcf',
             fasta="http://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz",
             gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
@@ -192,7 +192,7 @@ class AnnotationTestCase(TestCase):
         vcf = "resources/genome/sapiens/chr21_test.vcf.gz"
 
         ann = su.Annotator(
-            vcf=vcf,
+            source=vcf,
             output='scratch/test_degeneracy_annotation_human_test_genome.vcf',
             fasta="http://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz",
             gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
@@ -222,7 +222,7 @@ class AnnotationTestCase(TestCase):
         vcf = "resources/genome/sapiens/chr21_test.vcf.gz"
 
         ann = su.Annotator(
-            vcf=vcf,
+            source=vcf,
             output='scratch/test_degeneracy_annotation_human_test_genome_remote_fasta_gzipped.vcf',
             fasta="http://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz",
             gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
@@ -246,7 +246,7 @@ class AnnotationTestCase(TestCase):
         vcf = "resources/genome/betula/all.subset.100000.vcf.gz"
 
         ann = su.Annotator(
-            vcf=vcf,
+            source=vcf,
             output='scratch/test_degeneracy_annotation_betula_subset.vcf',
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
@@ -267,7 +267,7 @@ class AnnotationTestCase(TestCase):
         Test the annotator loading a VCF from a URL.
         """
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             output='scratch/test_annotator_load_vcf_from_url.vcf',
@@ -291,7 +291,7 @@ class AnnotationTestCase(TestCase):
         syn = su.SynonymyAnnotation()
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_compare_synonymy_annotation_with_vep_betula.vcf',
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
@@ -313,7 +313,7 @@ class AnnotationTestCase(TestCase):
         syn = su.SynonymyAnnotation()
 
         ann = su.Annotator(
-            vcf="snakemake/results/vcf/sapiens/chr21.vep.vcf.gz",
+            source="snakemake/results/vcf/sapiens/chr21.vep.vcf.gz",
             output="scratch/test_compare_synonymy_annotation_with_vep_human_chr21.vcf",
             fasta="resources/genome/sapiens/chr21.fasta",
             gff="resources/genome/sapiens/chr21.sorted.gff3",
@@ -336,7 +336,7 @@ class AnnotationTestCase(TestCase):
         syn = su.SynonymyAnnotation()
 
         ann = su.Annotator(
-            vcf="snakemake/results/vcf/sapiens/chr21.snpeff.vcf.gz",
+            source="snakemake/results/vcf/sapiens/chr21.snpeff.vcf.gz",
             output="scratch/test_compare_synonymy_annotation_with_snpeff_human_chr21.vcf",
             fasta="resources/genome/sapiens/chr21.fasta",
             gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
@@ -359,7 +359,7 @@ class AnnotationTestCase(TestCase):
         syn = su.SynonymyAnnotation()
 
         ann = su.Annotator(
-            vcf="snakemake/results/vcf/sapiens/chr21.vep.vcf.gz",
+            source="snakemake/results/vcf/sapiens/chr21.vep.vcf.gz",
             output="scratch/test_compare_synonymy_annotation_with_vep_hgdp_chr21.vcf",
             fasta="snakemake/results/fasta/hgdp/21.fasta.gz",
             gff="snakemake/results/gff/hgdp/21.gff3.gz",
@@ -820,7 +820,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             ann = su.Annotator(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 output='scratch/test_outgroup_not_found_raises_error.vcf',
                 annotations=[anc],
                 max_sites=10
@@ -844,7 +844,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             ann = su.Annotator(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 output='scratch/test_fewer_ingroups_than_ingroup_samples_raises_warning.vcf',
                 annotations=[anc],
                 max_sites=10
@@ -865,7 +865,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_explicitly_specified_present_samples_raises_no_error.vcf',
             annotations=[anc],
             max_sites=10
@@ -885,7 +885,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_explicitly_specified_present_samples_raises_no_error.vcf',
             annotations=[anc],
             max_sites=10
@@ -908,7 +908,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_explicitly_specified_present_samples_raises_no_error.vcf',
             annotations=[anc],
             max_sites=10
@@ -931,7 +931,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_get_likelihood_outgroup_ancestral_allele_annotation.vcf',
             annotations=[anc],
             max_sites=10000
@@ -957,7 +957,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.with_outgroups.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.vcf.gz",
             output='scratch/test_get_likelihood_full_betula_dataset.vcf',
             annotations=[anc],
             max_sites=100000
@@ -1262,6 +1262,56 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         self.assertIn(5, drawn)
         self.assertGreater(anc._monomorphic_samples['A'], 0)
 
+    def test_sample_mono_allelic_sites_extrapolates_to_target_on_n_rich_reference(self):
+        """
+        Regression test for the extrapolation scale on an N-rich (masked) reference. The sampling loop is capped, so
+        on a mostly-N reference the number of callable (A/C/G/T) bases actually drawn falls far short of the number
+        of requested samples. The extrapolation must scale by the sampled callable count (``vec.sum()``), not by the
+        requested ``n_samples_target_sites``; otherwise the extrapolated monomorphic total undershoots the target.
+        """
+        class _FakeRecord:
+            def __init__(self, seq):
+                self.seq = seq
+
+        class _FakeHandler:
+            def __init__(self, seq):
+                self._record = _FakeRecord(seq)
+
+            def get_aliases(self, contig):
+                return contig
+
+            def get_contig(self, aliases, notify=True):
+                return self._record
+
+        anc = su.MaximumLikelihoodAncestralAnnotation.from_data(
+            n_major=[13, 15, 17],
+            major_base=['A', 'C', 'G'],
+            minor_base=['C', 'G', 'T'],
+            outgroup_bases=[['A', 'C'], ['G', 'G'], ['G', 'G']],
+            n_ingroups=20,
+            parallelize=False,
+        )
+        anc.adjust_target_sites = False
+        anc.n_target_sites = 100_000
+        anc.n_samples_target_sites = 2_000
+        anc.n_sites = anc._get_n_sites()
+
+        # a 200 bp interval with a single callable base: the capped sampler draws far fewer than the 2000 requested
+        anc._contig_bounds = {'c': (1, 200)}
+        anc._handler = _FakeHandler("N" * 99 + "A" + "N" * 100)
+        anc.rng = np.random.default_rng(0)
+
+        # the monomorphic budget is n_target_sites - n_sites (adjust_target_sites is off); capture n_sites before
+        # sampling, which appends the monomorphic sites and updates n_sites
+        expected_total = anc.n_target_sites - anc.n_sites
+
+        anc._sample_mono_allelic_sites()
+
+        # the extrapolation must hit the target budget exactly regardless of how few callable bases were sampled; a
+        # ratio built from the requested sample count (rather than the sampled callable count) would undershoot it
+        self.assertEqual(sum(anc._monomorphic_samples.values()), expected_total)
+        self.assertGreater(anc._monomorphic_samples['A'], 0)
+
     def test_to_est_sfs_caps_written_lines_with_non_contiguous_index(self):
         """
         Regression test for the ``max_sites`` cap in ``to_est_sfs``: it must count written lines, not read
@@ -1336,7 +1386,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+            source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
             output='scratch/test_papio_thorough_two_outgroups.vcf',
             annotations=[anc],
             max_sites=10000
@@ -1374,7 +1424,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+            source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
             output='scratch/test_papio_thorough_three_outgroups.vcf',
             annotations=[anc],
             max_sites=10000
@@ -1424,7 +1474,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+            source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
             output='scratch/test_papio_thorough_three_outgroups.vcf',
             annotations=[anc],
             max_sites=10000
@@ -1462,7 +1512,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+            source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
             output='scratch/test_papio_thorough_four_outgroups.vcf',
             annotations=[anc],
             max_sites=10000
@@ -1491,7 +1541,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.vcf.gz",
             output='scratch/test_betula_thorough.vcf',
             annotations=[anc],
             max_sites=100000
@@ -1524,7 +1574,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.vcf.gz",
             output='scratch/test_betula_thorough.vcf',
             annotations=[anc],
             max_sites=100000
@@ -1555,7 +1605,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_use_prior_K2_model.vcf',
             annotations=[anc],
             max_sites=1000
@@ -1580,7 +1630,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_use_prior_JC_model.vcf',
             annotations=[anc],
             max_sites=1000
@@ -1604,7 +1654,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_not_use_prior.vcf',
             annotations=[anc],
             max_sites=1000
@@ -1627,7 +1677,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_not_use_prior.vcf',
             annotations=[anc],
             max_sites=1000
@@ -1648,7 +1698,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_not_use_prior.vcf',
             annotations=[anc],
             max_sites=1000
@@ -1671,7 +1721,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_not_use_prior.vcf',
             annotations=[anc],
             max_sites=1000
@@ -1699,7 +1749,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             output='scratch/test_betula_not_use_prior.vcf',
             annotations=[anc],
@@ -1728,7 +1778,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         p = su.Parser(
             n=10,
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             annotations=[anc],
             max_sites=10,
@@ -1760,7 +1810,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_betula_not_use_prior.vcf',
             annotations=[anc],
             max_sites=max_sites,
@@ -1833,7 +1883,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             ann = su.Annotator(
-                vcf="resources/genome/betula/all.with_outgroups.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.vcf.gz",
                 output='scratch/test_fewer_ingroups_than_ingroup_samples_raises_error_{i}.vcf',
                 max_sites=100000,
                 annotations=[anc]
@@ -1866,7 +1916,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 tol_params=0.1,
                 tol_sites=0.04,
                 outgroups=["ERR2103730"],
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz"
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz"
             ),
             dict(
                 prior=None,
@@ -1874,7 +1924,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 tol_params=1.3,
                 tol_sites=0.04,
                 outgroups=["ERR2103730", "ERR2103731"],
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz"
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz"
             ),
             dict(
                 prior=None,
@@ -1882,7 +1932,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 tol_params=0.8,
                 tol_sites=0.04,
                 outgroups=["ERR2103730", "ERR2103731"],
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
             ),
             dict(
                 prior=None,
@@ -1890,7 +1940,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 tol_params=0.8,
                 tol_sites=0.04,
                 outgroups=["ERR2103730", "ERR2103731"],
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
             ),
             dict(
                 prior=None,
@@ -1898,7 +1948,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 tol_params=0.1,
                 tol_sites=0.04,
                 outgroups=["ERR2103730"],
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
             ),
             dict(
                 prior=None,
@@ -1906,7 +1956,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 tol_params=0.3,
                 tol_sites=0.04,
                 outgroups=["ERR2103730"],
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz"
             )
         ]
 
@@ -1926,7 +1976,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             ann = su.Annotator(
-                vcf=case['vcf'],
+                source=case['vcf'],
                 output='scratch/dummy.vcf',
                 annotations=[anc]
             )
@@ -2675,7 +2725,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for threshold in [0, 0.5, 0.9]:
             p = su.Parser(
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
                 n=10,
                 annotations=[
                     su.MaximumLikelihoodAncestralAnnotation(
@@ -2716,7 +2766,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for n_outgroups in [1, 2, 3]:
             p = su.Parser(
-                vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+                source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
                 n=8,
                 max_sites=10000,
                 annotations=[
@@ -2760,7 +2810,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for n_ingroups in [5, 10, 20, 40]:
             p = su.Parser(
-                vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+                source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
                 n=8,
                 max_sites=10000,
                 annotations=[
@@ -2809,7 +2859,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for name, prior in priors.items():
             p = su.Parser(
-                vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+                source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
                 n=8,
                 max_sites=10000,
                 annotations=[
@@ -2922,12 +2972,12 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         """
         configs = [
             dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730"],
                 tolerance=0.15
             ),
             dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730", "ERR2103731"],
                 tolerance=0.12
             )
@@ -2936,7 +2986,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         for config in configs:
             p1 = su.Parser(
                 n=10,
-                vcf=config['vcf'],
+                source=config['vcf'],
                 annotations=[
                     su.MaximumLikelihoodAncestralAnnotation(
                         outgroups=config['outgroups'],
@@ -2948,7 +2998,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             sfs = p1.parse()
 
             f = su.Filterer(
-                vcf=config['vcf'],
+                source=config['vcf'],
                 output=tempfile.NamedTemporaryFile(delete=False, suffix='.vcf').name,
                 filtrations=[su.SNPFiltration()]
             )
@@ -2958,7 +3008,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             p2 = su.Parser(
                 n=10,
                 fasta="resources/genome/betula/genome.subset.20.fasta",
-                vcf=f.output,
+                source=f.output,
                 annotations=[
                     su.MaximumLikelihoodAncestralAnnotation(
                         outgroups=config['outgroups'],
@@ -2998,7 +3048,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         datasets = dict(
             anubis_one_outgroup=dict(
-                vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+                source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
                 fasta="resources/genome/papio/Papio_anubis.fasta",
                 outgroups=[
                     papio[papio.Species == 'hamadryas'].iloc[0].PGDP_ID.replace('Sci_', '')
@@ -3009,7 +3059,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 aliases=dict(chr1=['CM001491.2'])
             ),
             anubis_one_distant_outgroup=dict(
-                vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+                source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
                 fasta="resources/genome/papio/Papio_anubis.fasta",
                 outgroups=[
                     papio[papio.Species == 'gelada'].iloc[0].PGDP_ID.replace('Sci_', '')
@@ -3020,7 +3070,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 aliases=dict(chr1=['CM001491.2'])
             ),
             anubis_two_outgroups=dict(
-                vcf="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
+                source="resources/genome/papio/output.filtered.snps.chr1.removed.AB.pass.vep.vcf.gz",
                 fasta="resources/genome/papio/Papio_anubis.fasta",
                 outgroups=[
                     papio[papio.Species == 'hamadryas'].iloc[0].PGDP_ID.replace('Sci_', ''),
@@ -3032,13 +3082,13 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 aliases=dict(chr1=['CM001491.2'])
             ),
             pendula_one_outgroup=dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730"],
                 ingroups=pd.read_csv("resources/genome/betula/sample_sets/pendula.args", header=None)[0].tolist(),
                 prior=su.KingmanPolarizationPrior()
             ),
             pendula_one_outgroup_biallelic=dict(
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
                 fasta="resources/genome/betula/genome.subset.20.fasta",
                 outgroups=["ERR2103730"],
                 ingroups=pd.read_csv("resources/genome/betula/sample_sets/pendula.args", header=None)[0].tolist(),
@@ -3046,25 +3096,25 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
                 n_target_sites=max_sites * target_site_multiplier
             ),
             pubescens_one_outgroup=dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730"],
                 ingroups=pd.read_csv("resources/genome/betula/sample_sets/pubescens.args", header=None)[0].tolist(),
                 prior=su.KingmanPolarizationPrior()
             ),
             betula_one_outgroup=dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730"],
                 exclude=["ERR2103731"],
                 prior=su.KingmanPolarizationPrior()
             ),
             betula_two_outgroups=dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730", "ERR2103731"],
                 exclude=[],
                 prior=su.KingmanPolarizationPrior()
             ),
             betula_one_outgroup_no_prior=dict(
-                vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
                 outgroups=["ERR2103730"],
                 exclude=["ERR2103731"],
                 prior=None
@@ -3073,7 +3123,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for dataset, config in datasets.items():
             p = su.Parser(
-                vcf=config['vcf'],
+                source=config['vcf'],
                 fasta=config['fasta'] if 'fasta' in config else None,
                 aliases=config['aliases'] if 'aliases' in config else {},
                 n=10,
@@ -3168,7 +3218,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for mode in modes:
             p = su.Parser(
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
                 n=10,
                 max_sites=1000,
                 annotations=[
@@ -3286,7 +3336,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             p = su.Parser(
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
                 n=10,
                 max_sites=1000,
                 annotations=[a]
@@ -3389,7 +3439,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             n=10,
             max_sites=max_sites,
@@ -3426,7 +3476,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             n=10,
             max_sites=max_sites,
@@ -3453,7 +3503,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             n=10,
             max_sites=max_sites,
             annotations=[anc]
@@ -3507,7 +3557,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             parsers[mode] = su.Parser(
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
                 fasta="resources/genome/betula/genome.subset.20.fasta",
                 n=20,
                 max_sites=max_sites,
@@ -3561,7 +3611,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         a = su.Annotator(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             output="scratch/test_serialization_with_annotator.vcf",
             annotations=[anc],
             max_sites=100
@@ -3617,7 +3667,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         )
 
         ann = su.Annotator(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.fasta",
             output='scratch/test_betula_validate_prob_aa_field.vcf',
             annotations=[anc],
@@ -3663,7 +3713,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             ann[n_samples] = su.Annotator(
-                vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
                 fasta="resources/genome/betula/genome.fasta",
                 output='scratch/test_n_samples_target_sites_argument.vcf',
                 annotations=[anc[n_samples]],
@@ -3692,7 +3742,7 @@ class FastAnnotationTestCase(TestCase):
     def test_degeneracy_annotation(self):
         """Codon-degeneracy annotation (FASTA + GFF) over a tiny slice."""
         ann = su.Annotator(
-            vcf='resources/genome/betula/all.subset.100000.vcf.gz',
+            source='resources/genome/betula/all.subset.100000.vcf.gz',
             output='scratch/fast_degeneracy_annotation.vcf',
             fasta='resources/genome/betula/genome.subset.20.fasta',
             gff='resources/genome/betula/genome.gff.gz',
@@ -3717,7 +3767,7 @@ class FastAnnotationTestCase(TestCase):
         )
 
         sfs = su.Parser(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             n=10,
             max_sites=200,
@@ -3731,7 +3781,7 @@ class FastAnnotationTestCase(TestCase):
     def test_maximum_parsimony_annotation(self):
         """Maximum-parsimony ancestral annotation (VCF only) over a tiny slice."""
         ann = su.Annotator(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             output='scratch/fast_maximum_parsimony_annotation.vcf',
             annotations=[su.MaximumParsimonyAncestralAnnotation()],
             max_sites=200
@@ -3744,7 +3794,7 @@ class FastAnnotationTestCase(TestCase):
     def test_synonymy_annotation(self):
         """Synonymy annotation (FASTA + GFF) over a tiny slice."""
         ann = su.Annotator(
-            vcf='resources/genome/betula/biallelic.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.subset.10000.vcf.gz',
             output='scratch/fast_synonymy_annotation.vcf',
             fasta='resources/genome/betula/genome.subset.20.fasta',
             gff='resources/genome/betula/genome.gff.gz',
@@ -3764,7 +3814,7 @@ class FastAnnotationTestCase(TestCase):
             subsample_mode='random'
         )
         ann = su.Annotator(
-            vcf='resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz',
+            source='resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz',
             output='scratch/fast_adhoc_annotation.vcf',
             annotations=[anc],
             max_sites=200
@@ -3787,7 +3837,7 @@ class FastAnnotationTestCase(TestCase):
         )
 
         su.Parser(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             n=10,
             max_sites=200,
@@ -3808,7 +3858,7 @@ class FastAnnotationTestCase(TestCase):
         )
 
         su.Parser(
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             n=10,
             max_sites=200,
@@ -3824,7 +3874,7 @@ class FastAnnotationTestCase(TestCase):
             subsample_mode='probabilistic'
         )
         ann = su.Annotator(
-            vcf='resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz',
+            source='resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz',
             output='scratch/fast_adhoc_probabilistic.vcf',
             annotations=[anc],
             max_sites=200

@@ -148,7 +148,7 @@ def test_run_parse_joint(tmp_path):
     loaded = su.JointSpectra.from_file(str(out))
     assert loaded.types == ["all"] and loaded.n_pops == 2
     # the CLI must produce the same joint spectrum as the equivalent Parser call (shared default seed)
-    direct = su.Parser(vcf=JOINT_VCF, n=6, pops={"A": ["tsk_0", "tsk_1", "tsk_2", "tsk_3"],
+    direct = su.Parser(source=JOINT_VCF, n=6, pops={"A": ["tsk_0", "tsk_1", "tsk_2", "tsk_3"],
                                                  "B": ["tsk_4", "tsk_5", "tsk_6"]},
                        skip_non_polarized=False, subsample_mode="random").parse()
     np.testing.assert_array_equal(np.asarray(loaded["all"]), np.asarray(direct["all"]))
@@ -162,12 +162,13 @@ def test_run_parse_two_sfs(tmp_path):
                 "--two-sfs-distance", "1000", "--no-skip-non-polarized",
                 "--subsample-mode", "random", "--out", str(out)])
     assert code == 0 and out.exists()
-    sfs2 = su.TwoSFS.from_file(str(out))
+    # the two-SFS parse mode writes a single-entry TwoSpectra collection (keyed 'all')
+    sfs2 = su.TwoSpectra.from_file(str(out))["all"]
     assert sfs2.data.shape == (21, 21)
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
     # the CLI must produce the same two-SFS as the equivalent Parser call
-    direct = su.Parser(vcf=TWO_SFS_VCF, n=20, two_sfs=True, d=1000,
-                       skip_non_polarized=False, subsample_mode="random").parse()
+    direct = su.Parser(source=TWO_SFS_VCF, n=20, two_sfs=True, d=1000,
+                       skip_non_polarized=False, subsample_mode="random").parse()["all"]
     np.testing.assert_array_equal(sfs2.data, direct.data)
     assert sfs2.data.sum() > 0
 

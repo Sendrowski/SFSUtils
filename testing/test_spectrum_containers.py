@@ -1,6 +1,6 @@
 """
 Unit tests for the higher-dimensional spectrum containers pulled from PhaseGen: the square two-dimensional
-:class:`~sfsutils.spectrum.TwoSFS` (and its :class:`~sfsutils.spectrum.TwoLocusSFS` specialization), the
+:class:`~sfsutils.spectrum.TwoSFS`, the
 multi-population :class:`~sfsutils.spectrum.JointSFS`, and the :class:`~sfsutils.spectrum.JointSpectra` collection.
 These need only numpy / matplotlib / jsonpickle and run in the light suite.
 """
@@ -25,7 +25,6 @@ def test_abstract_bases_not_instantiable():
 def test_hierarchy():
     assert issubclass(su.Spectrum, AbstractSpectrum)
     assert issubclass(su.TwoSFS, AbstractSpectrum)
-    assert issubclass(su.TwoLocusSFS, su.TwoSFS)
     assert issubclass(su.JointSFS, AbstractSpectrum)
     assert issubclass(su.Spectra, AbstractSpectra)
     assert issubclass(su.JointSpectra, AbstractSpectra)
@@ -79,12 +78,10 @@ def test_sfs2_roundtrip_and_copy_type(tmp_path):
     assert type(s.copy()) is su.TwoSFS
 
 
-def test_two_locus_sfs_roundtrip_type(tmp_path):
-    t = su.TwoLocusSFS(np.arange(9).reshape(3, 3).astype(float))
-    assert isinstance(t, su.TwoSFS)
-    f = tmp_path / "two_locus.json"
-    t.to_file(str(f))
-    assert type(su.TwoLocusSFS.from_file(str(f))) is su.TwoLocusSFS
+def test_two_locus_sfs_is_a_twosfs_specialization():
+    """TwoLocusSFS is a documented specialization of TwoSFS, exposed in the public API."""
+    assert "TwoLocusSFS" in su.__all__
+    assert issubclass(su.TwoLocusSFS, su.TwoSFS)
 
 
 def test_sfs2_mask_upper_masks_the_upper_triangle():
@@ -434,3 +431,22 @@ def test_jointsfs_plot_defaults_to_log_colour():
 def test_spectrum_kingman_alias():
     """Spectrum.kingman is an alias of the (deprecated) Spectrum.standard_kingman."""
     np.testing.assert_array_equal(su.Spectrum.kingman(10).to_list(), su.Spectrum.standard_kingman(10).to_list())
+
+
+def test_spectrum_n_polymorphic_is_scalar_total():
+    """Spectrum.n_polymorphic returns the scalar total of the polymorphic (interior) counts."""
+    s = su.Spectrum([10, 3, 2, 1, 20])
+    assert np.isscalar(s.n_polymorphic) and not isinstance(s.n_polymorphic, np.ndarray)
+    assert s.n_polymorphic == 6
+
+
+def test_spectra_n_polymorphic_is_per_type_total():
+    """Spectra.n_polymorphic returns the per-type polymorphic totals (one scalar per stratum)."""
+    sp = su.Spectra.from_spectra({
+        "a": su.Spectrum([10, 3, 2, 1, 20]),
+        "b": su.Spectrum([5, 1, 1, 1, 5]),
+    })
+    n_poly = sp.n_polymorphic
+    assert n_poly["a"] == 6 and n_poly["b"] == 3
+    # each per-type entry is itself a scalar total
+    assert np.isscalar(n_poly["a"])

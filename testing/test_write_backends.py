@@ -36,12 +36,12 @@ _KW = dict(n=20, skip_non_polarized=False, subsample_mode="random")
 
 def _sfs(source):
     Settings.disable_pbar = True
-    return np.array(su.Parser(vcf=source, **_KW).parse().all.to_list()).astype(int)
+    return np.array(su.Parser(source=source, **_KW).parse().all.to_list()).astype(int)
 
 
 def _filter(source, output, filtrations):
     Settings.disable_pbar = True
-    su.Filterer(vcf=source, output=output, filtrations=filtrations).filter()
+    su.Filterer(source=source, output=output, filtrations=filtrations).filter()
     return output
 
 
@@ -171,7 +171,7 @@ def test_filterer_closes_writer_on_exception(tmp_path):
 
     out = str(tmp_path / "partial.vcf")
     with pytest.raises(RuntimeError, match="boom"):
-        su.Filterer(vcf=VCF, output=out, filtrations=[_BoomAfterOne()]).filter()
+        su.Filterer(source=VCF, output=out, filtrations=[_BoomAfterOne()]).filter()
 
     assert os.path.exists(out)
     from cyvcf2 import VCF as CyVCF
@@ -269,7 +269,7 @@ def test_vcf_to_trees_raises(tmp_path):
     """Writing a .trees from a VCF is rejected: a genealogy cannot be reconstructed from genotypes."""
     Settings.disable_pbar = True
     with pytest.raises(ValueError, match="tree sequence"):
-        su.Filterer(vcf=VCF, output=str(tmp_path / "bad.trees"),
+        su.Filterer(source=VCF, output=str(tmp_path / "bad.trees"),
                     filtrations=[su.SNPFiltration()]).filter()
 
 
@@ -278,5 +278,5 @@ def test_zarr_to_trees_raises(tmp_path):
     """Writing a .trees from a VCF-Zarr store is likewise rejected (non-tree-sequence input)."""
     Settings.disable_pbar = True
     with pytest.raises(ValueError, match="tree sequence"):
-        su.Filterer(vcf=VCZ, output=str(tmp_path / "bad.trees"),
+        su.Filterer(source=VCZ, output=str(tmp_path / "bad.trees"),
                     filtrations=[su.SNPFiltration()]).filter()

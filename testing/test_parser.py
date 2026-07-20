@@ -22,7 +22,7 @@ class ParserTestCase(TestCase):
         Test the degeneracy stratification.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[su.DegeneracyStratification()]
         )
@@ -44,7 +44,7 @@ class ParserTestCase(TestCase):
         Test the degeneracy stratification.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[su.ContigStratification()]
         )
@@ -107,7 +107,7 @@ class ParserTestCase(TestCase):
         s = su.ChunkedStratification(n_chunks=n_chunks)
 
         p = su.Parser(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[s]
         )
@@ -134,7 +134,7 @@ class ParserTestCase(TestCase):
         Test the VEP for human chr21.
         """
         p = su.Parser(
-            vcf='snakemake/results/vcf/sapiens/chr21.vep.vcf.gz',
+            source='snakemake/results/vcf/sapiens/chr21.vep.vcf.gz',
             n=20,
             stratifications=[su.VEPStratification()]
         )
@@ -152,7 +152,7 @@ class ParserTestCase(TestCase):
         Test the synonymy stratification for a small subset of Betula spp.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             max_sites=1000,
             stratifications=[su.VEPStratification()]
@@ -173,7 +173,7 @@ class ParserTestCase(TestCase):
         Test the synonymy stratification against SNPEFF for human chr21.
         """
         p = su.Parser(
-            vcf='snakemake/results/vcf/sapiens/chr21.snpeff.vcf.gz',
+            source='snakemake/results/vcf/sapiens/chr21.snpeff.vcf.gz',
             n=20,
             stratifications=[su.SnpEffStratification()]
         )
@@ -192,7 +192,7 @@ class ParserTestCase(TestCase):
         Test the base transition stratification.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[su.BaseTransitionStratification()]
         )
@@ -214,7 +214,7 @@ class ParserTestCase(TestCase):
         Test the transition transversion stratification.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[su.TransitionTransversionStratification()]
         )
@@ -236,7 +236,7 @@ class ParserTestCase(TestCase):
         Test the base context stratification.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[su.BaseContextStratification(fasta='resources/genome/betula/genome.subset.20.fasta')]
         )
@@ -258,7 +258,7 @@ class ParserTestCase(TestCase):
         Test the reference base stratification.
         """
         p = su.Parser(
-            vcf='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
+            source='resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz',
             n=20,
             stratifications=[su.AncestralBaseStratification()]
         )
@@ -280,7 +280,7 @@ class ParserTestCase(TestCase):
         Parse human chr21 test VCF file.
         """
         p = su.Parser(
-            vcf="resources/genome/sapiens/chr21_test.vcf.gz",
+            source="resources/genome/sapiens/chr21_test.vcf.gz",
             gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
             fasta="http://hgdownload.soe.ucsc.edu/goldenPath/hg38/chromosomes/chr21.fa.gz",
             n=20,
@@ -310,7 +310,7 @@ class ParserTestCase(TestCase):
         Test that filtering out all sites logs a warning.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             n=20,
             filtrations=[su.AllFiltration()]
         )
@@ -325,7 +325,7 @@ class ParserTestCase(TestCase):
         Test that filtering out all sites logs a warning.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             n=20,
             stratifications=[]
         )
@@ -341,7 +341,7 @@ class ParserTestCase(TestCase):
         Parse the VCF file of Betula spp.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/all.polarized.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.polarized.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             n=20,
@@ -365,7 +365,7 @@ class ParserTestCase(TestCase):
         Parse the VCF file of Betula spp.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/all.polarized.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.polarized.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             n=20,
@@ -395,7 +395,7 @@ class ParserTestCase(TestCase):
         Parse the VCF file of Betula spp.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.polarized.vcf.gz",
+            source="resources/genome/betula/biallelic.polarized.vcf.gz",
             fasta="resources/genome/betula/genome.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             n=10,
@@ -420,7 +420,7 @@ class ParserTestCase(TestCase):
         """
         p = su.Parser(
             n=10,
-            vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             target_site_counter=su.TargetSiteCounter(
                 n_target_sites=40000
             ),
@@ -438,7 +438,7 @@ class ParserTestCase(TestCase):
         Test whether the monomorphic site counter works on the Betula data.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             max_sites=10000,
@@ -578,7 +578,7 @@ class ParserTestCase(TestCase):
         Test that the parser includes only the samples that are given in the include_samples parameter.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20,
             include_samples=['ASP01', 'ASP02', 'ASP03']
         )
@@ -593,7 +593,7 @@ class ParserTestCase(TestCase):
         Test that the parser includes all samples if the include_samples parameter is not given.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20
         )
 
@@ -607,7 +607,7 @@ class ParserTestCase(TestCase):
         Test that the parser excludes the samples that are given in the exclude_samples parameter.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20,
             exclude_samples=['ASP01', 'ASP02']
         )
@@ -622,7 +622,7 @@ class ParserTestCase(TestCase):
         Test that both include and exclude samples work together.
         """
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             n=20,
             include_samples=['ASP01', 'ASP02', 'ASP03'],
             exclude_samples=['ASP02']
@@ -655,7 +655,7 @@ class ParserTestCase(TestCase):
         # instantiate parser
         p = su.Parser(
             n=8,  # SFS sample size
-            vcf="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.with_outgroups.subset.10000.vcf.gz",
             fasta="resources/genome/betula/genome.subset.20.fasta",
             gff="resources/genome/betula/genome.gff.gz",
             target_site_counter=su.TargetSiteCounter(
@@ -693,7 +693,7 @@ class ParserTestCase(TestCase):
         """
         with self.assertRaises(ValueError):
             su.Parser(
-                vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
                 n=20,
                 subsample_mode='invalid'
             )
@@ -706,7 +706,7 @@ class ParserTestCase(TestCase):
         """
         for n in [9, 10]:
             p1 = su.Parser(
-                vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=True,
                 subsample_mode='random',
                 max_sites=1000,
@@ -716,7 +716,7 @@ class ParserTestCase(TestCase):
             sfs_prob = p1.parse()
 
             p2 = su.Parser(
-                vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=False,
                 subsample_mode='random',
                 max_sites=1000,
@@ -744,7 +744,7 @@ class ParserTestCase(TestCase):
         """
         for n in [9, 10]:
             p1 = su.Parser(
-                vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=True,
                 subsample_mode='probabilistic',
                 max_sites=100,
@@ -754,7 +754,7 @@ class ParserTestCase(TestCase):
             sfs_prob = p1.parse()
 
             p2 = su.Parser(
-                vcf="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.polarized.subset.10000.vcf.gz",
                 polarize_probabilistically=False,
                 subsample_mode='probabilistic',
                 max_sites=100,
@@ -782,7 +782,7 @@ class ParserTestCase(TestCase):
         """
         for n in [19, 20]:
             p1 = su.Parser(
-                vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
+                source="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=True,
                 subsample_mode='random',
                 max_sites=10000,
@@ -792,7 +792,7 @@ class ParserTestCase(TestCase):
             sfs_prob = p1.parse()
 
             p2 = su.Parser(
-                vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
+                source="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=False,
                 subsample_mode='random',
                 max_sites=10000,
@@ -819,7 +819,7 @@ class ParserTestCase(TestCase):
         """
         for n in [19, 20]:
             p1 = su.Parser(
-                vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
+                source="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=True,
                 max_sites=10000,
                 n=n
@@ -828,7 +828,7 @@ class ParserTestCase(TestCase):
             sfs_prob = p1.parse()
 
             p2 = su.Parser(
-                vcf="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
+                source="resources/genome/sapiens/hgdp.anc.deg.vcf.gz",
                 polarize_probabilistically=False,
                 max_sites=10000,
                 n=n
@@ -858,7 +858,7 @@ class FastParserTestCase(TestCase):
 
     def _parse(self, stratifications, max_sites=200, **kwargs):
         sfs = su.Parser(
-            vcf=self.vcf,
+            source=self.vcf,
             n=20,
             stratifications=stratifications,
             max_sites=max_sites,
@@ -911,7 +911,7 @@ class FastParserTestCase(TestCase):
     def test_inline_annotation_and_stratification(self):
         """An inline degeneracy annotation + stratification during the parse (FASTA + GFF)."""
         sfs = su.Parser(
-            vcf='resources/genome/betula/all.subset.100000.vcf.gz',
+            source='resources/genome/betula/all.subset.100000.vcf.gz',
             fasta=self.fasta,
             gff='resources/genome/betula/genome.gff.gz',
             n=20,
@@ -929,7 +929,7 @@ class FastParserTestCase(TestCase):
         ``n_samples`` keeps it in the millisecond range while still exercising the count/update path.
         """
         sfs = su.Parser(
-            vcf=self.vcf,
+            source=self.vcf,
             fasta=self.fasta,
             n=20,
             max_sites=200,
@@ -951,7 +951,7 @@ class FastParserTestCase(TestCase):
         stratification path without a pre-annotated (VEP/snpEff) VCF.
         """
         sfs = su.Parser(
-            vcf='resources/genome/betula/all.subset.100000.vcf.gz',
+            source='resources/genome/betula/all.subset.100000.vcf.gz',
             fasta=self.fasta,
             gff='resources/genome/betula/genome.gff.gz',
             n=20,

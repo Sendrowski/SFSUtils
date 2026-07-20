@@ -22,7 +22,7 @@ class FiltrationTestCase(TestCase):
         Test the SNP filtration.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_filter_snp_filtration.vcf',
             filtrations=[su.SNPFiltration()],
         )
@@ -45,7 +45,7 @@ class FiltrationTestCase(TestCase):
         )
 
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             filtrations=[f],
             n=10,
             include_samples=['ASP01', 'ASP02', 'ASP03'],
@@ -67,7 +67,7 @@ class FiltrationTestCase(TestCase):
         )
 
         p = su.Parser(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             filtrations=[f],
             n=10,
             include_samples=['ASP01', 'ASP02', 'ASP03'],
@@ -89,7 +89,7 @@ class FiltrationTestCase(TestCase):
         )
 
         filterer = su.Filterer(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_snp_filtration_include.vcf',
             filtrations=[f],
         )
@@ -106,7 +106,7 @@ class FiltrationTestCase(TestCase):
         Test the no poly-allelic filtration.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_filter_no_poly_allelic_filtration.vcf',
             filtrations=[su.PolyAllelicFiltration()],
         )
@@ -126,7 +126,7 @@ class FiltrationTestCase(TestCase):
         Test the annotator loading a VCF from a URL.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_filterer_load_vcf_from_url.vcf',
             filtrations=[su.PolyAllelicFiltration()]
         )
@@ -144,7 +144,7 @@ class FiltrationTestCase(TestCase):
         Test the annotator loading a VCF from a URL.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_deviant_outgroup_filtration.vcf',
             filtrations=[su.DeviantOutgroupFiltration(outgroups=["ERR2103730", "ERR2103731"])]
         )
@@ -376,7 +376,7 @@ class FiltrationTestCase(TestCase):
         """
         with self.assertRaises(ValueError) as error:
             f = su.Filterer(
-                vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
                 output='scratch/test_coding_sequence_filtration.vcf',
                 filtrations=[su.CodingSequenceFiltration()],
             )
@@ -392,7 +392,7 @@ class FiltrationTestCase(TestCase):
         Test the coding sequence filtration.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_coding_sequence_filtration.vcf',
             gff="resources/genome/betula/genome.gff.gz",
             filtrations=[su.CodingSequenceFiltration()],
@@ -466,7 +466,7 @@ class FiltrationTestCase(TestCase):
         """
         with self.assertRaises(ValueError):
             su.Filterer(
-                vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+                source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
                 output='scratch/test_cpg_filtration_no_fasta.vcf',
                 filtrations=[su.CpGFiltration()],
             ).filter()
@@ -481,7 +481,7 @@ class FiltrationTestCase(TestCase):
         Test the CpG filtration end-to-end, obtaining the FASTA from the filterer.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
             output='scratch/test_cpg_filtration.vcf',
             fasta="resources/genome/betula/genome.fasta",
             filtrations=[su.CpGFiltration()],
@@ -501,7 +501,7 @@ class FiltrationTestCase(TestCase):
         Test the existing outgroup filtration.
         """
         f = su.Filterer(
-            vcf="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+            source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
             output='scratch/test_existing_outgroup_filtration.vcf',
             filtrations=[su.ExistingOutgroupFiltration(outgroups=["ERR2103730", "ERR2103731"])]
         )

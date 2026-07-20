@@ -68,7 +68,7 @@ def test_degeneracy_annotation_synthetic_codons(tmp_path):
     out = tmp_path / "degeneracy.vcf"
 
     ann = su.Annotator(
-        vcf=vcf,
+        source=vcf,
         output=str(out),
         fasta=fasta,
         gff=gff,

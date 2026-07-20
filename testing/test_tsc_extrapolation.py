@@ -33,6 +33,33 @@ def test_two_sfs_target_site_counter_extrapolates_monomorphic_pairs():
     np.testing.assert_allclose(a[1:-1, 1:-1], poly[1:-1, 1:-1])  # polymorphic interior unchanged
 
 
+def test_two_sfs_extrapolation_follows_half_averaged_convention():
+    """The parse() two-SFS stores the polymorphic block half-averaged (symmetrize applies (A + A.T) / 2), and
+    TwoSFS._branch_length_covariance folds it back with data + data.T. The extrapolated monomorphic-involving pairs
+    must follow the same half-averaged convention so that after the fold they land on the poly-poly scale, not
+    twice it. Constructed so the folded pair matrix is exactly the independence outer product N * outer(q, q), for
+    which the branch-length covariance must vanish; a doubled monomorphic corner would break that."""
+    q = np.array([0.5, 0.2, 0.2, 0.1, 0.0])  # per-site class distribution; bin 0 monomorphic, bin -1 unused
+    T = 1000                                  # total (target) sites
+    N = 10_000                                # total folded site pairs
+    region_length, distance = 10_000.0, 100
+
+    marginal = T * q  # polymorphic SFS counts; marginal[0] = marginal[-1] = 0 since q is 0 there
+    poly = np.zeros((5, 5))
+    poly[1:-1, 1:-1] = 0.5 * N * np.outer(q[1:-1], q[1:-1])  # half-averaged poly-poly block
+
+    ext = su.TargetSiteCounter(n_target_sites=T)._extrapolate_two_sfs(
+        poly.copy(), marginal, region_length=region_length, distance=distance)
+
+    # after the covariance fold the monomorphic row/col recover the full independence counts, on the same scale as
+    # the poly-poly block, not twice it (the pre-fix full-count extrapolation would double the monomorphic entries)
+    folded = ext + ext.T
+    np.testing.assert_allclose(folded, N * np.outer(q, q))
+
+    # the downstream branch-length covariance of a genuinely independent input is therefore ~0 (the 2x is gone)
+    np.testing.assert_allclose(su.TwoSFS(ext).cov().data, 0.0, atol=1e-9)
+
+
 @pytest.mark.skipif(not (os.path.exists("resources/msprime/two_epoch.ref.fasta.gz")
                          and os.path.exists("resources/msprime/two_epoch.vcf")),
                     reason="the reference FASTA / VCF fixture is absent")
@@ -40,12 +67,12 @@ def test_two_sfs_target_site_counter_populates_monomorphic_bins():
     """A TargetSiteCounter is supported with the two-SFS: parsing a SNP-only VCF with one populates the monomorphic
     (row/column 0) bins of the two-SFS, which are empty without it."""
     Settings.disable_pbar = True
-    kw = dict(vcf="resources/msprime/two_epoch.vcf", n=20, two_sfs=True, d=1000,
+    kw = dict(source="resources/msprime/two_epoch.vcf", n=20, two_sfs=True, d=1000,
               skip_non_polarized=False, subsample_mode="random", fasta="resources/msprime/two_epoch.ref.fasta.gz")
 
-    without = su.Parser(**kw).parse().data
+    without = su.Parser(**kw).parse()["all"].data
     with_tsc = su.Parser(**kw, target_site_counter=su.TargetSiteCounter(
-        n_samples=50_000, n_target_sites=500_000)).parse().data
+        n_samples=50_000, n_target_sites=500_000)).parse()["all"].data
 
     assert without[0].sum() == 0                          # the msprime VCF has no monomorphic sites
     assert with_tsc[0].sum() > 0 and with_tsc[0, 0] > 0   # the counter extrapolated the monomorphic pairs
@@ -62,7 +89,7 @@ VCF = "resources/msprime/two_epoch.vcf"
 def test_joint_target_site_counter_sets_corner_exactly():
     Settings.disable_pbar = True
     pops = {"A": [f"tsk_{i}" for i in range(5)], "B": [f"tsk_{i}" for i in range(5, 10)]}
-    kw = dict(vcf=VCF, pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
+    kw = dict(source=VCF, pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
 
     without = su.Parser(**kw).parse()["all"].data
     n_poly = without.sum()
@@ -89,7 +116,7 @@ def test_joint_target_site_counter_degenerate_leaves_corner_unchanged():
     left as the observed polymorphic spectrum, not contaminated by the monomorphic sites sampled during counting."""
     Settings.disable_pbar = True
     pops = {"A": [f"tsk_{i}" for i in range(5)], "B": [f"tsk_{i}" for i in range(5, 10)]}
-    kw = dict(vcf=VCF, pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
+    kw = dict(source=VCF, pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
 
     without = su.Parser(**kw).parse()["all"].data
     n_poly = int(without.sum())

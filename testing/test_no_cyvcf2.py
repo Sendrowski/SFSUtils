@@ -76,7 +76,7 @@ def test_tree_sequence_without_tskit_raises_clear_error():
         "tskit",
         """
         try:
-            su.Parser(vcf='x.trees', n=4).parse()
+            su.Parser(source='x.trees', n=4).parse()
         except ImportError as e:
             assert 'tskit' in str(e)
             print('RAISED')
@@ -92,7 +92,7 @@ def test_vcf_zarr_without_zarr_raises_clear_error():
         "zarr",
         """
         try:
-            su.Parser(vcf='x.vcz', n=4).parse()
+            su.Parser(source='x.vcz', n=4).parse()
         except ImportError as e:
             assert 'zarr' in str(e)
             print('RAISED')
@@ -118,7 +118,7 @@ def test_vcf_parsing_without_cyvcf2_raises_clear_error():
         from sfsutils.settings import Settings
         Settings.disable_pbar = True
         try:
-            su.Parser(vcf='does_not_matter.vcf', n=4).parse()
+            su.Parser(source='does_not_matter.vcf', n=4).parse()
         except ImportError as e:
             assert 'cyvcf2' in str(e)
             print('RAISED')

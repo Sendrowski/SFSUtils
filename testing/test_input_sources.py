@@ -35,12 +35,12 @@ _KW = dict(n=20, skip_non_polarized=False, subsample_mode="random")
 
 def _sfs(source):
     Settings.disable_pbar = True
-    return np.array(su.Parser(vcf=source, **_KW).parse().all.to_list()).astype(int)
+    return np.array(su.Parser(source=source, **_KW).parse().all.to_list()).astype(int)
 
 
 @pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
 def test_source_and_vcf_alias_agree():
-    """The preferred ``source=`` and the deprecated ``vcf=`` alias yield the same SFS."""
+    """The preferred ``source=`` and the deprecated ``source=`` alias yield the same SFS."""
     Settings.disable_pbar = True
     from_source = np.array(su.Parser(source=VCF, **_KW).parse().all.to_list()).astype(int)
     from_vcf = np.array(su.Parser(vcf=VCF, **_KW).parse().all.to_list()).astype(int)
@@ -54,6 +54,22 @@ def test_source_vcf_mutually_exclusive_and_required():
 
     with pytest.raises(ValueError):
         su.Parser(**_KW)  # neither source nor vcf
+
+
+@pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
+def test_vcf_alias_emits_deprecation_warning():
+    """The deprecated ``source=`` alias still constructs a working parser but emits a DeprecationWarning; the
+    preferred ``source=`` does not warn."""
+    import warnings
+
+    Settings.disable_pbar = True
+
+    with pytest.warns(DeprecationWarning, match="vcf"):
+        su.Parser(vcf=VCF, **_KW)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        su.Parser(source=VCF, **_KW)  # must not warn
 
 
 @pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
@@ -158,7 +174,7 @@ def test_contig_stratification_on_tree_sequence():
     """ContigStratification must work on a tree sequence: its get_types() reads the reader's seqnames,
     which the tree/zarr readers now expose (previously only cyvcf2.VCF did, so this raised AttributeError)."""
     Settings.disable_pbar = True
-    spectra = su.Parser(vcf=TREES, n=20, skip_non_polarized=False, subsample_mode="random",
+    spectra = su.Parser(source=TREES, n=20, skip_non_polarized=False, subsample_mode="random",
                         stratifications=[su.ContigStratification()]).parse()
     # the tree sequence has a single synthetic contig "1"
     assert spectra.types == ["1"]
@@ -180,8 +196,8 @@ def test_tree_sequence_joint_matches_vcf():
     Settings.disable_pbar = True
     pops = {"A": [f"tsk_{i}" for i in range(5)], "B": [f"tsk_{i}" for i in range(5, 10)]}
     kw = dict(pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
-    from_vcf = np.asarray(su.Parser(vcf=VCF, **kw).parse()["all"]).astype(int)
-    from_trees = np.asarray(su.Parser(vcf=TREES, **kw).parse()["all"]).astype(int)
+    from_vcf = np.asarray(su.Parser(source=VCF, **kw).parse()["all"]).astype(int)
+    from_trees = np.asarray(su.Parser(source=TREES, **kw).parse()["all"]).astype(int)
     np.testing.assert_array_equal(from_trees, from_vcf)
 
 
@@ -199,7 +215,7 @@ def test_target_site_counter_input_agnostic(source):
 
     Settings.disable_pbar = True
     spectra = su.Parser(
-        vcf=paths[source], n=20, skip_non_polarized=False, subsample_mode="random", fasta=REF,
+        source=paths[source], n=20, skip_non_polarized=False, subsample_mode="random", fasta=REF,
         target_site_counter=su.TargetSiteCounter(n_samples=50_000, n_target_sites=50_000),
     ).parse()
 

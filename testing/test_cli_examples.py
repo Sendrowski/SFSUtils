@@ -161,7 +161,7 @@ def zarr_store(tmp_path_factory, snp_vcf):
         pytest.skip("zarr absent")
     vcf, _ = snp_vcf
     out = str(tmp_path_factory.mktemp("zarr") / "variants.vcz")
-    su.Filterer(vcf=vcf, output=out, filtrations=[su.NoFiltration()]).filter()
+    su.Filterer(source=vcf, output=out, filtrations=[su.NoFiltration()]).filter()
     return out
 
 
@@ -218,7 +218,7 @@ def test_parse_from_trees(trees_path, tmp_path):
     out = tmp_path / "sfs.csv"
     assert _run("parse", "--trees", trees, "--n", "20", "--out", str(out)) == 0
     assert out.exists()
-    polarized = np.array(su.Parser(vcf=trees, n=20, skip_non_polarized=False,
+    polarized = np.array(su.Parser(source=trees, n=20, skip_non_polarized=False,
                                    subsample_mode="random").parse().all.to_list())
     assert polarized.shape == (21,) and polarized[1:20].sum() > 0
 
@@ -257,7 +257,8 @@ def test_parse_two_sfs(snp_vcf, tmp_path):
     assert _run("parse", "--vcf", vcf, "--n", "20", "--two-sfs", "--two-sfs-distance", "1000",
                 "--out", str(out)) == 0
     assert out.exists() and out.stat().st_size > 0
-    sfs2 = su.TwoSFS.from_file(str(out))
+    # the two-SFS parse mode writes a single-entry TwoSpectra collection (keyed 'all')
+    sfs2 = su.TwoSpectra.from_file(str(out))["all"]
     assert sfs2.data.shape == (21, 21)
     np.testing.assert_allclose(sfs2.data, sfs2.data.T)
     assert sfs2.data.sum() > 0  # sites lie within the 1 kb window, so pairs are counted
