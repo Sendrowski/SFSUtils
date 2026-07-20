@@ -1320,8 +1320,13 @@ class ZarrVariantReader(VariantReader):
         contig = root['variant_contig']
         genotype = root['call_genotype']
         phased = root['call_genotype_phased'] if 'call_genotype_phased' in list(root.array_keys()) else None
-        aa_key = f'variant_{self._info_ancestral}'
-        aa = root[aa_key] if aa_key in list(root.array_keys()) else None
+        # surface every INFO field the writer persisted as a variant_<key> string array (the ancestral
+        # tag, but also e.g. an annotated Degeneracy/Synonymy), skipping the reserved coordinate/allele
+        # arrays; otherwise a store re-parsed stratified by an annotated field would see no INFO at all
+        reserved_arrays = {'variant_position', 'variant_contig', 'variant_allele'}
+        info_arrays = {k[len('variant_'):]: root[k]
+                       for k in root.array_keys()
+                       if k.startswith('variant_') and k not in reserved_arrays}
 
         n = position.shape[0]
 
@@ -1333,7 +1338,7 @@ class ZarrVariantReader(VariantReader):
             contig_batch = contig[start:end]
             gt_batch = np.asarray(genotype[start:end])
             phased_batch = np.asarray(phased[start:end]) if phased is not None else None
-            aa_batch = aa[start:end] if aa is not None else None
+            info_batches = {key: arr[start:end] for key, arr in info_arrays.items()}
 
             for i in range(end - start):
                 site_alleles = [a for a in (self._decode(x) for x in allele_batch[i]) if a not in ('', '.')]
@@ -1351,9 +1356,7 @@ class ZarrVariantReader(VariantReader):
                 observed = [a for a in site_alleles if a]
                 is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
 
-                info = {}
-                if aa_batch is not None:
-                    info[self._info_ancestral] = self._decode(aa_batch[i])
+                info = {key: self._decode(batch[i]) for key, batch in info_batches.items()}
 
                 yield Variant(
                     ref=site_alleles[0] if site_alleles else '.',

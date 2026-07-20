@@ -2675,8 +2675,9 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         # iterate over the file in chunks
         for i, chunk in enumerate(pd.read_csv(file, sep=r"\s+", header=None, dtype=str, chunksize=chunk_size)):
 
-            # determine the number of ingroups
-            n_ingroups = np.max(np.array(chunk.iloc[0, 0].split(','), dtype=int))
+            # determine the number of ingroups: the EST-SFS ingroup column holds the per-base A,C,G,T
+            # counts, so the sample size is their sum (their max only for a monomorphic first row)
+            n_ingroups = int(np.sum(np.array(chunk.iloc[0, 0].split(','), dtype=int)))
 
             # parse the data
             parsed = cls._parse_est_sfs(chunk)
@@ -3148,6 +3149,10 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
         # total number of sites considered
         self.n_sites = i + 1
+
+        # close the calibration reader opened in _setup (a fresh pass over the source), so its file
+        # handle is released rather than leaking until the annotation object is collected
+        self._reader.close()
 
     def infer(self):
         """
