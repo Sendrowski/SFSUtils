@@ -558,6 +558,7 @@ rule execute_r_reference_notebooks:
     input:
         pkg="../sfsutils",
         driver="../docs/execute_r_notebook.py",
+        coalesce="../docs/coalesce_streams.py",
     output:
         touch("../docs/reference/R/.notebooks-executed")
     conda:
@@ -570,6 +571,7 @@ rule execute_r_reference_notebooks:
         for nb in {params.notebooks}; do
             echo "=== executing $nb (R) ==="
             python ../../execute_r_notebook.py "$nb.ipynb" ir 1200
+            python ../../coalesce_streams.py "$nb.ipynb"
         done
         """
 

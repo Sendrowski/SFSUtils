@@ -8,12 +8,15 @@ Python streams does not help here: under IRkernel reticulate routes Python stder
 real file descriptor 2, which neither ``reticulate::py_capture_output`` (a Python ``sys.stderr``
 swap) nor an ``os.dup2`` redirect reliably intercepts. This driver therefore captures at the
 logging layer instead, which is independent of stream routing: it attaches a buffered
-``logging.StreamHandler`` to the ``sfsutils`` logger for the duration of each cell, then emits the
-buffered text to R's stderr and detaches the handler. The parser is run serially
-(``Settings.parallelize = False``) so that every log record is emitted in the parent process where
-the handler sees it (records from multiprocessing workers would not propagate to it); the parser
-logs the same lines either way, and the internal parallelism is immaterial for the small example
-inputs. The tqdm progress bar, which is not a log record, is intentionally left out.
+``logging.StreamHandler`` to the ``sfsutils`` logger for the duration of each cell and redirects the
+tqdm progress bar into the same buffer, then emits the buffered text to R's stderr (via
+``message()``, the only R stream nbconvert captures here) and tears the capture down. The buffered
+progress bar is coalesced afterwards like the Python notebooks (docs/coalesce_streams.py). The
+parser is run serially (``Settings.parallelize = False``) so that every log record is emitted in the
+parent process where the handler sees it (records from multiprocessing workers would not propagate
+to it); the parser logs the same lines either way, and the internal parallelism is immaterial for
+the small example inputs. Results are rendered as text/plain (``jupyter.rich_display = FALSE``) so a
+scalar value shows in a proper output box rather than IRkernel's bare inline HTML.
 
 The original (clean) source is restored before the notebook is written back, so the captured output
 lands in the cell's outputs while the persisted source stays unwrapped. Cells that bind the Python
@@ -31,17 +34,24 @@ from nbconvert.preprocessors import ExecutePreprocessor
 # cells binding the Python interpreter must run before any capture call
 _SKIP_MARKERS = ("use_condaenv", "load_sfsutils", "library(reticulate)")
 
-# attach a buffered handler to the sfsutils logger, matching its own colored format
+# attach a buffered handler to the sfsutils logger (matching its own colored format) and redirect
+# the tqdm progress bar into the same buffer, so both land in the captured output
 _LOG_OPEN = (
-    "import io, logging, sfsutils\n"
+    "import io, logging, sfsutils, tqdm\n"
     "_sfs_buf = io.StringIO()\n"
     "_sfs_h = logging.StreamHandler(_sfs_buf)\n"
     "_sfs_h.setFormatter(sfsutils.ColoredFormatter('%(levelname)s:%(name)s: %(message)s'))\n"
     "logging.getLogger('sfsutils').addHandler(_sfs_h)\n"
+    "_sfs_tqdm_init = tqdm.std.tqdm.__init__\n"
+    "def _sfs_patched_init(self, *a, **k):\n"
+    "    k['file'] = _sfs_buf\n"
+    "    _sfs_tqdm_init(self, *a, **k)\n"
+    "tqdm.std.tqdm.__init__ = _sfs_patched_init\n"
 )
 
-# detach the handler and read back what it buffered
+# restore tqdm, detach the handler, and read back what was buffered
 _LOG_CLOSE = (
+    "tqdm.std.tqdm.__init__ = _sfs_tqdm_init\n"
     "logging.getLogger('sfsutils').removeHandler(_sfs_h)\n"
     "_sfs_h.flush()\n"
     "_sfs_captured = _sfs_buf.getvalue()\n"
@@ -62,6 +72,8 @@ def _wrap(src: str) -> str:
     return (
         '.sfsmod <- reticulate::import("sfsutils")\n'
         ".sfsmod$Settings$parallelize <- FALSE\n"
+        # render results as text/plain (a proper output box), not IRkernel's bare text/html repr
+        "options(jupyter.rich_display = FALSE)\n"
         f'reticulate::py_run_string("{_LOG_OPEN}")\n'
         ".res <- withVisible({\n"
         f"{src}\n"
