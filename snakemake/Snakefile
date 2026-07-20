@@ -516,15 +516,17 @@ rule plot_spectra:
 # Docs: regenerate the executed reference notebooks
 # ======================================================================================
 
-# The Python reference notebooks are committed with their outputs and are NOT executed at
-# docs-build time (nb_execution_mode='off' in docs/conf.py). Regenerate them here after a
-# code change that affects their outputs: each notebook is executed in place and its tqdm
-# progress bars are coalesced into a single clean stderr stream (docs/coalesce_streams.py),
-# matching how the fastdfe notebooks store theirs. They run one at a time because the parser
-# parallelises internally, so this deliberately does not fan out. The R notebooks are not
-# executed (no reticulate/IRkernel here) and are mirrored by hand.
+# The reference notebooks are committed with their outputs and are NOT executed at docs-build time
+# (nb_execution_mode='off' in docs/conf.py). Regenerate them here after a code change that affects
+# their outputs. The Python notebooks are executed in place and their tqdm progress bars are
+# coalesced into a single clean stderr stream (docs/coalesce_streams.py), matching how the fastdfe
+# notebooks store theirs. The R notebooks are executed under the IRkernel/reticulate binding via
+# docs/execute_r_notebook.py, which captures the sfsutils log lines that reticulate would otherwise
+# drop under nbconvert (see that script for why). Both run one notebook at a time because the parser
+# parallelises internally, so this deliberately does not fan out.
 #
 # Run explicitly:  snakemake -j1 --use-conda execute_reference_notebooks
+#                  snakemake -j1 --use-conda execute_r_reference_notebooks
 REFERENCE_NOTEBOOKS = [
     "quickstart", "parser", "input_output", "annotations",
     "filtrations", "spectra", "joint", "two_sfs",
@@ -549,6 +551,25 @@ rule execute_reference_notebooks:
             echo "=== executing $nb ==="
             jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=1200 "$nb.ipynb"
             python ../../coalesce_streams.py "$nb.ipynb"
+        done
+        """
+
+rule execute_r_reference_notebooks:
+    input:
+        pkg="../sfsutils",
+        driver="../docs/execute_r_notebook.py",
+    output:
+        touch("../docs/reference/R/.notebooks-executed")
+    conda:
+        "envs/docs.yaml"
+    params:
+        notebooks=" ".join(REFERENCE_NOTEBOOKS)
+    shell:
+        r"""
+        cd ../docs/reference/R
+        for nb in {params.notebooks}; do
+            echo "=== executing $nb (R) ==="
+            python ../../execute_r_notebook.py "$nb.ipynb" ir 1200
         done
         """
 
