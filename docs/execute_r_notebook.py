@@ -45,6 +45,8 @@ _LOG_OPEN = (
     "_sfs_tqdm_init = tqdm.std.tqdm.__init__\n"
     "def _sfs_patched_init(self, *a, **k):\n"
     "    k['file'] = _sfs_buf\n"
+    # force unicode block glyphs; tqdm falls back to ASCII '#' when writing to a StringIO
+    "    k.setdefault('ascii', False)\n"
     "    _sfs_tqdm_init(self, *a, **k)\n"
     "tqdm.std.tqdm.__init__ = _sfs_patched_init\n"
 )
