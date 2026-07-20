@@ -1923,8 +1923,7 @@ class TwoLocusSFS(TwoSFS):
     expected product of the branch length subtending ``i`` samples at locus 0 and ``j`` samples at locus 1, for two
     loci separated by a given recombination rate ``r``. It interpolates between the within-tree cross-moment of the
     SFS at ``r = 0`` (fully linked) and the outer product of the marginal SFS as ``r`` tends to infinity
-    (independent loci). It shares the container machinery of :class:`TwoSFS` (plotting, folding, arithmetic,
-    serialization).
+    (independent loci).
     """
     pass
 

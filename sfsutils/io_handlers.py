@@ -953,9 +953,7 @@ class Variant:
     Minimal concrete implementation of the :class:`~sfsutils.io_handlers.Site` interface: a duck-typed stand-in for a
     :class:`cyvcf2.Variant` exposing the subset of its interface that the parser, filtrations, annotations and
     stratifications rely on: ``CHROM``, ``POS``, ``REF``, ``ALT``, ``INFO``, the ``is_*`` type flags and the
-    per-sample ``gt_bases``. Non-VCF backends (tree sequences, VCF-Zarr stores) emit these objects so they feed
-    the same streaming site interface as cyvcf2, without sfsutils having to special-case the input format
-    downstream.
+    per-sample ``gt_bases``. Non-VCF backends (tree sequences, VCF-Zarr stores) emit these objects.
     """
 
     #: Whether the variant is an SNP
@@ -1088,9 +1086,8 @@ class VariantReader(Iterable, ABC):
 
     def add_info_to_header(self, data: dict):
         """
-        Declare an INFO field. On-the-fly annotations that write to :attr:`Variant.INFO` call this to
-        register the field with the underlying VCF header; for non-VCF sources (which are never written
-        back out) there is no header to update, so this is a no-op.
+        Declare an INFO field, registering it with the underlying VCF header. Does nothing for
+        non-VCF sources, which have no header.
 
         :param data: The INFO field definition.
         """
@@ -1371,10 +1368,9 @@ class ZarrVariantReader(VariantReader):
 
 class VariantWriter(ABC):
     """
-    Abstract writer mirroring :class:`~sfsutils.io_handlers.VariantReader`: it consumes the same streamed :class:`~sfsutils.io_handlers.Variant` interface
-    and writes it to a concrete on-disk format. :class:`~sfsutils.filtration.Filterer` and :class:`~sfsutils.annotation.Annotator` write through this,
-    so the output format is chosen by the output file's extension (see :meth:`VariantWriter.open`) rather than being
-    hard-coded to VCF.
+    Abstract writer mirroring :class:`~sfsutils.io_handlers.VariantReader`: it consumes the same streamed
+    :class:`~sfsutils.io_handlers.Variant` interface and writes it to a concrete on-disk format. The output
+    format follows the output file's extension (see :meth:`VariantWriter.open`).
     """
 
     @staticmethod

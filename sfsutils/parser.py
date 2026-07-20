@@ -481,9 +481,7 @@ class SnpEffStratification(VEPStratification):
 
 class GenomePositionDependentStratification(Stratification, ABC):
     """
-    Base class for stratifications that derive the type from a site's genomic position rather than
-    from its annotation, implemented by :class:`~sfsutils.parser.ContigStratification` and
-    :class:`~sfsutils.parser.ChunkedStratification`.
+    Base class for stratifications that derive the type from a site's genomic position.
     """
 
 
