@@ -61,6 +61,26 @@ typehints_fully_qualified = False
 # cannot resolve these forward references; the warning is cosmetic, so suppress that subtype.
 suppress_warnings = ['sphinx_autodoc_typehints.forward_reference']
 
+# Warn about cross-references that do not resolve. An unqualified role (``:class:`Spectra```) resolves
+# inside the owning module's page but not in contexts without a module scope, such as the autosummary
+# summary tables, where it silently degrades to plain text. Nitpicky mode turns that into a build
+# warning so it cannot go unnoticed; refs to names outside the package are listed below.
+nitpicky = True
+
+nitpick_ignore_regex = [
+    # standard library and typing constructs autodoc emits from annotations
+    (r'py:.*', r'(typing\..*|Union|Optional|Any|Callable|Iterable|Iterator|Literal|Sequence|Mapping)'),
+    # optional third-party backends, not importable at documentation time
+    (r'py:.*', r'(np|pd|plt|sns)\..*'),
+    (r'py:.*', r'(cyvcf2|tskit|zarr|Bio|tqdm|matplotlib|numpy|pandas|seaborn|scipy)(\..*)?'),
+    (r'py:.*', r'(SeqRecord|FastaIterator|DictReader|TextIOWrapper)'),
+    # private helpers that are deliberately undocumented
+    (r'py:.*', r'.*\b_[A-Za-z_]+'),
+    # the file-handler hierarchy is internal plumbing and is not documented; it surfaces only in the
+    # ``Bases:`` line of the classes built on it, and documenting it would in turn dangle its own bases
+    (r'py:class', r'sfsutils\.io_handlers\.(MultiHandler|FASTAHandler|VCFHandler|GFFHandler|FileHandler)'),
+]
+
 pygments_style = 'default'
 
 # disable notebook execution

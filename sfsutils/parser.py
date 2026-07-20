@@ -236,7 +236,7 @@ class BaseTransitionStratification(SNPStratification):
 
         :param variant: The site
         :return: Base transition
-        :raises NoTypeException: if not type could be determined
+        :raises ~sfsutils.io_handlers.NoTypeException: if not type could be determined
         """
         if variant.is_snp:
             ancestral = self.parser._get_ancestral(variant)
@@ -302,7 +302,7 @@ class AncestralBaseStratification(Stratification):
     If ``skip_non_polarized`` is set to ``False``, we use the reference allele as
     ancestral base. By default, we use the ``AA`` tag to determine the ancestral allele.
 
-    Any subclass of :class:`~sfsutils.parser.AncestralAnnotation` can be used to annotate the ancestral allele.
+    Any subclass of :class:`~sfsutils.annotation.AncestralAlleleAnnotation` can be used to annotate the ancestral allele.
     """
 
     @_count_valid_type
@@ -376,7 +376,7 @@ class DegeneracyStratification(Stratification):
 
         :param variant: The site
         :return: Type of the mutation
-        :raises NoTypeException: If the mutation is not synonymous or non-synonymous
+        :raises ~sfsutils.io_handlers.NoTypeException: If the mutation is not synonymous or non-synonymous
         """
         return self.get_degeneracy(variant)
 
@@ -480,7 +480,13 @@ class SnpEffStratification(VEPStratification):
 
 
 class GenomePositionDependentStratification(Stratification, ABC):
-    pass
+    """
+    Base class for stratifications that assign a type from where a site sits in the genome rather
+    than from its annotation, implemented by :class:`~sfsutils.parser.ContigStratification` and
+    :class:`~sfsutils.parser.ChunkedStratification`. Because the type depends on position, these
+    stratifications are sensitive to which sites reach them: a stratification applied after
+    filtration or down-projection sees a subset of the input records.
+    """
 
 
 class ContigStratification(GenomePositionDependentStratification):
@@ -1349,7 +1355,7 @@ class Parser(MultiHandler):
 
         :param variant: The site
         :return: Ancestral allele
-        :raises NoTypeException: If the site is not polarized and ``skip_non_polarized`` is ``True`` or if
+        :raises ~sfsutils.io_handlers.NoTypeException: If the site is not polarized and ``skip_non_polarized`` is ``True`` or if
             the ancestral allele or reference allele (in case of monomorphic sites) is not a valid base.
         """
         if variant.is_snp:

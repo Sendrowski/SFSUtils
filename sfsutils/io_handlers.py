@@ -43,9 +43,9 @@ logger = logging.getLogger('sfsutils')
 class Site(Protocol):
     """
     Structural interface for a single streamed variant site: the abstraction layer over the input backends.
-    Both :class:`cyvcf2.Variant` (the VCF backend) and the concrete :class:`Variant` emitted by the
+    Both :class:`cyvcf2.Variant` (the VCF backend) and the concrete :class:`~sfsutils.io_handlers.Variant` emitted by the
     tree-sequence and VCF-Zarr backends satisfy it structurally, so the parser, filtrations, annotations and
-    stratifications are typed against :class:`Site` alone rather than a union of the concrete backend types.
+    stratifications are typed against :class:`~sfsutils.io_handlers.Site` alone rather than a union of the concrete backend types.
     """
 
     #: The contig.
@@ -706,7 +706,7 @@ class VCFHandler(FileHandler):
     def _open_reader(self):
         """
         Open the appropriate variant reader for the configured source. A tskit tree sequence and a
-        VCF-Zarr store are read through :class:`TskitVariantReader` and :class:`ZarrVariantReader`;
+        VCF-Zarr store are read through :class:`TskitVariantReader` and :class:`~sfsutils.io_handlers.ZarrVariantReader`;
         everything else is read from VCF via cyvcf2.
 
         :return: The variant reader.
@@ -842,7 +842,7 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
         Create a new MultiHandler instance.
 
         :param source: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a
-            tskit tree sequence (a .trees path or a TreeSequence object), or a pre-built :class:`VariantReader`.
+            tskit tree sequence (a .trees path or a TreeSequence object), or a pre-built :class:`~sfsutils.io_handlers.VariantReader`.
         :param fasta: The path to the FASTA file.
         :param gff: The path to the GFF file.
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
@@ -950,7 +950,7 @@ class NoTypeException(BaseException):
 
 class Variant:
     """
-    Minimal concrete implementation of the :class:`Site` interface: a duck-typed stand-in for a
+    Minimal concrete implementation of the :class:`~sfsutils.io_handlers.Site` interface: a duck-typed stand-in for a
     :class:`cyvcf2.Variant` exposing the subset of its interface that the parser, filtrations, annotations and
     stratifications rely on: ``CHROM``, ``POS``, ``REF``, ``ALT``, ``INFO``, the ``is_*`` type flags and the
     per-sample ``gt_bases``. Non-VCF backends (tree sequences, VCF-Zarr stores) emit these objects so they feed
@@ -1040,7 +1040,7 @@ class DummyVariant(Variant):
 class VariantReader(Iterable, ABC):
     """
     Common streaming interface over a variant source. Concrete readers wrap a VCF-Zarr store or a tskit
-    tree sequence and yield :class:`Variant` objects in file order, so the parser can consume any input
+    tree sequence and yield :class:`~sfsutils.io_handlers.Variant` objects in file order, so the parser can consume any input
     format through a single ``for variant in reader`` loop. Readers are re-iterable: each ``iter(reader)``
     starts a fresh pass over the source.
     """
@@ -1371,7 +1371,7 @@ class ZarrVariantReader(VariantReader):
 
 class VariantWriter(ABC):
     """
-    Abstract writer mirroring :class:`VariantReader`: it consumes the same streamed :class:`Variant` interface
+    Abstract writer mirroring :class:`~sfsutils.io_handlers.VariantReader`: it consumes the same streamed :class:`~sfsutils.io_handlers.Variant` interface
     and writes it to a concrete on-disk format. :class:`~sfsutils.filtration.Filterer` and :class:`~sfsutils.annotation.Annotator` write through this,
     so the output format is chosen by the output file's extension (see :meth:`VariantWriter.open`) rather than being
     hard-coded to VCF.
@@ -1389,7 +1389,7 @@ class VariantWriter(ABC):
         genealogy cannot be reconstructed from genotype data), and a VCF otherwise.
 
         :param output: The output path; its extension selects the format.
-        :param reader: The open input reader (a cyvcf2 VCF or a :class:`VariantReader`).
+        :param reader: The open input reader (a cyvcf2 VCF or a :class:`~sfsutils.io_handlers.VariantReader`).
         :param info_ancestral: The INFO tag holding the ancestral allele, for the VCF-Zarr writer.
         :return: The writer.
         :raises ValueError: If a ``.trees`` output is requested from a non-tree-sequence input.
@@ -1476,7 +1476,7 @@ class VCFVariantWriter(VariantWriter):
 class ZarrVariantWriter(VariantWriter):
     """
     Write variants to a VCF-Zarr store in the `vcf2zarr <https://sgkit-dev.github.io/bio2zarr>`_ (VCZ) layout
-    read back by :class:`ZarrVariantReader`, so the output can come from any input (VCF, tree sequence or
+    read back by :class:`~sfsutils.io_handlers.ZarrVariantReader`, so the output can come from any input (VCF, tree sequence or
     another VCF-Zarr store). Any INFO fields present on the variants (for example an annotated ancestral
     allele) are persisted as ``variant_<tag>`` arrays. Variants are buffered in memory and the arrays written
     on :meth:`close`, since the ragged allele dimension needs a global maximum.

@@ -1430,7 +1430,7 @@ class BaseType(Enum):
 
 class PolarizationPrior(ABC):
     """
-    Base class for priors used with :class:`MaximumLikelihoodAncestralAnnotation`.
+    Base class for priors used with :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`.
     These priors incorporate information about the general probability of the major allele being ancestral
     across all sites with the same minor allele count. Prior thus take ingroup allele frequencies into account,
     when making predictions about the ancestral state of a site. This is useful because it enhances ancestral
@@ -1525,7 +1525,7 @@ class PolarizationPrior(ABC):
 class KingmanPolarizationPrior(PolarizationPrior):
     """
     Prior based on the standard Kingman coalescent. To be used with 
-    :class:`MaximumLikelihoodAncestralAnnotation`.
+    :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`.
     """
 
     def _get_prior(self, configs: pd.DataFrame, n_ingroups: int) -> np.ndarray:
@@ -1549,7 +1549,7 @@ class KingmanPolarizationPrior(PolarizationPrior):
 
 class AdaptivePolarizationPrior(PolarizationPrior):
     """
-    Adaptive prior. To be used with :class:`MaximumLikelihoodAncestralAnnotation`. This is the
+    Adaptive prior. To be used with :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`. This is the
     same prior as used in the EST-SFS paper. This prior is adaptive in the sense that the most likely polarization
     probabilities given the site configurations are found. This is the most accurate prior, but requires a lot of
     sites in order to work properly. You can check that the polarization probabilities are smooth enough across

@@ -690,7 +690,7 @@ class AbstractSpectra(ABC):
     """
     Abstract base class for a collection of site-frequency spectra keyed by type, for example the SFS stratified
     into neutral and selected sites. The concrete backings share this interface but not their storage:
-    :class:`Spectra` is DataFrame-backed and one-dimensional, while :class:`JointSpectra` is dict-backed and holds
+    :class:`~sfsutils.spectrum.Spectra` is DataFrame-backed and one-dimensional, while :class:`JointSpectra` is dict-backed and holds
     multi-population :class:`JointSFS` objects. Code needing only the common collection operations can be written
     against this base regardless of dimensionality.
     """
@@ -2241,7 +2241,7 @@ class _DictSpectraSerialization:
     """
     JSON serialization shared by the dict-backed spectra collections (:class:`JointSpectra` and :class:`TwoSpectra`),
     whose :attr:`data` maps each type to a spectrum object wrapping a numpy array. The arrays are converted to nested
-    lists for encoding and back to arrays on decode. The CSV/DataFrame-backed :class:`Spectra` does not use this.
+    lists for encoding and back to arrays on decode. The CSV/DataFrame-backed :class:`~sfsutils.spectrum.Spectra` does not use this.
     """
 
     #: The spectra keyed by type.
@@ -2301,7 +2301,7 @@ class _DictSpectraSerialization:
 class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of joint (multi-population) site-frequency spectra keyed by type, the multi-population analogue of
-    :class:`Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the parser is given
+    :class:`~sfsutils.spectrum.Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the parser is given
     populations, with one :class:`JointSFS` per stratification type (or a single ``all`` type when no stratifications
     are used).
     """
@@ -2422,7 +2422,7 @@ class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
 class TwoSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of two-site (two-locus) site-frequency spectra keyed by type, the two-dimensional analogue of
-    :class:`Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the two-SFS is parsed
+    :class:`~sfsutils.spectrum.Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the two-SFS is parsed
     with stratifications, holding one :class:`TwoSFS` per stratification type. Because the two-SFS pairs sites,
     stratified parsing counts only within-stratum pairs, so summing the per-type spectra does not in general recover
     the unstratified two-SFS (cross-stratum pairs are not counted).

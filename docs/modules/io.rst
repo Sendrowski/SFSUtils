@@ -9,6 +9,7 @@ The :class:`~sfsutils.parser.Parser`, :class:`~sfsutils.filtration.Filterer` and
    :nosignatures:
 
    ~sfsutils.io_handlers.Site
+   ~sfsutils.io_handlers.NoTypeException
    ~sfsutils.io_handlers.Variant
    ~sfsutils.io_handlers.VariantReader
    ~sfsutils.io_handlers.TskitVariantReader
@@ -70,4 +71,10 @@ TskitVariantWriter
 ~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.TskitVariantWriter
+   :members:
+
+NoTypeException
+~~~~~~~~~~~~~~~
+
+.. autoclass:: sfsutils.io_handlers.NoTypeException
    :members:
