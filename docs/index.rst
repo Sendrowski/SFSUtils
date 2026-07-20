@@ -87,6 +87,7 @@ Contents
    modules/annotation
    modules/filtration
    modules/io
+   modules/settings
 
 .. toctree::
    :caption: Miscellaneous
