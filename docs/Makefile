@@ -3,7 +3,10 @@
 
 # You can set these variables from the command line, and also
 # from the environment for the first two.
-SPHINXOPTS    ?=
+# -W turns warnings into errors so an unresolved cross-reference (see nitpicky in conf.py) fails the
+# build rather than passing silently; --keep-going still reports all of them before exiting. Override
+# with `make html SPHINXOPTS=` to build despite warnings.
+SPHINXOPTS    ?= -W --keep-going
 SPHINXBUILD   ?= sphinx-build
 SOURCEDIR     = .
 BUILDDIR      = _build
