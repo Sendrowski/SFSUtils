@@ -11,11 +11,11 @@ logging layer instead, which is independent of stream routing: it attaches a buf
 ``logging.StreamHandler`` to the ``sfsutils`` logger for the duration of each cell and redirects the
 tqdm progress bar into the same buffer, then emits the buffered text to R's stderr (via
 ``message()``, the only R stream nbconvert captures here) and tears the capture down. The buffered
-progress bar is coalesced afterwards like the Python notebooks (docs/coalesce_streams.py). The
-parser is run serially (``Settings.parallelize = False``) so that every log record is emitted in the
-parent process where the handler sees it (records from multiprocessing workers would not propagate
-to it); the parser logs the same lines either way, and the internal parallelism is immaterial for
-the small example inputs. Results are rendered as text/plain (``jupyter.rich_display = FALSE``) so a
+progress bar is coalesced afterwards like the Python notebooks (docs/coalesce_streams.py).
+``Settings.parallelize = False`` keeps the annotation classes that parallelize (currently
+``MaximumLikelihoodAncestralAnnotation`` and ``AdaptivePolarizationPrior``) in the parent process,
+so that every log record is emitted where the handler sees it; records from multiprocessing workers
+would not propagate to it. Results are rendered as text/plain (``jupyter.rich_display = FALSE``) so a
 scalar value shows in a proper output box rather than IRkernel's bare inline HTML.
 
 The original (clean) source is restored before the notebook is written back, so the captured output
