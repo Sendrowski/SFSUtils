@@ -701,6 +701,59 @@ class SpectraTestCase(TestCase):
         # make sure n_sites is the same
         testing.assert_array_equal(spectra.subsample(7).n_sites, spectra.n_sites)
 
+    def test_subsample_random_int_seed_independent_across_classes(self):
+        """
+        With an int seed the per frequency-class hypergeometric draws must be independent rather than drawn
+        from an identically restarted stream. Frequency classes 1 and 5 are hypergeometric reflections of one
+        another under a shared seed, so the buggy restart made subsample[1] == subsample[2] (and
+        subsample[0] == subsample[3]) exactly; independent draws break that symmetry while staying reproducible.
+        """
+        m = 5000
+        sfs = Spectrum([0, m, 0, 0, 0, m, 0])  # n = 6, mass in frequency classes 1 and 5 only
+
+        sub = sfs.subsample(3, mode='random', seed=123)
+
+        # reflection symmetry of the buggy restart would force these equalities
+        self.assertNotEqual(sub.data[1], sub.data[2])
+        self.assertNotEqual(sub.data[0], sub.data[3])
+
+        # reproducible for a fixed int seed
+        testing.assert_array_equal(sub.data, sfs.subsample(3, mode='random', seed=123).data)
+
+    def test_spectra_resample_int_seed_independent_across_types(self):
+        """
+        Bootstrap resampling must draw each type from an independent stream; forwarding the same int seed to
+        every type made types with identical data byte-identical, breaking cross-type independence.
+        """
+        data = [0] + [500] * 9 + [0]
+        spectra = Spectra({"neutral": list(data), "selected": list(data)})
+
+        r = spectra.resample(seed=7)
+
+        self.assertFalse(np.array_equal(r["neutral"].data, r["selected"].data))
+
+        # reproducible for a fixed int seed
+        r2 = spectra.resample(seed=7)
+        testing.assert_array_equal(r["neutral"].data, r2["neutral"].data)
+        testing.assert_array_equal(r["selected"].data, r2["selected"].data)
+
+    def test_spectra_subsample_int_seed_independent_across_types(self):
+        """
+        Random subsampling must draw each type from an independent stream; forwarding the same int seed to
+        every type made types with identical data byte-identical, breaking cross-type independence.
+        """
+        data = [0] + [500] * 9 + [0]
+        spectra = Spectra({"neutral": list(data), "selected": list(data)})
+
+        s = spectra.subsample(5, mode='random', seed=7)
+
+        self.assertFalse(np.array_equal(s["neutral"].data, s["selected"].data))
+
+        # reproducible for a fixed int seed
+        s2 = spectra.subsample(5, mode='random', seed=7)
+        testing.assert_array_equal(s["neutral"].data, s2["neutral"].data)
+        testing.assert_array_equal(s["selected"].data, s2["selected"].data)
+
     def test_has_divergence(self):
         """
         Test whether the has_divergence method works as expected.

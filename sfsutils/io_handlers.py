@@ -717,9 +717,20 @@ class VCFHandler(FileHandler):
         if self._is_zarr_store(self.vcf):
             return ZarrVariantReader(self.vcf, info_ancestral=self.info_ancestral)
 
-        # a pre-built VariantReader (or any iterable of sites) passed directly as the source
+        # a pre-built VariantReader passed directly as the source. We require a VariantReader rather
+        # than an arbitrary iterable of sites because the parser needs a re-iterable source that also
+        # exposes ``samples``, ``seqnames`` and ``count_sites()``; a bare iterable (or a cyvcf2.VCF
+        # object) provides none of these and would fail later with an opaque error.
         if not isinstance(self.vcf, str):
-            return self.vcf
+            if isinstance(self.vcf, VariantReader):
+                return self.vcf
+
+            raise TypeError(
+                f"Unsupported variant source of type '{type(self.vcf).__name__}'. A non-path source must be a "
+                f"VariantReader (e.g. TskitVariantReader or ZarrVariantReader), which exposes 'samples', "
+                f"'seqnames' and 'count_sites()' and is re-iterable. A bare iterable of sites or a cyvcf2.VCF "
+                f"object is not supported; pass a VCF path/URL or wrap your sites in a VariantReader instead."
+            )
 
         return self.load_vcf()
 
@@ -782,11 +793,12 @@ class VCFHandler(FileHandler):
         if self._is_tree_sequence(self.vcf) or self._is_zarr_store(self.vcf):
             return int(min(self._reader.count_sites(), self.max_sites))
 
-        # a pre-built VariantReader (or any iterable of sites) passed directly as the source
+        # a pre-built VariantReader passed directly as the source. VariantReader.count_sites() opens a
+        # fresh iteration pass, so it does not exhaust the source and the later parse() pass still sees
+        # every site (a plain generator would have been consumed here). Non-VariantReader sources are
+        # rejected in _open_reader, so self._reader is guaranteed to be a VariantReader.
         if not isinstance(self.vcf, str):
-            reader = self._reader
-            n = reader.count_sites() if isinstance(reader, VariantReader) else len(list(reader))
-            return int(min(n, self.max_sites))
+            return int(min(self._reader.count_sites(), self.max_sites))
 
         return count_sites(
             vcf=self.download_if_url(self.vcf),

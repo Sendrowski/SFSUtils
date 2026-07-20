@@ -65,8 +65,8 @@ def test_pathlike_source():
 
 @requires_trees
 def test_parser_from_variant_reader():
-    """A pre-built VariantReader (an iterable of sites) can be passed directly as ``source`` and reproduces
-    the SFS parsed from the .trees fixture."""
+    """A pre-built VariantReader can be passed directly as ``source`` and reproduces the SFS parsed from the
+    .trees fixture."""
     import tskit
     from sfsutils.io_handlers import TskitVariantReader
 
@@ -74,6 +74,61 @@ def test_parser_from_variant_reader():
     reader = TskitVariantReader(tskit.load(TREES))
     from_reader = np.array(su.Parser(source=reader, **_KW).parse().all.to_list()).astype(int)
     np.testing.assert_array_equal(from_reader, _sfs(TREES))
+
+
+def test_bare_iterable_source_raises():
+    """A bare (non-VariantReader) iterable of sites is not a supported source: it lacks ``samples`` /
+    ``seqnames`` / ``count_sites`` and re-iterability, so the parser rejects it with a clear ``TypeError``
+    instead of crashing later in ``_prepare_samples_mask``. Covers both a materialised list and a one-shot
+    generator."""
+    Settings.disable_pbar = True
+
+    for bad in ([object(), object()], (x for x in [object(), object()])):
+        with pytest.raises(TypeError, match="VariantReader"):
+            su.Parser(source=bad, **_KW).parse()
+
+
+@requires_trees
+def test_variant_reader_source_counted_and_parsed():
+    """A supported VariantReader source can be both counted (``n_sites``) and parsed without the count pass
+    exhausting the source: counting opens a fresh iteration, so the subsequent parse still sees every site
+    and produces a non-empty SFS."""
+    import tskit
+    from sfsutils.io_handlers import TskitVariantReader
+
+    Settings.disable_pbar = True
+    reader = TskitVariantReader(tskit.load(TREES))
+    parser = su.Parser(source=reader, **_KW)
+
+    n = parser.n_sites  # counting pass
+    assert n > 0
+
+    sfs = parser.parse()  # parse pass, must not see an exhausted source
+    assert sfs.all.data.sum() > 0
+
+
+@pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
+def test_chunked_stratification_warns_under_filtration(caplog):
+    """With active filtrations, ChunkedStratification sizes its chunks from the raw record count while sites
+    are chunked only after surviving filtration/projection, so the trailing chunks can come out empty. This is
+    documented and a warning is logged at setup."""
+    import logging
+
+    Settings.disable_pbar = True
+
+    with caplog.at_level(logging.WARNING, logger="sfsutils"):
+        su.Parser(
+            source=VCF,
+            n=20,
+            skip_non_polarized=False,
+            stratifications=[su.ChunkedStratification(n_chunks=5)],
+            filtrations=[su.SNPFiltration()],
+        ).parse()
+
+    assert any(
+        "ChunkedStratification sizes its" in r.message and "filtration" in r.message
+        for r in caplog.records
+    )
 
 
 @requires_trees

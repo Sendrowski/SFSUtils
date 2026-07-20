@@ -111,6 +111,31 @@ def test_jsonpickle_spectra_roundtrip():
     assert jsonpickle.decode(jsonpickle.encode(sp)).to_dict() == sp.to_dict()
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.bool_, np.float64])
+def test_numpy_handler_preserves_dtype(dtype):
+    # regression: dtype must survive the jsonpickle round-trip (BUG 10)
+    from sfsutils.json_handlers import NumpyArrayHandler
+
+    arr = np.array([1, 0, 1], dtype=dtype)
+    handler = NumpyArrayHandler(context=jsonpickle.pickler.Pickler())
+
+    flat = handler.flatten(arr, {})
+    assert flat["dtype"] == str(arr.dtype)
+
+    back = handler.restore(flat)
+    assert back.dtype == arr.dtype
+    np.testing.assert_array_equal(back, arr)
+
+
+def test_numpy_handler_old_payload_without_dtype_field():
+    # backward compatibility: payloads lacking the dtype field still restore via inference
+    from sfsutils.json_handlers import NumpyArrayHandler
+
+    handler = NumpyArrayHandler(context=jsonpickle.unpickler.Unpickler())
+    back = handler.restore({"data": [1, 2, 3]})
+    np.testing.assert_array_equal(back, np.array([1, 2, 3]))
+
+
 # --- parallelization helpers ------------------------------------------------------------------
 
 def test_parallelize_sequential_without_array_wrap():
@@ -120,6 +145,21 @@ def test_parallelize_sequential_without_array_wrap():
 def test_check_bounds_linear_scale():
     near_lower, near_upper = check_bounds({"x": (0.0, 10.0)}, {"x": 0.05}, scale="lin")
     assert near_lower["x"] == (0.0, 0.05, 10.0)
+
+
+def test_check_bounds_open_bounds_do_not_crash():
+    # regression: exactly one None bound must not raise a TypeError (BUG 9)
+    only_lower_none = check_bounds({"x": (None, 10.0)}, {"x": 0.05})
+    only_upper_none = check_bounds({"x": (0.0, None)}, {"x": 0.05})
+    both_none = check_bounds({"x": (None, None)}, {"x": 0.05})
+    both_set = check_bounds({"x": (0.0, 10.0)}, {"x": 0.05})
+
+    # an open range has no finite reference span, so nothing is flagged
+    for near_lower, near_upper in (only_lower_none, only_upper_none, both_none):
+        assert near_lower == {} and near_upper == {}
+
+    # both bounds set still detects proximity to the lower bound
+    assert both_set[0]["x"] == (0.0, 0.05, 10.0)
 
 
 # --- simple filters ---------------------------------------------------------------------------

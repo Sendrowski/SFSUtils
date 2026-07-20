@@ -360,10 +360,17 @@ class Spectrum(AbstractSpectrum):
             subsample[0] = self.data[0]
             subsample[-1] = self.data[-1]
 
+            # build a single random state up front so an int seed does not restart the stream for every
+            # frequency class (which would make the per-class draws non-independent); thread it through all draws
+            if isinstance(seed, Generator):
+                rng = seed
+            else:
+                rng = np.random.default_rng(None if seed is None else int(seed))
+
             # iterate over spectrum and subsample hypergeometrically
             for i, m in enumerate(self.polymorphic.astype(int)):
                 # get subsampled counts
-                samples = hypergeom.rvs(M=self.n, n=i + 1, N=n, size=m, random_state=seed)
+                samples = hypergeom.rvs(M=self.n, n=i + 1, N=n, size=m, random_state=rng)
 
                 # add subsampled counts
                 subsample += np.histogram(samples, bins=np.arange(n + 2))[0]
@@ -1333,7 +1340,12 @@ class Spectra(AbstractSpectra):
         :param seed: Random state or seed. Only for 'random' mode.
         :return: Subsampled spectra
         """
-        return Spectra.from_spectra({t: s.subsample(n, mode, seed) for t, s in self.to_spectra().items()})
+        spectra = self.to_spectra()
+        rngs = self._spawn_rngs(seed, len(spectra))
+
+        return Spectra.from_spectra(
+            {t: s.subsample(n, mode, rng) for (t, s), rng in zip(spectra.items(), rngs)}
+        )
 
     def resample(self, seed: int | Generator = None) -> 'Spectra':
         """
@@ -1342,7 +1354,28 @@ class Spectra(AbstractSpectra):
         :param seed: Random state or seed
         :return: Resampled spectra.
         """
-        return Spectra.from_spectra({t: s.resample(seed) for t, s in self.to_spectra().items()})
+        spectra = self.to_spectra()
+        rngs = self._spawn_rngs(seed, len(spectra))
+
+        return Spectra.from_spectra(
+            {t: s.resample(rng) for (t, s), rng in zip(spectra.items(), rngs)}
+        )
+
+    @staticmethod
+    def _spawn_rngs(seed: int | Generator, n: int) -> List[Generator]:
+        """
+        Spawn independent child generators, one per type, so that with an int seed the types are not resampled
+        or subsampled from an identical stream (which would break bootstrap independence across types) while
+        the result stays reproducible for a given seed.
+
+        :param seed: Random state or seed shared by all types
+        :param n: Number of independent generators to produce
+        :return: List of independent generators
+        """
+        if isinstance(seed, Generator):
+            return list(seed.spawn(n))
+
+        return [np.random.default_rng(child) for child in np.random.SeedSequence(seed).spawn(n)]
 
     def is_folded(self) -> Dict[str, bool]:
         """

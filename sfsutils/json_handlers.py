@@ -31,7 +31,7 @@ class NumpyArrayHandler(BaseHandler):
         :param data: Dictionary
         :return: Simplified dictionary
         """
-        return data | dict(data=x.tolist())
+        return data | dict(data=x.tolist(), dtype=str(x.dtype))
 
     def restore(self, data: dict) -> np.ndarray:
         """
@@ -40,7 +40,8 @@ class NumpyArrayHandler(BaseHandler):
         :param data: Dictionary
         :return: Numpy array
         """
-        return np.array(data['data'])
+        # fall back to inferred dtype for old-style payloads lacking the dtype field
+        return np.array(data['data'], dtype=data.get('dtype'))
 
 
 class SpectrumHandler(BaseHandler):

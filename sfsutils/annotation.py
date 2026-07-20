@@ -2155,6 +2155,10 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
     """
 
+    #: Number of random draws per requested monomorphic sample, bounding the sampling loop so an
+    #: all-masked (non-ACGT) window cannot hang. Tune up if a reference is heavily masked.
+    max_sampling_attempts_factor: int = 100
+
     #: The data types for the data frame
     _dtypes = dict(
         n_major=np.int8,
@@ -2478,12 +2482,13 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
                 # sample sites; bound the number of draws so an all-masked (non-ACGT) window cannot hang
                 i = 0
-                max_attempts = max(1000, 20 * n)
+                max_attempts = self.max_sampling_attempts_factor * n
                 for _ in range(max_attempts):
                     if i >= n:
                         break
 
-                    pos = self.rng.integers(*bounds)
+                    # inclusive upper bound: the highest parsed position must be eligible too
+                    pos = self.rng.integers(bounds[0], bounds[1] + 1)
 
                     base = record.seq[pos - 1].upper()
 
@@ -2708,8 +2713,8 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
         with open(file, 'w') as f:
 
-            # iterate over rows
-            for i, site in sites.iterrows():
+            # iterate over rows, counting written lines rather than trusting the index label
+            for n_written, (_, site) in enumerate(sites.iterrows()):
 
                 # ingroup counts
                 ingroups = np.zeros(4, dtype=int)
@@ -2738,7 +2743,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
                 )
 
                 # break if we reached the maximum number of sites
-                if i + 1 >= self.max_sites:
+                if n_written + 1 >= self.max_sites:
                     break
 
     def to_file(self, file: str):
@@ -3559,7 +3564,16 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
         :return: The list of config indices, use -1 for sites that are not included.
         """
-        indices = np.full(self.n_sites, -1, dtype=int)
+        # Size the array to hold the largest site index rather than ``n_sites``. Site indices are raw
+        # positions in the parsed stream (and monomorphic samples are offset from that raw count), so when
+        # variants were skipped during parsing the raw count exceeds the multiplicity sum that ``n_sites``
+        # collapses to after monomorphic sampling, and ``n_sites`` alone would underflow the array.
+        max_site = -1
+        for config in self.configs.itertuples(index=False):
+            if len(config.sites) > 0:
+                max_site = max(max_site, max(config.sites))
+
+        indices = np.full(max(self.n_sites, max_site + 1), -1, dtype=int)
 
         for i, config in self.configs.iterrows():
             for j in config.sites:

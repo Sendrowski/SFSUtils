@@ -106,10 +106,12 @@ def check_bounds(
         _value = transform(value, scale)
 
         if key not in fixed_params:
-            if _lower is not None and (_value - _lower) / (_upper - _lower) <= percentile / 100:
-                near_lower[key] = (lower, value, upper)
+            # relative proximity is only defined when both bounds are set (finite range)
+            if _lower is not None and _upper is not None:
+                if (_value - _lower) / (_upper - _lower) <= percentile / 100:
+                    near_lower[key] = (lower, value, upper)
 
-            if _upper is not None and (_upper - _value) / (_upper - _lower) <= percentile / 100:
-                near_upper[key] = (lower, value, upper)
+                if (_upper - _value) / (_upper - _lower) <= percentile / 100:
+                    near_upper[key] = (lower, value, upper)
 
     return near_lower, near_upper

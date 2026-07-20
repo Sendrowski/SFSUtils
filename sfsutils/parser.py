@@ -528,6 +528,16 @@ class ChunkedStratification(GenomePositionDependentStratification):
     .. note::
         Since the total number of sites is not known in advance, we cannot create contiguous
         chunks of exactly equal size.
+
+    .. warning::
+        Chunk boundaries are sized from the raw input record count (``parser.n_sites``), but a site
+        is assigned to a chunk only once it has survived filtration and down-projection. When any
+        filtration or projection drops sites, all included sites fall within the first
+        ``n_included / n_sites`` fraction of the record range, so they concentrate in the leading
+        chunks and the trailing chunks come out under-filled or empty. The included count is not known
+        at setup without an extra pass over the data, so the chunks cannot be pre-balanced; a warning
+        is logged at setup when the parser carries filtrations. Sites seen beyond the last boundary
+        (for instance during a second, target-site sampling pass) are folded into the final chunk.
     """
 
     def __init__(self, n_chunks: int):
@@ -554,6 +564,18 @@ class ChunkedStratification(GenomePositionDependentStratification):
         :param parser: The parser
         """
         super()._setup(parser)
+
+        # chunk boundaries are sized from the raw record count, but sites are assigned only after
+        # surviving filtration and projection, so with active filtrations the included sites bunch into
+        # the leading chunks and the trailing chunks come out under-filled or empty. The included count
+        # is not available here without an extra pass, so warn rather than silently produce empty chunks.
+        if parser.filtrations:
+            self._logger.warning(
+                f"ChunkedStratification sizes its {self.n_chunks} chunks from the raw input record count, but "
+                f"{len(parser.filtrations)} filtration(s) are active and will drop sites before they are chunked. "
+                f"Included sites will concentrate in the leading chunks and the trailing chunks may be empty. "
+                f"To obtain balanced chunks, chunk a pre-filtered input or one whose records all pass filtration."
+            )
 
         # compute base chunk size and remainder
         base_chunk_size, remainder = divmod(parser.n_sites, self.n_chunks)
@@ -709,8 +731,8 @@ class TargetSiteCounter:
         self.parser = parser
 
         # with the two-SFS a TargetSiteCounter extrapolates the monomorphic-involving pairs from the target-site
-        # count (see _extrapolate_two_sfs). This lets fpmi() (which ignores the monomorphic bins) be used on
-        # SNP-only input; the extrapolated cov()/corr() are only approximate (real all-sites input is preferred)
+        # count (see _extrapolate_two_sfs), which makes the extrapolated cov()/corr() approximately usable on
+        # SNP-only input (real all-sites input is preferred). fpmi() ignores the monomorphic bins and works regardless.
         self.parser._require_fasta(self.__class__.__name__)
 
         # check if we have a SNPFiltration
@@ -1059,7 +1081,7 @@ class Parser(MultiHandler):
 
     def __init__(
             self,
-            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None,
             n: int | Dict[str, int] | List[int] = None,
             pops: Dict[str, List[str]] | None = None,
             gff: str | None = None,
@@ -1082,16 +1104,18 @@ class Parser(MultiHandler):
             two_sfs: bool = False,
             d: int = 1000,
             two_sfs_offset: int = 0,
-            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None
     ):
         """
         Initialize the parser.
 
         :param source: The variant source: a path to a VCF file (gzipped or a URL), a path to a VCF-Zarr store
             (a ``.vcz`` or ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
-            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
-            sites. VCF-Zarr requires the optional ``zarr`` package and tree sequences the optional ``tskit``
-            package.
+            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader`. A non-path,
+            non-tree-sequence source must be a ``VariantReader`` (it exposes the sample names, contig names and
+            site count the parser needs, and supports a fresh iteration pass); a bare iterable of sites or a
+            raw ``cyvcf2.VCF`` object is not accepted and raises a ``TypeError``. VCF-Zarr requires the optional
+            ``zarr`` package and tree sequences the optional ``tskit`` package.
         :param gff: The path to the GFF file, possibly gzipped or a URL. This file is optional and depends on
             the stratifications, annotations and filtrations that are used.
         :param fasta: The path to the FASTA file, possibly gzipped or a URL. This file is optional and depends on

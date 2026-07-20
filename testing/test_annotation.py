@@ -1170,6 +1170,128 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             'multiplicity': {0: 1, 1: 1, 2: 1, 3: 1},
         })
 
+    def test_get_site_indices_sized_for_skipped_variants_and_sampled_monomorphic_sites(self):
+        """
+        Regression test for a sizing bug in ``_get_site_indices``: site indices are raw positions in the
+        parsed stream, and sampled monomorphic sites are offset from that raw count, so whenever variants
+        were skipped during parsing the largest site index exceeds the multiplicity sum that ``n_sites``
+        collapses to after sampling. The index array must be sized for the largest site index, not
+        ``n_sites``, otherwise it underflows and raises ``IndexError``.
+        """
+        anc = su.MaximumLikelihoodAncestralAnnotation.from_data(
+            n_major=[13, 15, 17],
+            major_base=['A', 'C', 'G'],
+            minor_base=['C', 'G', 'T'],
+            outgroup_bases=[['A', 'C'], ['G', 'G'], ['G', 'G']],
+            n_ingroups=20,
+            parallelize=False,
+        )
+
+        # emulate a parser that iterated 5 raw variants (indices 0..4) but skipped indices 1 and 3,
+        # so the raw parse count (n_sites) exceeds the multiplicity sum of the kept sites
+        anc.configs['sites'] = [[0], [2], [4]]
+        anc.n_sites = 5
+
+        # sampled monomorphic sites are offset from the raw parse count, reaching indices 5 and 6
+        anc.configs = anc._add_monomorphic_sites({'A': 2, 'C': 0, 'G': 0, 'T': 0})
+        anc.n_sites = anc._get_n_sites()
+
+        # this raised IndexError before the fix (array sized to n_sites=5 but max site index is 6)
+        indices = anc._get_site_indices()
+
+        # every stored site index maps back to exactly one config row
+        self.assertEqual(int((indices != -1).sum()), int(anc.configs.multiplicity.sum()))
+        self.assertGreater(len(indices), anc.n_sites)
+
+    def test_sample_mono_allelic_sites_can_draw_max_position(self):
+        """
+        Regression test for the half-open sampling bound: the highest parsed position per contig
+        (``bounds[1]``) must be an eligible reference base. Here it is the only callable (A/C/G/T) base in
+        the contig, so sampling succeeds only if the sampler can draw it.
+        """
+        class _FakeRecord:
+            def __init__(self, seq):
+                self.seq = seq
+
+        class _FakeHandler:
+            def __init__(self, seq):
+                self._record = _FakeRecord(seq)
+
+            def get_aliases(self, contig):
+                return contig
+
+            def get_contig(self, aliases, notify=True):
+                return self._record
+
+        class _RngSpy:
+            def __init__(self, rng, drawn):
+                self._rng = rng
+                self._drawn = drawn
+
+            def multinomial(self, *args, **kwargs):
+                return self._rng.multinomial(*args, **kwargs)
+
+            def integers(self, *args, **kwargs):
+                value = self._rng.integers(*args, **kwargs)
+                self._drawn.append(int(value))
+                return value
+
+        anc = su.MaximumLikelihoodAncestralAnnotation.from_data(
+            n_major=[13, 15, 17],
+            major_base=['A', 'C', 'G'],
+            minor_base=['C', 'G', 'T'],
+            outgroup_bases=[['A', 'C'], ['G', 'G'], ['G', 'G']],
+            n_ingroups=20,
+            parallelize=False,
+        )
+        anc.adjust_target_sites = False
+        anc.n_target_sites = 1000
+        anc.n_samples_target_sites = 20
+        anc.n_sites = anc._get_n_sites()
+
+        # the highest parsed position is 5, and only that position holds a callable base
+        anc._contig_bounds = {'c': (1, 5)}
+        anc._handler = _FakeHandler("NNNNA")
+
+        drawn = []
+        anc.rng = _RngSpy(anc.rng, drawn)
+
+        anc._sample_mono_allelic_sites()
+
+        # the max position was drawn (impossible with the previous half-open bound), so a base was sampled
+        self.assertIn(5, drawn)
+        self.assertGreater(anc._monomorphic_samples['A'], 0)
+
+    def test_to_est_sfs_caps_written_lines_with_non_contiguous_index(self):
+        """
+        Regression test for the ``max_sites`` cap in ``to_est_sfs``: it must count written lines, not read
+        the DataFrame index label of each row. The sites written are selected in site order, so their index
+        labels need not be a contiguous 0..N range; capping on the label truncates on the wrong quantity.
+        """
+        # grouping sorts configs by base, so the site written first carries a large index label
+        anc = su.MaximumLikelihoodAncestralAnnotation.from_data(
+            n_major=[10, 10, 10, 10],
+            major_base=['T', 'G', 'C', 'A'],
+            minor_base=[None, None, None, None],
+            outgroup_bases=[['A', 'A'], ['A', 'A'], ['A', 'A'], ['A', 'A']],
+            n_ingroups=20,
+            parallelize=False,
+        )
+
+        # the write order maps to index labels [3, 2, 1, 0], none contiguous with the line count
+        testing.assert_array_equal(anc._get_site_indices(), [3, 2, 1, 0])
+
+        anc.max_sites = 2
+
+        file_out = os.path.join(tempfile.gettempdir(), 'test_to_est_sfs_cap.txt')
+        anc.to_est_sfs(file_out)
+
+        with open(file_out, 'r') as fh:
+            n_lines = sum(1 for _ in fh)
+
+        # the cap truncates at 2 written lines; before the fix the first label (3) broke the loop early
+        self.assertEqual(n_lines, 2)
+
     def test_upper_bounds_larger_than_lower_bounds_raises_value_error(self):
         """
         Test that a ValueError is raised when the lower bound of a parameter is negative.
