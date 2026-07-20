@@ -103,3 +103,49 @@ def test_contig_filtration_matches_through_aliases():
 
     from cyvcf2 import VCF
     assert len(list(VCF(out))) == 1
+
+
+# --- round 2: regression from the round-1 zarr fix, plus edge-case crashes/NaNs -------------------
+
+_FIXTURE = "resources/msprime/two_epoch.vcz"
+
+
+@requires_zarr
+@pytest.mark.skipif(not __import__("os").path.exists(_FIXTURE), reason="the VCF-Zarr fixture is absent")
+def test_zarr_reader_does_not_surface_reserved_metadata():
+    """A plain vcf2zarr store must not have its reserved variant_* metadata (quality/filter/id/length)
+    surfaced as bogus INFO, which would corrupt the typed layout on a round-trip."""
+    from sfsutils.io_handlers import ZarrVariantReader
+    variant = next(iter(ZarrVariantReader(_FIXTURE)))
+    assert dict(variant.INFO) == {}
+
+
+def test_scale_theta_on_all_monomorphic_spectrum():
+    """Scaling theta on a spectrum with no polymorphic sites (theta == 0) must not divide by zero."""
+    scaled = su.Spectrum([100, 0, 0, 0]).scale_theta(0.01)
+    assert not np.isnan(scaled.to_list()).any()
+
+
+def test_spectra_normalize_on_empty_spectra():
+    """Normalising an entirely empty spectra must not produce NaN columns."""
+    empty = su.Spectra.from_spectra({"a": su.Spectrum([0, 0, 0, 0]), "b": su.Spectrum([0, 0, 0, 0])})
+    assert not np.isnan(empty.normalize().to_numpy()).any()
+
+
+def test_target_site_counter_single_position_does_not_crash(tmp_path):
+    """A TargetSiteCounter on input whose every contig spans a single position must skip monomorphic
+    sampling rather than dividing by a zero range span and raising in rng.multinomial."""
+    Settings.disable_pbar = True
+    fasta = tmp_path / "g.fasta"
+    fasta.write_text(">1\nACGTACGTAC\n")
+    vcf = tmp_path / "one.vcf"
+    vcf.write_text(
+        "##fileformat=VCFv4.2\n##contig=<ID=1,length=10>\n"
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "s1", "s2"]) + "\n"
+        + "\t".join(["1", "5", ".", "A", "T", ".", ".", ".", "GT", "0/1", "0/0"]) + "\n")
+
+    # a single polymorphic site -> its contig spans a single position (range 0)
+    spectra = su.Parser(source=str(vcf), n=4, skip_non_polarized=False, fasta=str(fasta),
+                        target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=1000)).parse()
+    assert spectra["all"].n_polymorphic == 1
