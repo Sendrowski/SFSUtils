@@ -30,15 +30,6 @@ class Visualization:
     Visualization class for SFS-related plots.
     """
 
-    @classmethod
-    def change_default_figsize(cls, factor: float | np.ndarray):
-        """
-        Scale default figure size.
-
-        :return: Factor to scale default figure size by
-        """
-        plt.rcParams["figure.figsize"] = list(factor * np.array(plt.rcParams["figure.figsize"]))
-
     @staticmethod
     def clear_show_save(func: Callable) -> Callable:
         """

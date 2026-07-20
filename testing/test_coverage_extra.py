@@ -236,16 +236,6 @@ def test_cli_main_help_exits():
 
 # --- Visualization helpers --------------------------------------------------------------------
 
-def test_visualization_change_default_figsize():
-    import matplotlib.pyplot as plt
-    original = list(plt.rcParams["figure.figsize"])
-    try:
-        Visualization.change_default_figsize(2.0)
-        assert list(plt.rcParams["figure.figsize"]) == [2.0 * original[0], 2.0 * original[1]]
-    finally:
-        plt.rcParams["figure.figsize"] = original
-
-
 def test_visualization_show_and_save_writes_file(tmp_path):
     import matplotlib.pyplot as plt
     plt.plot([0, 1], [0, 1])
