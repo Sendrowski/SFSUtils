@@ -61,10 +61,9 @@ typehints_fully_qualified = False
 # cannot resolve these forward references; the warning is cosmetic, so suppress that subtype.
 suppress_warnings = ['sphinx_autodoc_typehints.forward_reference']
 
-# Warn about cross-references that do not resolve. An unqualified role (``:class:`Spectra```) resolves
-# inside the owning module's page but not in contexts without a module scope, such as the autosummary
-# summary tables, where it silently degrades to plain text. Nitpicky mode turns that into a build
-# warning so it cannot go unnoticed; refs to names outside the package are listed below.
+# Warn about cross-references that do not resolve. An unqualified role resolves on its own module's
+# page but not in the autosummary tables, which carry no module scope, so refs in the first sentence
+# of a docstring have to be fully qualified. Names outside the package are ignored below.
 nitpicky = True
 
 nitpick_ignore_regex = [

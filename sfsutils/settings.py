@@ -14,6 +14,6 @@ class Settings:
     #: Whether to disable the progress bar.
     disable_pbar: bool = False
 
-    #: Global override for parallel processing. ``False`` disables it everywhere, overriding a
-    #: per-call request; ``None`` defers to the caller's own ``parallelize`` argument.
+    #: Whether to use parallel processing. ``False`` disables it package-wide, including for calls
+    #: that request it; ``None`` and ``True`` defer to the caller's own ``parallelize`` argument.
     parallelize: bool = None
