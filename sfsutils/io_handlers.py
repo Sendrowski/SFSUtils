@@ -1372,7 +1372,7 @@ class ZarrVariantReader(VariantReader):
 class VariantWriter(ABC):
     """
     Abstract writer mirroring :class:`VariantReader`: it consumes the same streamed :class:`Variant` interface
-    and writes it to a concrete on-disk format. :class:`Filterer` and :class:`Annotator` write through this,
+    and writes it to a concrete on-disk format. :class:`~sfsutils.filtration.Filterer` and :class:`~sfsutils.annotation.Annotator` write through this,
     so the output format is chosen by the output file's extension (see :meth:`VariantWriter.open`) rather than being
     hard-coded to VCF.
     """

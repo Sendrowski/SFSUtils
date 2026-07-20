@@ -2101,7 +2101,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
     This class can also be used independently, see the :meth:`from_dataframe`, :meth:`from_data` and
     :meth:`from_est_sfs` methods.
 
-    Initially, the branch rates are determined using MLE. Similar to :class:`Parser`, we can also specify the number of
+    Initially, the branch rates are determined using MLE. Similar to :class:`~sfsutils.parser.Parser`, we can also specify the number of
     mutational target sites (see the ``n_target_sites`` argument) in case our input does not contain the full set of
     monomorphic sites. This is necessary to obtain realistic branch rate estimates. You can also choose a prior for the
     polarization probabilities (see :class:`PolarizationPrior`). Eventually, for every site, the probability that the
@@ -2248,14 +2248,14 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
                 and should thus be kept at ``0`` if the distribution of frequency counts is important, e.g., if the SFS
                 is to be determined.
         :param n_target_sites: The total number of target sites if this class is used in conjunction with
-            :class:`Parser` or :class:`Annotator`. This is useful if the provided set of sites only
+            :class:`~sfsutils.parser.Parser` or :class:`Annotator`. This is useful if the provided set of sites only
             consists of bi-allelic sites. Specify here the total number of sites underlying the given dataset, i.e.,
             both mono- and bi-allelic sites. Ignoring mono-allelic sites will lead to overestimation of the rate
             parameters. For this to work, a FASTA file must be provided from which the mono-allelic sites can be
             sampled. Sampling takes place between the variants of the last and first site on every contig considered
             in the input. Use ``None`` to disable this feature. Note that the number of target sites is automatically
-            carried over if not specified and this class is used together with :class:`Parser`. In order to use this
-            feature, you also need to specify a FASTA file to :class:`Parser` or :class:`Annotator`. Also note that
+            carried over if not specified and this class is used together with :class:`~sfsutils.parser.Parser`. In order to use this
+            feature, you also need to specify a FASTA file to :class:`~sfsutils.parser.Parser` or :class:`Annotator`. Also note that
             by default we extrapolate the number of mono-allelic sites to be sampled from the FASTA file based on the
             ratio of sites with called outgroup bases parsed from the input (``adjust_target_sites``).
         :param n_samples_target_sites: The number of sites to sample from the FASTA file when determining the number of

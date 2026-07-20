@@ -5,7 +5,7 @@ Changelog
 
 [1.0.0] - 2026-07-20
 ^^^^^^^^^^^^^^^^^^^^
-- First stable release: correctness and robustness fixes, and documentation polish, over the beta.
+- First stable release, adding correctness and robustness fixes and documentation polish to the beta.
 
 [0.1.0b2] - 2026-07-19
 ^^^^^^^^^^^^^^^^^^^^^^
