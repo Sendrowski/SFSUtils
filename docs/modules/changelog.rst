@@ -3,6 +3,10 @@
 Changelog
 =========
 
+[1.0.0] - 2026-07-20
+^^^^^^^^^^^^^^^^^^^^
+- First stable release: correctness and robustness fixes, and documentation polish, over the beta.
+
 [0.1.0b2] - 2026-07-19
 ^^^^^^^^^^^^^^^^^^^^^^
 - Generalize the parser input to a single ``source`` argument (VCF, VCF-Zarr, or tree sequence), add ``JointSFS.fold``, plus bug fixes and documentation improvements.

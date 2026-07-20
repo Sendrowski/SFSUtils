@@ -180,7 +180,7 @@ def _run_parse(args: argparse.Namespace) -> int:
     from . import Parser
 
     spectra = Parser(
-        vcf=_input_source(args),
+        source=_input_source(args),
         n=args.n,
         pops=_parse_pops(args.pops) if args.pops else None,
         gff=args.gff,
@@ -214,7 +214,7 @@ def _run_filter(args: argparse.Namespace) -> int:
     from . import Filterer
 
     Filterer(
-        vcf=_input_source(args),
+        source=_input_source(args),
         output=args.out,
         filtrations=_build_filtrations(args.filter, args.contigs),
         gff=args.gff,
@@ -237,7 +237,7 @@ def _run_annotate(args: argparse.Namespace) -> int:
     from . import Annotator
 
     Annotator(
-        vcf=_input_source(args),
+        source=_input_source(args),
         output=args.out,
         annotations=_build_annotations(args.annotation, args.outgroups, args.n_ingroups),
         gff=args.gff,

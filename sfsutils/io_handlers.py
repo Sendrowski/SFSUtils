@@ -828,7 +828,7 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
 
     def __init__(
             self,
-            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None,
             fasta: str | None = None,
             gff: str | None = None,
             info_ancestral: str = 'AA',
@@ -836,14 +836,13 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
             seed: int | None = 0,
             cache: bool = True,
             aliases: Dict[str, List[str]] = {},
-            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None
     ):
         """
         Create a new MultiHandler instance.
 
         :param source: The variant source: a VCF path (gzipped or a URL), a VCF-Zarr store (.vcz/.zarr), a
-            tskit tree sequence (a .trees path or a TreeSequence object), or a pre-built :class:`VariantReader`
-            / iterable of sites.
+            tskit tree sequence (a .trees path or a TreeSequence object), or a pre-built :class:`VariantReader`.
         :param fasta: The path to the FASTA file.
         :param gff: The path to the GFF file.
         :param info_ancestral: The tag in the INFO field that contains the ancestral allele
@@ -905,6 +904,13 @@ class MultiHandler(VCFHandler, FASTAHandler, GFFHandler):
         if source is None and vcf is None:
             raise ValueError(
                 "A variant source must be provided via 'source' (or the deprecated 'vcf' alias)."
+            )
+
+        if vcf is not None:
+            warnings.warn(
+                "The 'vcf' argument is deprecated; use 'source' instead.",
+                DeprecationWarning,
+                stacklevel=3
             )
 
         return source if source is not None else vcf

@@ -2518,11 +2518,24 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         else:
             self._logger.info(f"Extrapolating to {self.n_target_sites} mutational target sites.")
 
+        # counts of the A/C/G/T bases actually drawn; on an N-rich or masked reference the draw is capped and
+        # vec.sum() falls short of n_samples_target_sites, so extrapolate against the sampled callable count
+        # (mirrors Parser._update_target_sites, which scales by the sampled monomorphic count) rather than the
+        # requested number of samples, which would otherwise undershoot n_target_sites
+        vec = np.array([samples[k] for k in bases], dtype=float)
+        n_sampled = vec.sum()
+
+        # nothing callable was drawn: leave the monomorphic sites unset and return gracefully
+        if n_sampled <= 0:
+            self._logger.warning(
+                "No callable (A/C/G/T) reference bases were sampled; skipping monomorphic-site extrapolation."
+            )
+            return
+
         # ratio for extrapolating to the total number of target sites
-        ratio = n_target_sites / self.n_samples_target_sites
+        ratio = n_target_sites / n_sampled
 
         # extrapolate the number of monomorphic sites
-        vec = np.array([samples[k] for k in bases], dtype=float)
         scaled = vec * ratio
         floors = np.floor(scaled).astype(int)
         remainder = n_target_sites - int(floors.sum())
@@ -2937,7 +2950,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
         # set up the handler
         super(cls, anc)._setup(MultiHandler(
-            vcf=file,
+            source=file,
             max_sites=max_sites,
             seed=seed
         ))

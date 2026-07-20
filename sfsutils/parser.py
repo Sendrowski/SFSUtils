@@ -996,13 +996,18 @@ class TargetSiteCounter:
         rho_m = n_monomorphic / region_length
 
         # monomorphic-polymorphic pairs: a polymorphic site of derived count j has rho_m * distance monomorphic
-        # partners within the window; and monomorphic-monomorphic pairs for the (0, 0) entry
+        # partners within the window; and monomorphic-monomorphic pairs for the (0, 0) entry.
+        # the polymorphic-polymorphic block is stored half-averaged (parse applies symmetrize = (A + A.T) / 2),
+        # so each unordered pair sits as count / 2 in both symmetric slots. To match that convention (downstream
+        # TwoSFS._branch_length_covariance folds the matrix back with data + data.T), we add half the extrapolated
+        # count to each symmetric slot rather than the full count, keeping the monomorphic entries on the same
+        # scale as the poly-poly ones after the fold.
         contribution = marginal * rho_m * distance
         contribution[0] = 0.0
         contribution[-1] = 0.0
-        two_sfs[0, :] += contribution
-        two_sfs[:, 0] += contribution
-        two_sfs[0, 0] += n_monomorphic * rho_m * distance
+        two_sfs[0, :] += contribution / 2
+        two_sfs[:, 0] += contribution / 2
+        two_sfs[0, 0] += 0.5 * n_monomorphic * rho_m * distance
 
         return two_sfs
 
@@ -1753,14 +1758,23 @@ class Parser(MultiHandler):
         for a in self.annotations:
             a._teardown()
 
-    def parse(self) -> Spectra | JointSpectra | TwoSFS | TwoSpectra:
+    def parse(self) -> Spectra | JointSpectra | TwoSpectra:
         """
         Parse the site-frequency spectrum from the configured source (VCF, VCF-Zarr, or tree sequence).
 
-        :return: A :class:`~sfsutils.spectrum.Spectra` for a single-population SFS, a
-            :class:`~sfsutils.spectrum.JointSpectra` when ``pops`` was given, a square
-            :class:`~sfsutils.spectrum.TwoSFS` when ``two_sfs`` was set, or a
-            :class:`~sfsutils.spectrum.TwoSpectra` when ``two_sfs`` was set together with stratifications.
+        The return type is fixed by the parsing mode, and this mapping is a stable part of the API. Every mode
+        returns a collection keyed by stratification type (a single ``'all'`` key when no stratifications were
+        given), so the return type is consistent across modes:
+
+        - one-dimensional SFS (the default): a :class:`~sfsutils.spectrum.Spectra` of one-dimensional spectra;
+        - multi-population (``pops`` given): a :class:`~sfsutils.spectrum.JointSpectra` of joint spectra, keyed
+          by (sorted) stratification type;
+        - two-SFS (``two_sfs`` set, with or without stratifications): a
+          :class:`~sfsutils.spectrum.TwoSpectra` of per-type two-SFS matrices. Without stratifications this holds
+          the single ``'all'`` entry, so the two-SFS is reached as ``parse()['all']``.
+
+        :return: A :class:`~sfsutils.spectrum.Spectra`, :class:`~sfsutils.spectrum.JointSpectra`, or
+            :class:`~sfsutils.spectrum.TwoSpectra` as described above.
         """
         # set up parser
         self._setup()
@@ -1830,15 +1844,16 @@ class Parser(MultiHandler):
             if self.target_site_counter is None:
                 self._warn_if_monomorphic_missing()
 
-            # without stratifications, return the single symmetrized two-SFS; a TargetSiteCounter extrapolates the
-            # monomorphic-involving pairs from the target-site count (approximate; fpmi() ignores them)
+            # without stratifications, return a single-entry collection keyed 'all' (consistent with the other
+            # parsing modes); a TargetSiteCounter extrapolates the monomorphic-involving pairs from the
+            # target-site count (approximate; fpmi() ignores them)
             if len(self.stratifications) == 0:
                 matrix = TwoSFS(self._two_sfs_matrices['all']).symmetrize().data
                 if self.target_site_counter is not None:
                     matrix = self.target_site_counter._extrapolate_two_sfs(
                         matrix, self._two_sfs_marginal['all'], self._region_length(), self.d
                     )
-                return TwoSFS(matrix)
+                return TwoSpectra({'all': TwoSFS(matrix)})
 
             if self.target_site_counter is not None:
                 raise NotImplementedError(

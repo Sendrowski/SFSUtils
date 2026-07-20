@@ -38,3 +38,11 @@ docs/reference/Python/*.vcf.gz.tbi
 /resources/genome/sapiens/hg38.sorted.gtf.gz
 /resources/genome/sapiens/hgdp.anc.deg.vcf.gz
 /snakemake/results/
+
+# notebook-generated outputs written to repo root during R/Python annotate+filter examples
+/genome.*.vcf.gz
+/genome.*.vcf.gz.tbi
+/snps.vcf*
+/snps.vcz/
+/snps.trees
+/out/

@@ -20,7 +20,7 @@ project = 'sfsutils'
 year = datetime.datetime.now().year
 copyright = f'{year}, Janek Sendrowski'
 author = 'Janek Sendrowski'
-release = '0.1.0b2'
+release = '1.0.0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -28,6 +28,7 @@ release = '0.1.0b2'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.viewcode',
     'sphinx_autodoc_typehints',
     'sphinx_copybutton',
@@ -40,6 +41,14 @@ extensions = [
 # Page-level ``.. autosummary::`` blocks render an inline class table linking
 # to the autoclass docs on the same page; no stub pages need generating.
 autosummary_generate = False
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable', None),
+    'pandas': ('https://pandas.pydata.org/docs', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy', None),
+    'matplotlib': ('https://matplotlib.org/stable', None),
+}
 
 bibtex_bibfiles = ['refs.bib']
 

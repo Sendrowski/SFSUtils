@@ -226,11 +226,11 @@ class Spectrum(AbstractSpectrum):
         return self.data[1:-1]
 
     @property
-    def n_polymorphic(self) -> np.ndarray:
+    def n_polymorphic(self) -> float:
         """
-        Get the polymorphic counts.
+        The total number of polymorphic sites.
 
-        :return: Polymorphic counts
+        :return: Total number of polymorphic sites
         """
         return np.sum(self.polymorphic)
 
@@ -544,7 +544,7 @@ class Spectrum(AbstractSpectrum):
 
     def __truediv__(self, other: Iterable | float) -> 'Spectrum':
         """
-        Add spectrum.
+        Divide spectrum.
 
         :param other: Iterable or scalar
         :return: Spectrum
@@ -621,7 +621,7 @@ class Spectrum(AbstractSpectrum):
         """
         Alias of :meth:`kingman`.
 
-        .. deprecated::
+        .. deprecated:: 1.0.0
             Use :meth:`kingman` instead.
 
         :param n: sample size
@@ -807,11 +807,11 @@ class Spectra(AbstractSpectra):
         return self.data[1:-1]
 
     @property
-    def n_polymorphic(self) -> np.ndarray:
+    def n_polymorphic(self) -> pd.Series:
         """
-        The total number of polymorphic counts.
+        The total number of polymorphic sites per type.
 
-        :return: Total number of polymorphic counts for each type
+        :return: Total number of polymorphic sites for each type
         """
         return self.polymorphic.sum()
 
