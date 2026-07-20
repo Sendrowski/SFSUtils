@@ -807,11 +807,16 @@ class TargetSiteCounter:
         # get range sizes
         range_sizes = ranges[:, 1] - ranges[:, 0]
 
-        # determine sampling probabilities
-        probs = range_sizes / np.sum(range_sizes)
-
-        # sample number of sites per contig
-        samples = rng.multinomial(self.n_samples, probs)
+        # every parsed contig spans a single position (e.g. one site per contig): there is no interval to
+        # sample monomorphic sites from, so sample nothing rather than dividing by a zero total into NaNs
+        total_range = np.sum(range_sizes)
+        if total_range == 0:
+            self._logger.info("No interval to sample target sites from (parsed sites span no interval); "
+                              "skipping monomorphic sampling.")
+            samples = np.zeros(len(range_sizes), dtype=int)
+        else:
+            # determine sampling probabilities and sample the number of sites per contig
+            samples = rng.multinomial(self.n_samples, range_sizes / total_range)
 
         # keep track of SFS before update (a raw dict of joint arrays for joint parsing, else a Spectra); the
         # two-SFS counting pass only tallies per-stratum monomorphic sites and needs no pre-sampling snapshot

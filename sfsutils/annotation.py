@@ -2815,6 +2815,11 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         """
         anc = jsonpickle.decode(json)
 
+        # jsonpickle restores dataframe tuple-cells as lists; the configs' outgroup_bases must be tuples
+        # again so they stay hashable for the group-by in get_folded_spectra
+        if 'outgroup_bases' in anc.configs:
+            anc._convert_outgroup_bases_to_native_types()
+
         # convert index to int if necessary
         if 'index' in anc.configs:
             anc.configs.index = anc.configs.index.astype(int)

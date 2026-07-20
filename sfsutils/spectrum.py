@@ -683,7 +683,10 @@ class Spectrum(AbstractSpectrum):
         """
         data = self.data.copy()
 
-        data[1:-1] *= theta / self.theta
+        # an all-monomorphic spectrum has theta == 0 and no polymorphic mass to rescale; guard the
+        # division so the interior stays zero rather than becoming NaN via theta / 0
+        if self.theta > 0:
+            data[1:-1] *= theta / self.theta
         data[0] = self.n_sites - data[1:-1].sum() - data[-1]
 
         return Spectrum(data)
@@ -891,7 +894,11 @@ class Spectra(AbstractSpectra):
 
         :return: Normalized spectra
         """
-        return self / self.data.sum()
+        # normalize each type by its own column sum; an all-zero (empty) type has nothing to normalize,
+        # so divide it by one instead of by zero, leaving its column zero rather than NaN
+        sums = self.data.sum().replace(0, 1)
+
+        return self / sums
 
     def to_file(self, file: str):
         """
