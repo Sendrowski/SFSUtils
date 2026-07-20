@@ -1,7 +1,7 @@
 if (getRversion() >= "2.15.1") utils::globalVariables(c(".data"))
 
 # vector of required packages
-required_packages <- c("reticulate", "ggplot2", "cowplot", "RColorBrewer")
+required_packages <- c("reticulate", "ggplot2", "cowplot", "RColorBrewer", "scales")
 
 # install required R packages
 for(package in required_packages){
@@ -283,17 +283,18 @@ load_sfsutils <- function(install = FALSE) {
   #
   # Plot a 2-SFS (TwoSFS) as a heatmap.
   #
-  # Reimplements TwoSFS.plot using a ggplot2 geom_tile heatmap with a diverging
-  # PuOr palette. The monomorphic first and last rows and columns are dropped,
-  # and if the spectrum is folded only the folded half is shown. Mirrors the
-  # Python backend which uses a symmetric (PuOr_r) colour scale.
+  # Reimplements TwoSFS.plot using a ggplot2 geom_tile heatmap. The monomorphic first and
+  # last rows and columns are dropped, and if the spectrum is folded only the folded half is
+  # shown. As in the Python backend the colour scale depends on the spectrum: a sequential
+  # log viridis scale for raw pair counts, a diverging symmetric-log PuOr_r scale for the
+  # class-resolved results (cov / corr / fpmi).
   #
   # @param self The TwoSFS object (passed implicitly as the instance).
   # @param title Character. Title of the plot. Default is NULL.
   # @param log_scale Logical. Kept for signature compatibility with the Python
   #                  backend; currently ignored. Default is FALSE.
-  # @param max_abs Numeric. Maximum absolute value for the colour scale.
-  #                Default is NULL (inferred from the data).
+  # @param max_abs Numeric. Maximum absolute value for the diverging colour scale; ignored
+  #                for raw pair counts. Default is NULL (inferred from the data).
   # @param show Logical. Whether to show the plot. Default is TRUE.
   # @param file Character. File path to save plot to. Default is NULL.
   # @param ... Additional arguments which are ignored.
@@ -326,10 +327,34 @@ load_sfsutils <- function(install = FALSE) {
       d <- d[1:(w - 1), 1:(w - 1), drop = FALSE]
     }
 
-    # symmetric colour range around zero
-    if (is.null(max_abs)) {
-      max_abs <- max(abs(d), na.rm = TRUE)
-      if (!is.finite(max_abs) || max_abs == 0) max_abs <- 1
+    # a raw pair-count spectrum carries mass in the monomorphic bins (row/column 0 and n); the
+    # class-resolved results (cov / corr / fpmi) are embedded with those bins zeroed. Use that to
+    # choose the colour scale, as the Python backend does: a sequential log scale for the
+    # heavy-tailed counts, a diverging symmetric-log scale centred at zero for the derived quantities
+    border <- c(mat[c(1, n), ], mat[, c(1, n)])
+    is_counts <- sum(abs(border), na.rm = TRUE) > 0
+
+    if (is_counts) {
+      # log10 maps zero counts to -Inf, which ggplot2 would drop to na.value; clamp them to the
+      # smallest positive count instead, so they take the lowest colour as under matplotlib's LogNorm
+      positive <- d[!is.na(d) & d > 0]
+      if (length(positive)) d[!is.na(d) & d == 0] <- min(positive)
+
+      fill_scale <- ggplot2::scale_fill_viridis_c(trans = 'log10', na.value = 'white')
+    } else {
+      # symmetric colour range around zero
+      if (is.null(max_abs)) {
+        max_abs <- max(abs(d), na.rm = TRUE)
+        if (!is.finite(max_abs) || max_abs == 0) max_abs <- 1
+      }
+
+      fill_scale <- ggplot2::scale_fill_gradientn(
+        colours = rev(RColorBrewer::brewer.pal(11, 'PuOr')),
+        limits = c(-max_abs, max_abs),
+        # approximates matplotlib's SymLogNorm(linthresh = max_abs / 10)
+        trans = scales::pseudo_log_trans(sigma = max_abs / 10),
+        na.value = 'white'
+      )
     }
 
     df <- matrix_to_long(d)
@@ -337,11 +362,7 @@ load_sfsutils <- function(install = FALSE) {
     p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y, fill = .data$value)) +
       ggplot2::geom_tile() +
       ggplot2::coord_fixed() +
-      ggplot2::scale_fill_gradientn(
-        colours = rev(RColorBrewer::brewer.pal(11, 'PuOr')),
-        limits = c(-max_abs, max_abs),
-        na.value = 'white'
-      ) +
+      fill_scale +
       ggplot2::scale_x_continuous(expand = c(0, 0)) +
       ggplot2::scale_y_continuous(expand = c(0, 0)) +
       ggplot2::labs(x = '', y = '', title = title, fill = '') +
@@ -368,7 +389,8 @@ load_sfsutils <- function(install = FALSE) {
   #             plot as (y-axis, x-axis). Default is c(0, 1).
   # @param title Character. Title of the plot. Default is NULL.
   # @param log_scale Logical. Whether to use a logarithmic colour scale.
-  #                  Default is FALSE.
+  #                  Default is TRUE, since the joint SFS is heavily skewed
+  #                  toward the low-frequency corner.
   # @param mask_monomorphic Logical. Whether to mask the monomorphic corners.
   #                         Default is TRUE.
   # @param show Logical. Whether to show the plot. Default is TRUE.
@@ -380,7 +402,7 @@ load_sfsutils <- function(install = FALSE) {
     self,
     pops = c(0, 1),
     title = NULL,
-    log_scale = FALSE,
+    log_scale = TRUE,
     mask_monomorphic = TRUE,
     show = TRUE,
     file = NULL,
@@ -397,6 +419,13 @@ load_sfsutils <- function(install = FALSE) {
     if (mask_monomorphic) {
       mat[1, 1] <- NA
       mat[nrow(mat), ncol(mat)] <- NA
+    }
+
+    # log10 maps zero counts to -Inf, which ggplot2 would drop to na.value; clamp them to the
+    # smallest positive count instead, so they take the lowest colour as under matplotlib's LogNorm
+    if (log_scale) {
+      positive <- mat[!is.na(mat) & mat > 0]
+      if (length(positive)) mat[!is.na(mat) & mat == 0] <- min(positive)
     }
 
     # allele counts are 0-based
