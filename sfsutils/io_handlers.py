@@ -1321,9 +1321,12 @@ class ZarrVariantReader(VariantReader):
         genotype = root['call_genotype']
         phased = root['call_genotype_phased'] if 'call_genotype_phased' in list(root.array_keys()) else None
         # surface every INFO field the writer persisted as a variant_<key> string array (the ancestral
-        # tag, but also e.g. an annotated Degeneracy/Synonymy), skipping the reserved coordinate/allele
-        # arrays; otherwise a store re-parsed stratified by an annotated field would see no INFO at all
-        reserved_arrays = {'variant_position', 'variant_contig', 'variant_allele'}
+        # tag, but also e.g. an annotated Degeneracy/Synonymy), skipping the VCF fixed columns that
+        # vcf2zarr stores as reserved variant_* arrays (CHROM/POS/ID/REF+ALT/QUAL/FILTER and their
+        # length/mask companions); otherwise a store re-parsed stratified by an annotated field would
+        # see no INFO, while a plain vcf2zarr store would fabricate INFO from its reserved metadata
+        reserved_arrays = {'variant_position', 'variant_contig', 'variant_allele', 'variant_id',
+                           'variant_id_mask', 'variant_quality', 'variant_filter', 'variant_length'}
         info_arrays = {k[len('variant_'):]: root[k]
                        for k in root.array_keys()
                        if k.startswith('variant_') and k not in reserved_arrays}
