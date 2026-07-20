@@ -561,6 +561,14 @@ class ChunkedStratification(GenomePositionDependentStratification):
         # create list of chunk sizes
         self.chunk_sizes = [base_chunk_size + (i < remainder) for i in range(self.n_chunks)]
 
+    def _rewind(self):
+        """
+        Rewind the stratification, also resetting the per-pass site counter so a second pass
+        (for example the :class:`TargetSiteCounter` sampling pass) restarts from the first chunk.
+        """
+        super()._rewind()
+        self.counter = 0
+
     def get_types(self) -> List[str]:
         """
         Get all possible window types.
@@ -577,8 +585,12 @@ class ChunkedStratification(GenomePositionDependentStratification):
         :param variant: The site
         :return: The type
         """
-        # find the index of the chunk to which the current site belongs
-        chunk_index = next(i for i, size in enumerate(self.chunk_sizes) if self.counter < sum(self.chunk_sizes[:i + 1]))
+        # find the index of the chunk to which the current site belongs; a second pass may process
+        # more sites than the first (e.g. target-site sampling), so fall back to the last chunk
+        chunk_index = next(
+            (i for i, size in enumerate(self.chunk_sizes) if self.counter < sum(self.chunk_sizes[:i + 1])),
+            self.n_chunks - 1,
+        )
 
         # get the type
         t = f'chunk{chunk_index}'

@@ -963,3 +963,67 @@ class FastParserTestCase(TestCase):
         self.assertIsInstance(sfs, su.Spectra)
         if sfs.types:
             self.assertTrue(set(sfs.types).issubset({'neutral', 'selected'}))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Regression tests for scan-found edge cases
+# ---------------------------------------------------------------------------------------------------------------------
+
+def test_chunked_stratification_rewind_resets_counter_and_no_overshoot():
+    """``ChunkedStratification._rewind`` resets the counter, and typing more sites than the first
+    pass (as the TargetSiteCounter sampling pass does) falls back to the last chunk instead of
+    raising ``StopIteration``."""
+    s = su.ChunkedStratification(n_chunks=3)
+    s.chunk_sizes = [2, 2, 2]          # as if _setup ran on 6 sites
+    s.n_valid, s.counter = 5, 6        # state after a full first pass
+
+    s._rewind()
+    assert s.counter == 0 and s.n_valid == 0
+
+    types = [s.get_type(None) for _ in range(9)]  # 9 > sum(chunk_sizes) == 6
+    assert types[:6] == ['chunk0', 'chunk0', 'chunk1', 'chunk1', 'chunk2', 'chunk2']
+    assert all(t == 'chunk2' for t in types[6:])  # overshoot -> last chunk, no StopIteration
+
+
+def test_ml_ancestral_zero_width_contig_bounds_no_crash():
+    """``_sample_mono_allelic_sites`` returns gracefully when every parsed contig spans a single
+    position (previously produced NaN sampling probabilities and raised ``ValueError``)."""
+    ann = su.MaximumLikelihoodAncestralAnnotation(outgroups=["OG"], n_ingroups=2, n_target_sites=100)
+    ann._logger = logging.getLogger('test')
+    ann.n_sites = 2
+    ann.n_samples_target_sites = 50
+    ann._contig_bounds = {"1": (10, 10), "2": (20, 20)}  # all zero-width
+    ann.rng = np.random.default_rng(0)
+
+    ann._sample_mono_allelic_sites()  # must return via the guard, not raise
+
+
+def test_ml_ancestral_all_masked_window_terminates(monkeypatch):
+    """``_sample_mono_allelic_sites`` terminates when a contig's parsed interval is entirely
+    non-ACGT (previously the sampling loop could spin forever)."""
+    from sfsutils.settings import Settings
+    from sfsutils.io_handlers import FASTAHandler
+
+    ann = su.MaximumLikelihoodAncestralAnnotation(outgroups=["OG"], n_ingroups=2, n_target_sites=100)
+    ann._logger = logging.getLogger('test')
+    ann.n_sites = 2
+    ann.n_samples_target_sites = 10
+    ann.adjust_target_sites = False
+    ann._contig_bounds = {"1": (10, 100)}  # non-zero width -> enters the sampling loop
+    ann.rng = np.random.default_rng(0)
+
+    class _Rec:  # all-N reference so no draw is A/C/G/T
+        seq = "N" * 200
+
+    handler = Mock()
+    handler.get_aliases.return_value = ["1"]
+    handler.get_contig.return_value = _Rec()
+    ann._handler = handler
+
+    Settings.disable_pbar = True
+    # neutralise the trailing FASTA rewind + target-site extrapolation (out of scope here)
+    monkeypatch.setattr(FASTAHandler, "_rewind", staticmethod(lambda h: None), raising=False)
+    monkeypatch.setattr(type(ann), "_get_n_target_sites_adjusted", lambda self: self.n_target_sites, raising=False)
+
+    ann._sample_mono_allelic_sites()  # must return (bounded loop), not hang
+    assert ann._monomorphic_samples is not None

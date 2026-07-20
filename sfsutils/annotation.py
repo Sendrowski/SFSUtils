@@ -2439,18 +2439,21 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
             self._logger.info("No mono-allelic sites to sample, skipping.")
             return
 
+        # get array of ranges per contig of parsed variants and their sizes
+        ranges = np.array(list(self._contig_bounds.values()))
+        range_sizes = ranges[:, 1] - ranges[:, 0]
+
+        # every parsed contig spans a single position: there is no interval to sample from
+        if np.sum(range_sizes) == 0:
+            self._logger.info("No mono-allelic sites to sample (parsed sites span no interval), skipping.")
+            return
+
         # initialize progress bar
         pbar = tqdm(
             total=self.n_samples_target_sites,
             desc=f'{self.__class__.__name__}>Sampling mono-allelic sites',
             disable=Settings.disable_pbar
         )
-
-        # get array of ranges per contig of parsed variants
-        ranges = np.array(list(self._contig_bounds.values()))
-
-        # get range sizes
-        range_sizes = ranges[:, 1] - ranges[:, 0]
 
         # determine sampling probabilities
         probs = range_sizes / np.sum(range_sizes)
@@ -2473,9 +2476,13 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
                 # fetch contig
                 record = self._handler.get_contig(aliases, notify=False)
 
-                # sample sites
+                # sample sites; bound the number of draws so an all-masked (non-ACGT) window cannot hang
                 i = 0
-                while i < n:
+                max_attempts = max(1000, 20 * n)
+                for _ in range(max_attempts):
+                    if i >= n:
+                        break
+
                     pos = self.rng.integers(*bounds)
 
                     base = record.seq[pos - 1].upper()
@@ -2485,6 +2492,12 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
                         samples[base] += 1
                         i += 1
                         pbar.update()
+
+                if i < n:
+                    self._logger.warning(
+                        f"Only sampled {i} of {n} mono-allelic sites from contig '{contig}'; its parsed "
+                        f"interval contains few callable (A/C/G/T) reference bases."
+                    )
 
         # close progress bar
         pbar.close()
