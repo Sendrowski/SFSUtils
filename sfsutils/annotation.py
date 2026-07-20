@@ -1430,7 +1430,7 @@ class BaseType(Enum):
 
 class PolarizationPrior(ABC):
     """
-    Base class for priors used with :class:MaximumLikelihoodAncestralAnnotation.
+    Base class for priors used with :class:`MaximumLikelihoodAncestralAnnotation`.
     These priors incorporate information about the general probability of the major allele being ancestral
     across all sites with the same minor allele count. Prior thus take ingroup allele frequencies into account,
     when making predictions about the ancestral state of a site. This is useful because it enhances ancestral
@@ -4360,7 +4360,7 @@ class _ESTSFSAncestralAnnotation(AncestralAlleleAnnotation):  # pragma: no cover
 
     def to_file(self, file: str):
         """
-        Save object to file (without reference to AncestralAlleleAnnotation object).
+        Save object to file (without reference to :class:`AncestralAlleleAnnotation` object).
 
         :param file: File path.
         """

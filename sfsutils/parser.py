@@ -675,7 +675,7 @@ class TargetSiteCounter:
     file that are found in between variants on the same contig that were parsed from the input.
     Ideally, we obtain the SFS by parsing inputs that contain both mono- and polymorphic sites. This is because
     we need to know about the number of mutational opportunities for synonymous and non-synonymous sites which
-    contain plenty of information on the strength of selection. It is recommended to use a SNPFiltration when
+    contain plenty of information on the strength of selection. It is recommended to use a :class:`~sfsutils.filtration.SNPFiltration` when
     using this class to avoid biasing the result by monomorphic sites present in the input.
 
     .. warning::
