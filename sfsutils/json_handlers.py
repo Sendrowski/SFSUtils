@@ -107,7 +107,9 @@ class DataframeHandler(BaseHandler):
         :param data: Dictionary
         :return: Simplified dictionary
         """
-        return data | dict(data=df.to_dict())
+        # the 'split' orient stores the index as a JSON list, so an integer index survives the round-trip
+        # (the default column->index->value mapping turns integer index labels into strings)
+        return data | dict(data=df.to_dict(orient='split'))
 
     def restore(self, data: dict) -> pd.DataFrame:
         """
@@ -116,4 +118,9 @@ class DataframeHandler(BaseHandler):
         :param data: Dictionary
         :return: Dataframe
         """
-        return pd.DataFrame(data['data'])
+        payload = data['data']
+        # 'split' payloads carry index/columns/data; fall back to the legacy column->index mapping for
+        # dataframes serialized before the switch to 'split'
+        if isinstance(payload, dict) and {'index', 'columns', 'data'} <= set(payload):
+            return pd.DataFrame(data=payload['data'], index=payload['index'], columns=payload['columns'])
+        return pd.DataFrame(payload)

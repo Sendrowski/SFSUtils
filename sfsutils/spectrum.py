@@ -427,8 +427,11 @@ class Spectrum(AbstractSpectrum):
         # copy array
         data = self.data.copy()
 
-        # normalize counts
-        data[1:-1] /= data[1:-1].sum()
+        # normalize counts; a spectrum with no polymorphic sites has nothing to normalize, so leave the
+        # (all-zero) interior as is rather than dividing by zero into NaNs
+        total = data[1:-1].sum()
+        if total > 0:
+            data[1:-1] /= total
 
         return Spectrum(data)
 

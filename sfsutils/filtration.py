@@ -643,7 +643,10 @@ class ContigFiltration(Filtration):
         :param variant: The variant to filter.
         :return: ``True`` if the variant is on one of the specified contigs, ``False`` otherwise.
         """
-        return variant.CHROM in self.contigs
+        # match through the handler's aliases (get_aliases returns [CHROM] when unaliased), so a
+        # ``chr21`` vs ``21`` naming difference does not silently drop every site
+        aliases = self._handler.get_aliases(variant.CHROM) if self._handler is not None else [variant.CHROM]
+        return any(alias in self.contigs for alias in aliases)
 
 
 class Filterer(MultiHandler):
@@ -763,10 +766,13 @@ class Filterer(MultiHandler):
         for f in self.filtrations:
             f._teardown()
 
-        # close the writer and reader (guarded so an error mid-setup still releases what was opened)
+        # close the writer and reader (guarded so an error mid-setup still releases what was opened).
+        # _reader is a cached_property, so only close it when it was actually opened, checking the cache
+        # directly rather than via hasattr, which would trigger a spurious open.
         if self._writer is not None:
             self._writer.close()
-        self._reader.close()
+        if '_reader' in self.__dict__:
+            self._reader.close()
 
     def filter(self):
         """
@@ -774,11 +780,12 @@ class Filterer(MultiHandler):
         """
         self._logger.info('Start filtering')
 
-        # setup filtrations
-        self._setup()
-
-        # tear down (closing the writer) even if iteration raises, so the output is not left unflushed
+        # tear down (closing the writer/reader) even if setup or iteration raises, so a failure after the
+        # reader is opened but before/within writing does not leak the open reader and the output is flushed
         try:
+            # setup filtrations
+            self._setup()
+
             # get progress bar
             with self.get_pbar(desc=f"{self.__class__.__name__}>Processing sites") as pbar:
 

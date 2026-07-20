@@ -735,7 +735,10 @@ class TargetSiteCounter:
         # with the two-SFS a TargetSiteCounter extrapolates the monomorphic-involving pairs from the target-site
         # count (see _extrapolate_two_sfs), which makes the extrapolated cov()/corr() approximately usable on
         # SNP-only input (real all-sites input is preferred). fpmi() ignores the monomorphic bins and works regardless.
-        self.parser._require_fasta(self.__class__.__name__)
+        # That extrapolation uses n_target_sites and the region length, not the FASTA, so only the single-SFS mode
+        # (which samples monomorphic sites from the reference) actually requires it.
+        if not self.parser.two_sfs:
+            self.parser._require_fasta(self.__class__.__name__)
 
         # check if we have a SNPFiltration
         if not any([isinstance(f, SNPFiltration) for f in self.parser.filtrations]):
