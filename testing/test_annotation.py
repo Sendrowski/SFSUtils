@@ -1976,7 +1976,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             )
 
             ann = su.Annotator(
-                source=case['vcf'],
+                source=case['source'],
                 output='scratch/dummy.vcf',
                 annotations=[anc]
             )
@@ -2986,7 +2986,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         for config in configs:
             p1 = su.Parser(
                 n=10,
-                source=config['vcf'],
+                source=config['source'],
                 annotations=[
                     su.MaximumLikelihoodAncestralAnnotation(
                         outgroups=config['outgroups'],
@@ -2998,7 +2998,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             sfs = p1.parse()
 
             f = su.Filterer(
-                source=config['vcf'],
+                source=config['source'],
                 output=tempfile.NamedTemporaryFile(delete=False, suffix='.vcf').name,
                 filtrations=[su.SNPFiltration()]
             )
@@ -3123,7 +3123,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
 
         for dataset, config in datasets.items():
             p = su.Parser(
-                source=config['vcf'],
+                source=config['source'],
                 fasta=config['fasta'] if 'fasta' in config else None,
                 aliases=config['aliases'] if 'aliases' in config else {},
                 n=10,
