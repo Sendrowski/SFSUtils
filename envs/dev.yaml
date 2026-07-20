@@ -2,10 +2,13 @@
 # fixtures (msprime + tskit), the analytic two-locus ground truth (phasegen), the test toolchain,
 # and the Sphinx/myst-nb docs stack for building and re-executing the reference notebooks.
 #
-# Create the env, then install the package editable with the optional backends (cyvcf2 comes from
-# PyPI, since it is not on conda-forge), run from the repository root:
+# Development environment: the simulation stack (msprime + tskit) for the SFS-validation fixtures,
+# the analytic two-locus ground truth (phasegen), the VCF/VCF-Zarr backends, the test toolchain and
+# the Sphinx/myst-nb docs stack. All third-party dependencies are declared here; only the editable
+# install of the package itself remains a post-step, since an in-yaml `-e .` resolves the path
+# relative to envs/ rather than the repo root and fails. From the repository root:
 #   mamba env create -f envs/dev.yaml
-#   mamba run -n sfsutils-dev pip install -e ".[vcf,zarr,arg]" bio2zarr phasegen
+#   mamba run -n sfsutils-dev pip install -e .
 #   mamba activate sfsutils-dev
 name: sfsutils-dev
 channels:
@@ -16,10 +19,10 @@ dependencies:
   # --- simulation / ground-truth SFS for the parser-validation fixtures ---
   - msprime
   - tskit
-  # --- optional VCF-Zarr backend ---
-  - zarr
-  # --- testing ---
-  - pytest
+  # --- optional VCF-Zarr backend (zarr 3 is a breaking change; match pyproject's <3 pin) ---
+  - zarr>=2.17,<3
+  # --- testing (>=9.1: caplog attaches to the named 'sfsutils' logger, which has propagate=False) ---
+  - pytest>=9.1
   - pytest-xdist
   - pytest-cov
   - pytest-sugar
@@ -32,3 +35,8 @@ dependencies:
   - sphinx-copybutton
   - sphinxcontrib-bibtex
   - autodocsumm
+  # --- PyPI-only deps: cyvcf2 (VCF backend), bio2zarr, and the phasegen two-locus ground truth ---
+  - pip:
+    - cyvcf2
+    - bio2zarr
+    - phasegen

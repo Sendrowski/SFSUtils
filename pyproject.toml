@@ -40,7 +40,9 @@ zarr = ["zarr"]
 arg = ["tskit"]
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.0"
+# >=9.1: caplog attaches its handler to the named 'sfsutils' logger (which sets propagate=False);
+# earlier pytest only sees records that propagate to root, so the log-assertion tests fail there
+pytest = "^9.1"
 pytest-xdist = "^3.5"
 urllib3 = "^2.5.0"
 sphinx_book_theme = "^1.1.2"
