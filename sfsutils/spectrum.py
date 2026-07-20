@@ -1403,8 +1403,8 @@ class TwoSFS(AbstractSpectrum):
     """
 
     # class-level defaults so jsonpickle can restore spectra serialized without these attributes
-    n = None
-    w = None
+    n: int = None
+    w: int = None
 
     def __init__(self, data: np.ndarray | list) -> None:
         """
@@ -1940,7 +1940,7 @@ class JointSFS(AbstractSpectrum):
     """
 
     # class-level default so jsonpickle can restore spectra serialized without population names
-    pop_names = None
+    pop_names: List[str] = None
 
     def __init__(self, data: np.ndarray | list, pop_names: List[str] = None) -> None:
         """

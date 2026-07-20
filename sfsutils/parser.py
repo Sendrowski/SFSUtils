@@ -438,7 +438,7 @@ class VEPStratification(SynonymyStratification):
     """
 
     #: The tag used by VEP to annotate the synonymy
-    info_tag = 'CSQ'
+    info_tag: str = 'CSQ'
 
     def get_types(self) -> List[str]:
         """
@@ -476,7 +476,7 @@ class SnpEffStratification(VEPStratification):
     """
 
     #: The tag used by SnpEff to annotate the synonymy
-    info_tag = 'ANN'
+    info_tag: str = 'ANN'
 
 
 class GenomePositionDependentStratification(Stratification, ABC):

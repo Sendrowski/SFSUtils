@@ -12,7 +12,7 @@ class Settings:
     Class that holds package-wide settings
     """
     #: Whether to disable the progress bar.
-    disable_pbar = False
+    disable_pbar: bool = False
 
     #: Whether to use parallel processing. Use ``None`` for local setting.
-    parallelize = None
+    parallelize: bool = None

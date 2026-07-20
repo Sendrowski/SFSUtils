@@ -959,19 +959,19 @@ class Variant:
     """
 
     #: Whether the variant is an SNP
-    is_snp = False
+    is_snp: bool = False
 
     #: Whether the variant is an MNP
-    is_mnp = False
+    is_mnp: bool = False
 
     #: Whether the variant is an indel
-    is_indel = False
+    is_indel: bool = False
 
     #: Whether the variant is a deletion
-    is_deletion = False
+    is_deletion: bool = False
 
     #: Whether the variant is a structural variant
-    is_sv = False
+    is_sv: bool = False
 
     def __init__(
             self,
