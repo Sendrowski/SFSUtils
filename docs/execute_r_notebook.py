@@ -31,6 +31,8 @@ import sys
 import nbformat
 from nbconvert.preprocessors import ExecutePreprocessor
 
+from coalesce_streams import coalesce
+
 # cells binding the Python interpreter must run before any capture call
 _SKIP_MARKERS = ("use_condaenv", "load_sfsutils", "library(reticulate)")
 
@@ -122,6 +124,12 @@ def main(path: str, kernel: str = "ir", timeout: int = 1200) -> None:
 
     ep = _CapturingExecutePreprocessor(timeout=int(timeout), kernel_name=kernel)
     ep.preprocess(nb, {"metadata": {"path": "."}})
+
+    # collapse the buffered progress bar to its final state here as well as in the snakemake rule, so
+    # that running this driver directly cannot leave the intermediate tqdm frames in the outputs.
+    # coalesce() rebuilds the outputs as plain dicts, so convert back before writing.
+    coalesce(nb)
+    nb = nbformat.from_dict(nb)
 
     nbformat.write(nb, path)
 
