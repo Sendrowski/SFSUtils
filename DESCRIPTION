@@ -12,7 +12,8 @@ Imports:
     cowplot,
     ggplot2,
     RColorBrewer,
-    reticulate
+    reticulate,
+    scales
 Suggests:
     testthat
 URL: https://sfsutils.readthedocs.io

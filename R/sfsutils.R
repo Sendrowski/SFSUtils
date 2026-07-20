@@ -229,10 +229,18 @@ load_sfsutils <- function(install = FALSE) {
     p <- ggplot2::ggplot(df, ggplot2::aes(x = indices, y = heights, fill = .data$group)) +
       ggplot2::geom_bar(stat = "identity", position = "dodge",
                         width = 0.7, show.legend = length(spectra) > 1) +
-      ggplot2::labs(x = "frequency", y = "", title = title) +
+      ggplot2::labs(x = "frequency", y = "", title = title, fill = NULL) +
       ggplot2::theme_bw() +
       ggplot2::theme(panel.grid.major = ggplot2::element_blank(),
-                     panel.grid.minor = ggplot2::element_blank()) +
+                     panel.grid.minor = ggplot2::element_blank(),
+                     # draw the legend inside the panel, so it does not eat into the plot width
+                     legend.position = "inside",
+                     legend.position.inside = c(0.98, 0.98),
+                     legend.justification.inside = c(1, 1),
+                     legend.background = ggplot2::element_rect(
+                       fill = scales::alpha("white", 0.7), colour = NA
+                     ),
+                     legend.key.size = ggplot2::unit(0.9, "lines")) +
       ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, .1)))
 
     if (log_scale) {
