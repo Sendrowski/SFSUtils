@@ -1327,9 +1327,11 @@ class ZarrVariantReader(VariantReader):
         # see no INFO, while a plain vcf2zarr store would fabricate INFO from its reserved metadata
         reserved_arrays = {'variant_position', 'variant_contig', 'variant_allele', 'variant_id',
                            'variant_id_mask', 'variant_quality', 'variant_filter', 'variant_length'}
+        # only surface scalar (per-variant, 1-D) INFO fields; multi-valued fields (Number != 1, e.g.
+        # AC/DP4, stored as 2-D variant_<key> arrays) are not part of the streamed scalar Site interface
         info_arrays = {k[len('variant_'):]: root[k]
                        for k in root.array_keys()
-                       if k.startswith('variant_') and k not in reserved_arrays}
+                       if k.startswith('variant_') and k not in reserved_arrays and root[k].ndim == 1}
 
         n = position.shape[0]
 
@@ -1369,15 +1371,19 @@ class ZarrVariantReader(VariantReader):
 
                     if kind in ('U', 'S', 'O', 'T'):
                         decoded = self._decode(value)
-                        if decoded != '':
+                        if decoded not in ('', '.'):
                             info[key] = decoded
                     elif kind == 'f':
+                        # NaN (a plain NaN or the VCF-Zarr missing sentinel) means an absent value
                         if not np.isnan(value):
                             info[key] = float(value)
                     elif kind == 'b':
                         info[key] = bool(value)
                     else:
-                        info[key] = int(value)
+                        # the VCF-Zarr integer missing (-1) and fill (-2) sentinels mean absent
+                        iv = int(value)
+                        if iv not in (-1, -2):
+                            info[key] = iv
 
                 yield Variant(
                     ref=site_alleles[0] if site_alleles else '.',
@@ -1631,6 +1637,15 @@ class ZarrVariantWriter(VariantWriter):
         def _is_float(v):
             return isinstance(v, (float, np.floating))
 
+        def _absent(v):
+            # a value is absent if unset, the empty string, or the VCF '.' missing marker (which
+            # annotations such as DegeneracyAnnotation write for sites the field does not apply to)
+            return v is _missing or v == '' or v == '.'
+
+        # the VCF-Zarr missing-float sentinel (a specific NaN bit pattern), which vcztools/sgkit emit as
+        # a missing INFO value; a plain np.nan would be exported as the literal token 'nan'
+        float_missing = np.array([0x7FF0000000000001], dtype=np.uint64).view(np.float64)[0]
+
         info_keys = sorted({k for info in self._infos for k in info})
         for key in info_keys:
             name = f'variant_{key}'
@@ -1641,21 +1656,22 @@ class ZarrVariantWriter(VariantWriter):
                 continue
 
             raw = [info.get(key, _missing) for info in self._infos]
-            present = [v for v in raw if v is not _missing and v != '']
+            present = [v for v in raw if not _absent(v)]
 
             if present and all(_is_bool(v) for v in present):
-                data = np.array([bool(v) if v is not _missing and v != '' else False for v in raw], dtype=bool)
+                data = np.array([bool(v) if not _absent(v) else False for v in raw], dtype=bool)
                 _array(name, data, ['variants'])
-            elif present and all(_is_int(v) for v in present) and all(v is not _missing and v != '' for v in raw):
+            elif present and all(_is_int(v) for v in present) and not any(_absent(v) for v in raw):
                 # every site carries an integer: store an integer array (no missing sentinel needed)
                 _array(name, np.array([int(v) for v in raw], dtype=np.int64), ['variants'])
             elif present and all(_is_int(v) or _is_float(v) for v in present):
-                # numeric but possibly missing on some sites: a float array carries NaN for the gaps
-                data = np.array([float(v) if v is not _missing and v != '' else np.nan for v in raw], dtype=np.float64)
+                # numeric but possibly missing on some sites: a float array carries the missing sentinel
+                # for the gaps (int values ride along as floats, e.g. a partly-annotated Degeneracy)
+                data = np.array([float(v) if not _absent(v) else float_missing for v in raw], dtype=np.float64)
                 _array(name, data, ['variants'])
             else:
                 # strings (or mixed/empty): keep the string array, '' for a missing value
-                _array(name, _str_data([str(v) if v is not _missing else '' for v in raw]), ['variants'])
+                _array(name, _str_data(['' if _absent(v) else str(v) for v in raw]), ['variants'])
 
         # mark the store as a spec-compliant VCF-Zarr so external readers (vcztools/sgkit) accept it
         from . import __version__
