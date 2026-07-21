@@ -6,6 +6,7 @@ __author__ = "Janek Sendrowski"
 __contact__ = "sendrowski.janek@gmail.com"
 __date__ = "2023-05-29"
 
+import atexit
 import gzip
 import hashlib
 import logging
@@ -97,6 +98,24 @@ def get_called_bases(genotypes: Sequence[str]) -> np.ndarray:
 
     # return only characters that are in the bases list
     return char_array[np.isin(char_array, bases)]
+
+
+def get_called_alleles(genotypes: Sequence[str]) -> np.ndarray:
+    """
+    Get the distinct called alleles from a list of calls. Multi-character alleles stay intact, so an MNP
+    contributes one allele per haplotype rather than one per base.
+
+    :param genotypes: Array of genotypes in the form of strings.
+    :return: Array of distinct called alleles.
+    """
+    called = [
+        allele
+        for genotype in genotypes
+        for allele in genotype.replace('|', '/').split('/')
+        if allele != '' and set(allele) <= set(bases)
+    ]
+
+    return np.unique(called)
 
 
 def get_major_base(genotypes: Sequence[str]) -> str | None:
@@ -196,6 +215,9 @@ class FileHandler:
     #: The logger instance
     _logger = logger.getChild(__qualname__)
 
+    #: Cache of gzipped file path -> its decompressed temporary copy, so a rewind reuses the copy
+    _unzipped: Dict[str, str] = {}
+
     def __init__(self, cache: bool = True, aliases: Dict[str, List[str]] = {}):
         """
         Create a new FileHandler instance.
@@ -263,6 +285,12 @@ class FileHandler:
         """
         # check if the file extension is .gz
         if file.endswith('.gz'):
+            # reuse a previous decompression of the same file: a rewind would otherwise decompress the
+            # whole reference again and leak another full-size temporary copy
+            cached = FileHandler._unzipped.get(file)
+            if cached is not None and os.path.exists(cached):
+                return cached
+
             suffix = os.path.splitext(file[:-3])[1] or '.tmp'
             fd, unzipped = tempfile.mkstemp(suffix=suffix)
 
@@ -271,6 +299,9 @@ class FileHandler:
             with gzip.open(file, 'rb') as f_in:
                 with os.fdopen(fd, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
+
+            FileHandler._unzipped[file] = unzipped
+            atexit.register(lambda p=unzipped: os.path.exists(p) and os.remove(p))
 
             return unzipped
 
@@ -458,7 +489,9 @@ class FASTAHandler(FileHandler):
         """
         Rewind the fasta iterator.
         """
-        if hasattr(self, '_ref'):
+        # check the instance cache directly: hasattr() would fire the cached_property and open (and
+        # for a URL download and decompress) the very reference we are about to discard
+        if '_ref' in self.__dict__:
             # noinspection all
             del self._ref
 
@@ -678,7 +711,9 @@ class VCFHandler(FileHandler):
         """
         Rewind the variant iterator.
         """
-        if hasattr(self, '_reader'):
+        # check the instance cache directly: hasattr() would fire the cached_property and open the very
+        # reader we are about to discard
+        if '_reader' in self.__dict__:
             # noinspection all
             del self._reader
 

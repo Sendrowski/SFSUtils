@@ -71,11 +71,12 @@ def _configure_logging(verbose: int, quiet: bool) -> None:
 
 # --- short-name -> factory maps for the parser-configuration objects ------------------------------
 
-def _build_stratifications(names: List[str]) -> list:
+def _build_stratifications(names: List[str], contigs: List[str] | None = None) -> list:
     """
     Build stratification instances from short names.
 
     :param names: Short stratification names.
+    :param contigs: Contigs to stratify by (only for the ``contig`` stratification).
     :return: List of stratification instances.
     :raises SystemExit: On an unknown name.
     """
@@ -88,7 +89,7 @@ def _build_stratifications(names: List[str]) -> list:
         'base-transition': BaseTransitionStratification,
         'transition-transversion': TransitionTransversionStratification,
         'ancestral-base': AncestralBaseStratification,
-        'contig': ContigStratification,
+        'contig': lambda: ContigStratification(contigs=contigs),
     }
 
     return [_lookup(factories, name, 'stratification')() for name in names]
@@ -182,12 +183,12 @@ def _run_parse(args: argparse.Namespace) -> int:
     spectra = Parser(
         source=_input_source(args),
         n=args.n,
-        pops=_parse_pops(args.pops) if args.pops else None,
+        pops=args.pops,
         gff=args.gff,
         fasta=args.fasta,
         info_ancestral=args.info_ancestral,
         skip_non_polarized=args.skip_non_polarized,
-        stratifications=_build_stratifications(args.stratify),
+        stratifications=_build_stratifications(args.stratify, args.contigs),
         annotations=_build_annotations(args.annotate, args.outgroups, args.n_ingroups),
         filtrations=_build_filtrations(args.filter, args.contigs),
         max_sites=args.max_sites if args.max_sites is not None else float("inf"),
@@ -330,7 +331,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
 
     p.add_argument("--n", type=int, required=True,
                    help="SFS sample size (per population for a joint SFS).")
-    p.add_argument("--pops", default=None,
+    p.add_argument("--pops", type=_parse_pops, default=None,
                    help="Population spec for a joint SFS, e.g. 'A=s1,s2;B=s3,s4'.")
     p.add_argument("--fasta", default=None, help="FASTA reference (required by some annotations/filtrations).")
     p.add_argument("--gff", default=None, help="GFF annotation (required by some annotations/filtrations).")
@@ -354,7 +355,8 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
                    help="Outgroup samples (for the maximum-likelihood-ancestral annotation).")
     p.add_argument("--n-ingroups", dest="n_ingroups", type=int, default=11,
                    help="Minimum ingroups for the maximum-likelihood-ancestral annotation. Default: 11.")
-    p.add_argument("--contigs", type=_split_csv, default=None, help="Contigs to keep (for the contig filtration).")
+    p.add_argument("--contigs", type=_split_csv, default=None,
+                   help="Contigs to keep (for the contig filtration and stratification).")
     p.add_argument("--max-sites", type=int, default=None, help="Maximum number of sites to parse.")
     p.add_argument("--seed", type=int, default=0, help="Random seed. Default: 0.")
     p.set_defaults(handler=_run_parse)

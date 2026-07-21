@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 
 from .annotation import DegeneracyAnnotation
-from .io_handlers import get_major_base, MultiHandler, get_called_bases, DummyVariant, Site, VariantReader, \
+from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_called_alleles, DummyVariant, \
+    Site, VariantReader, \
     VariantWriter
 
 # get logger
@@ -230,7 +231,7 @@ class PolyAllelicFiltration(MaskedFiltration):
             return len(variant.ALT) < 2
 
         # otherwise check whether the variant is poly-allelic among the included samples
-        return len(np.unique(get_called_bases(variant.gt_bases[self._samples_mask]))) < 3
+        return len(get_called_alleles(variant.gt_bases[self._samples_mask])) < 3
 
 
 class AllFiltration(Filtration):
@@ -434,6 +435,11 @@ class DeviantOutgroupFiltration(Filtration):
         else:
             self.ingroup_mask = np.isin(self.samples, self.ingroups)
 
+            # make sure all ingroups are present, as an unmatched name would silently shrink the ingroup
+            # and, in the extreme, filter out every polymorphic site
+            if self.ingroup_mask.sum() != len(self.ingroups):
+                raise ValueError(f'Not all ingroup samples are present in the input: {self.ingroups}')
+
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
         """
@@ -509,6 +515,10 @@ class ExistingOutgroupFiltration(Filtration):
         Create outgroup mask based on the samples.
         """
         self.outgroup_mask: np.ndarray = np.isin(self.samples, self.outgroups)
+
+        # make sure all outgroups are present, as an unmatched name would turn this filtration into a no-op
+        if self.outgroup_mask.sum() != len(self.outgroups):
+            raise ValueError(f'Not all outgroup samples are present in the input: {self.outgroups}')
 
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:

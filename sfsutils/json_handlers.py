@@ -122,5 +122,23 @@ class DataframeHandler(BaseHandler):
         # 'split' payloads carry index/columns/data; fall back to the legacy column->index mapping for
         # dataframes serialized before the switch to 'split'
         if isinstance(payload, dict) and {'index', 'columns', 'data'} <= set(payload):
-            return pd.DataFrame(data=payload['data'], index=payload['index'], columns=payload['columns'])
+            return pd.DataFrame(
+                data=payload['data'],
+                index=self._restore_axis(payload['index']),
+                columns=self._restore_axis(payload['columns'])
+            )
         return pd.DataFrame(payload)
+
+    @staticmethod
+    def _restore_axis(labels: list) -> pd.Index:
+        """
+        Rebuild an axis from its serialized labels. JSON turns the tuples of a ``MultiIndex`` into lists,
+        which a plain index would keep as unhashable list labels.
+
+        :param labels: Serialized axis labels.
+        :return: The restored index.
+        """
+        if labels and all(isinstance(label, list) for label in labels):
+            return pd.MultiIndex.from_tuples([tuple(label) for label in labels])
+
+        return pd.Index(labels)
