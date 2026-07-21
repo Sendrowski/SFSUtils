@@ -9,7 +9,7 @@ __date__ = "2023-05-11"
 import functools
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Callable, Dict
+from typing import List, Optional, Callable, Dict, Set
 
 import numpy as np
 import pandas as pd
@@ -101,7 +101,9 @@ class Filtration(ABC):
 
 class MaskedFiltration(Filtration, ABC):
     """
-    Filter sites based on a samples mask.
+    Filter sites based on a samples mask. A mask of ``None`` selects every sample rather than turning the
+    filtration into a test on the ``ALT`` field, so that naming every sample and naming none of them reach
+    the same verdict, and a sample belonging to no requested population cannot change one.
     """
 
     def __init__(
@@ -173,11 +175,16 @@ class MaskedFiltration(Filtration, ABC):
 
             self._samples_mask = mask
 
-        # a mask selecting every sample restricts nothing, so drop it: the parser installs one
-        # unconditionally, and keeping it would make the same filtration decide a site differently under a
-        # parser than under a filterer
-        if self._samples_mask is not None and bool(np.all(self._samples_mask)):
-            self._samples_mask = None
+    def _select(self, values) -> np.ndarray:
+        """
+        Restrict per-sample values to the effective sample set.
+
+        :param values: The per-sample values.
+        :return: The values of the selected samples, which are all of them where no mask restricts them.
+        """
+        values = np.asarray(values)
+
+        return values if self._samples_mask is None else values[self._samples_mask]
 
     def _setup(self, handler: MultiHandler):
         """
@@ -193,7 +200,8 @@ class MaskedFiltration(Filtration, ABC):
 
 class SNPFiltration(MaskedFiltration):
     """
-    Only keep SNPs. Note that this entails discarding mono-morphic sites.
+    Only keep SNPs. Note that this entails discarding mono-morphic sites, monomorphism being judged from
+    the alleles the included samples actually carry rather than from the ``ALT`` field.
     """
 
     @_count_filtered
@@ -211,14 +219,15 @@ class SNPFiltration(MaskedFiltration):
         if not variant.is_snp:
             return False
 
-        # simply keep it if we don't have a samples mask
-        if self._samples_mask is None or isinstance(variant, DummyVariant):
+        # a dummy site carries a single ancestral allele by construction and no genotypes to judge it by
+        if isinstance(variant, DummyVariant):
             return True
 
-        # otherwise check whether the variant is still polymorphic among the included samples. Building and
-        # re-splitting the genotype strings dominates this check, so settle it from the numeric calls where
-        # the backend provides them, and decode the bases only when it does not. Multi-character alleles are
-        # left to the bases, which count a genotype character at a time and so read an ``AT`` call as two
+        # check whether the variant is polymorphic among the included samples, which are all of them where
+        # no mask restricts them. Building and re-splitting the genotype strings dominates this check, so
+        # settle it from the numeric calls where the backend provides them, and decode the bases only when
+        # it does not. Multi-character alleles are left to the bases, which count a genotype character at a
+        # time and so read an ``AT`` call as two
         site = SiteAlleles.from_site(variant)
 
         if site is not None and site.single_character:
@@ -228,7 +237,7 @@ class SNPFiltration(MaskedFiltration):
         types = getattr(variant, 'gt_types', None)
 
         if types is not None:
-            types = np.asarray(types)[self._samples_mask]
+            types = self._select(types)
 
             # a heterozygote makes the site polymorphic on its own
             if (types == HET).any():
@@ -246,7 +255,7 @@ class SNPFiltration(MaskedFiltration):
             # every call is a homozygous alternate, which may still cover two different alternate alleles,
             # so fall through to comparing the actual bases
 
-        return len(get_distinct_called_bases(variant.gt_bases[self._samples_mask])) > 1
+        return len(get_distinct_called_bases(self._select(variant.gt_bases))) > 1
 
 
 class SNVFiltration(Filtration):
@@ -273,10 +282,10 @@ class PolyAllelicFiltration(MaskedFiltration):
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
         """
-        Filter site. Without a samples mask the ``ALT`` field alone decides, so a site declaring two or more
-        alternate alleles is poly-allelic whether or not any sample carries them. Where a mask restricts the
-        samples, the alleles are counted among the included samples instead, since the excluded samples may
-        well be the only carriers of the further alleles.
+        Filter site. A site is poly-allelic where three or more distinct alleles are called among the
+        included samples, which are all of them unless ``include_samples`` / ``exclude_samples`` or a
+        parser's populations restrict them. An alternate allele that the ``ALT`` field declares but no
+        included sample carries therefore does not make a site poly-allelic.
 
         :param variant: The variant to filter.
         :return: ``True`` if the variant is not poly-allelic, ``False`` otherwise.
@@ -286,13 +295,12 @@ class PolyAllelicFiltration(MaskedFiltration):
         if len(variant.ALT) < 2:
             return True
 
-        # without a samples mask the ``ALT`` field alone decides
-        if self._samples_mask is None or isinstance(variant, DummyVariant):
+        # a dummy site carries no genotypes to count, so the declared alleles are all there is to go on
+        if isinstance(variant, DummyVariant):
             return False
 
-        # otherwise check whether the variant is poly-allelic among the included samples. Building and
-        # splitting the genotype strings dominates this check, so count the alleles from the numeric calls
-        # where the backend provides them
+        # count the alleles called among the included samples. Building and splitting the genotype strings
+        # dominates this check, so read the numeric calls where the backend provides them
         site = SiteAlleles.from_site(variant)
 
         if site is not None:
@@ -302,16 +310,17 @@ class PolyAllelicFiltration(MaskedFiltration):
         types = getattr(variant, 'gt_types', None)
 
         if types is None:
-            return len(get_distinct_called_alleles(variant.gt_bases[self._samples_mask])) < 3
+            return len(get_distinct_called_alleles(self._select(variant.gt_bases))) < 3
 
         # a homozygous reference call has every called allele equal to the reference, so it contributes the
         # reference allele and nothing else and need not be decoded. Any other code, including a partially
         # missing call, may carry an alternate allele that the code does not identify, so it is decoded
         hom_ref = np.asarray(types) == HOM_REF
+        included = self._samples_mask if self._samples_mask is not None else np.ones(hom_ref.shape, dtype=bool)
 
-        alleles = get_distinct_called_alleles(variant.gt_bases[self._samples_mask & ~hom_ref])
+        alleles = get_distinct_called_alleles(np.asarray(variant.gt_bases)[included & ~hom_ref])
 
-        if (self._samples_mask & hom_ref).any():
+        if (included & hom_ref).any():
             # route the reference through the same helper so it is subject to the same allele validity test
             alleles = alleles | get_distinct_called_alleles([variant.REF or ''])
 
@@ -551,13 +560,15 @@ class DeviantOutgroupFiltration(Filtration):
                 raise ValueError(f'Not all ingroup samples are present in the input: {self.ingroups}')
 
     @staticmethod
-    def _get_major_base(site: SiteAlleles, mask: np.ndarray) -> str | None:
+    def _get_major_allele(site: SiteAlleles, mask: np.ndarray) -> str | None:
         """
-        Get the major base among the selected samples from the numeric calls.
+        Get the majority allele among the selected samples from the numeric calls. A multi-character
+        allele is counted once per haplotype carrying it rather than once per base, so an ``AT`` call
+        weighs the same as an ``A`` one.
 
         :param site: The numeric view of the site's genotypes.
         :param mask: The boolean samples mask.
-        :return: The major base, or ``None`` where no selected sample is called.
+        :return: The majority allele, or ``None`` where no selected sample is called.
         """
         counts = site.counts(mask)
 
@@ -595,14 +606,14 @@ class DeviantOutgroupFiltration(Filtration):
             return True
 
         # the genotype strings render a haploid call of the third or a later allele as missing wherever the
-        # site's maximum ploidy is two, which hides a present outgroup call, so read the numeric calls where
-        # the backend provides them. Multi-character alleles are left to the bases, which count a genotype
-        # character at a time and so read an ``AT`` call as two
+        # site's maximum ploidy is two, and they render an MNP or an indel as several characters rather than
+        # one allele, both of which the backends disagree on. Read the numeric calls where the backend
+        # provides them, whatever the alleles look like
         site = SiteAlleles.from_site(variant)
 
-        if site is not None and site.single_character:
-            ingroup_base = self._get_major_base(site, self.ingroup_mask)
-            outgroup_base = self._get_major_base(site, self.outgroup_mask)
+        if site is not None:
+            ingroup_base = self._get_major_allele(site, self.ingroup_mask)
+            outgroup_base = self._get_major_allele(site, self.outgroup_mask)
         else:
             # get major base among ingroup samples
             ingroup_base = get_major_base(variant.gt_bases[self.ingroup_mask])
@@ -697,8 +708,22 @@ class ExistingOutgroupFiltration(Filtration):
         if site is not None:
             rows = self._outgroup_rows if self._outgroup_rows is not None else np.flatnonzero(self.outgroup_mask)
 
+            indices = np.asarray(site.indices)
+
+            if indices.ndim == 1:
+                indices = indices[:, None]
+
+            # settle every outgroup in one pass over their rows: asking the view sample by sample re-bins
+            # the whole row for each of them, which costs a bincount per outgroup and per site
+            codes = indices[rows]
+            called = site._called[:len(site.alleles)]
+
+            in_range = (codes >= 0) & (codes < called.size)
+            valid = np.zeros(codes.shape, dtype=bool)
+            valid[in_range] = called[codes[in_range]]
+
             # count how many outgroups have no called haplotype
-            missing_count = sum(site.n_called(rows[i:i + 1]) == 0 for i in range(len(rows)))
+            missing_count = int((~valid.any(axis=1)).sum())
 
             return missing_count < self.n_missing
 
@@ -750,8 +775,21 @@ class CpGFiltration(Filtration):
 
     Like :class:`CodingSequenceFiltration`, this filtration requires a FASTA reference (passed to
     :class:`~sfsutils.parser.Parser` or :class:`~sfsutils.filtration.Filterer`), which is used for the
-    ``±1`` base lookup.
+    ``±1`` base lookup. Sites on a contig the FASTA carries no sequence for cannot be typed and are kept,
+    with one warning per contig.
     """
+
+    #: The contigs the FASTA carries no sequence for, held at class level so a restored instance has one.
+    _missing_contigs: Set[str] = set()
+
+    def __init__(self):
+        """
+        Create a new filtration instance.
+        """
+        super().__init__()
+
+        #: The contigs the FASTA carries no sequence for, warned about once each.
+        self._missing_contigs: Set[str] = set()
 
     def _setup(self, handler: MultiHandler):
         """
@@ -761,6 +799,8 @@ class CpGFiltration(Filtration):
         """
         # require FASTA file
         handler._require_fasta(self.__class__.__name__)
+
+        self._missing_contigs = set()
 
         super()._setup(handler)
 
@@ -798,8 +838,17 @@ class CpGFiltration(Filtration):
         if ref not in ('C', 'G'):
             return True
 
-        # fetch the variant's contig from the handler's FASTA (cached across calls)
-        contig = self._handler.get_contig(self._handler.get_aliases(variant.CHROM))
+        # fetch the variant's contig from the handler's FASTA (cached across calls). A contig the FASTA does
+        # not carry leaves the context unknown, which must not abort the whole run over one absent scaffold,
+        # so the site is kept, as every other consumer of get_contig treats a missing contig as a skip
+        try:
+            contig = self._handler.get_contig(self._handler.get_aliases(variant.CHROM))
+        except LookupError as e:
+            if variant.CHROM not in self._missing_contigs:
+                self._missing_contigs.add(variant.CHROM)
+                self._logger.warning(f'Retaining sites on contig {variant.CHROM} unchecked: {e}')
+
+            return True
 
         return not self._is_cpg(contig, variant.POS, ref)
 
@@ -893,7 +942,11 @@ class Filterer(MultiHandler):
         :param aliases: Dictionary of aliases for the contigs in the input, e.g. ``{'chr1': ['1']}``.
         :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
             ``source`` or ``vcf``, not both.
+        :raises ValueError: If ``max_sites`` is not positive.
         """
+        if max_sites <= 0:
+            raise ValueError(f'max_sites must be positive, got {max_sites}.')
+
         super().__init__(
             source=source,
             vcf=vcf,
@@ -986,7 +1039,7 @@ class Filterer(MultiHandler):
 
                     # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
                     # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
-                    if i + 1 == self.n_sites or i + 1 == self.max_sites:
+                    if i + 1 == self.n_sites or i + 1 >= self.max_sites:
                         break
         finally:
             # teardown filtrations

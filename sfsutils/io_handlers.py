@@ -17,8 +17,8 @@ import warnings
 from abc import ABC, abstractmethod
 from collections import Counter
 from functools import cached_property
-from typing import List, Iterable, Iterator, TextIO, Dict, Optional, Set, Tuple, Union, Sequence, Protocol, \
-    runtime_checkable
+from typing import Any, List, Iterable, Iterator, TextIO, Dict, Optional, Set, Tuple, Union, Sequence, \
+    Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 import numpy as np
@@ -182,10 +182,37 @@ class SiteAlleles:
         for i, allele in enumerate(self.alleles):
             self._called[i] = allele != '' and set(allele) <= _base_set
 
+    #: The site the last view was built for, alongside that view. Every filtration and the parser itself
+    #: ask for the view of the site they are handed, and the site is handed on to the next of them
+    #: unchanged, so it is built once and shared. The site is held rather than its identity alone, since
+    #: the sites are transient and the address of one that has been released is handed out again.
+    _cached: Tuple[Optional['Site'], Optional['SiteAlleles']] = (None, None)
+
     @classmethod
     def from_site(cls, variant: 'Site') -> Optional['SiteAlleles']:
         """
-        Build the view for a site, where its backend provides the numeric calls.
+        The view for a site, where its backend provides the numeric calls, reusing the view of the site
+        this was last called for.
+
+        :param variant: The site.
+        :return: The view, or ``None`` where the backend carries the genotypes as strings only.
+        """
+        # read the pair in one go: it is replaced as a whole, so the site and the view cannot be observed
+        # out of step with one another
+        site, view = cls._cached
+
+        if site is variant:
+            return view
+
+        view = cls._build(variant)
+        cls._cached = (variant, view)
+
+        return view
+
+    @classmethod
+    def _build(cls, variant: 'Site') -> Optional['SiteAlleles']:
+        """
+        Build the view for a site.
 
         :param variant: The site.
         :return: The view, or ``None`` where the backend carries the genotypes as strings only.
@@ -220,7 +247,11 @@ class SiteAlleles:
         :return: The per-index counts, allele ``i`` in bin ``i + 2``.
         """
         indices = self.indices if mask is None else self.indices[mask]
-        codes = np.asarray(indices).ravel() + 2
+
+        # the calls come in the narrowest dtype that holds the site's alleles, in which the shift of the
+        # sentinels would wrap the highest allele index round to a negative code; bincount widens to
+        # intp regardless, so widening here first costs nothing
+        codes = np.asarray(indices, dtype=np.intp).ravel() + 2
 
         # a sentinel beyond the two the VCF-Zarr spec defines would index before the leading bin
         if codes.size and codes.min() < 0:
@@ -765,6 +796,9 @@ class GFFHandler(FileHandler):
     GFF handler.
     """
 
+    #: The number of GFF lines read at a time, which bounds the memory the attributes column occupies
+    _gff_block: int = 50000
+
     def __init__(self, gff: str | None, cache: bool = True, aliases: Dict[str, List[str]] = {}):
         """
         Constructor.
@@ -793,6 +827,38 @@ class GFFHandler(FileHandler):
 
         return self._load_cds()
 
+    @staticmethod
+    def _cds_of_block(block: pd.DataFrame) -> pd.DataFrame:
+        """
+        The coding sequences of one block of GFF lines, with their coordinates typed and their parent
+        transcript extracted.
+
+        :param block: The block of GFF lines.
+        :return: The coding sequences of the block.
+        """
+        # filter for coding sequences
+        cds = block[block['type'] == 'CDS']
+
+        # drop rows with NA values
+        cds = cds.dropna()
+
+        # convert start and end to int
+        cds = cds.assign(start=cds['start'].astype(int), end=cds['end'].astype(int))
+
+        # the transcript each coding sequence belongs to. Codons that span a CDS boundary are completed from the
+        # adjacent CDS, which is only meaningful within one transcript: the nearest CDS by coordinate may belong
+        # to an unrelated gene, possibly on the opposite strand. GFF3 spells this Parent=, GTF transcript_id "..".
+        cds['parent'] = cds['attributes'].str.extract(
+            r'(?:^|;)\s*(?:Parent|transcript_id)[=\s]"?([^;"]+)', expand=False)
+
+        # drop type and attributes columns
+        cds = cds.drop(columns=['type', 'attributes'])
+
+        # the coding sequences of the transcripts of one gene repeat the same coordinates, so most of a
+        # block is already redundant; the surviving rows are deduplicated again across the blocks, which
+        # keeps the same first occurrence a single-pass read would
+        return cds.drop_duplicates(subset=['seqid', 'start', 'end'])
+
     def _load_cds(self) -> pd.DataFrame:
         """
         Load coding sequences from a GFF file.
@@ -816,34 +882,39 @@ class GFFHandler(FileHandler):
             phase='category'
         )
 
-        # load GFF file
-        df = pd.read_csv(
+        # a whole-genome annotation is dominated by the attributes of the many non-CDS records, so the
+        # file is read a block of lines at a time and only the coding sequences of each block, with their
+        # attributes already reduced to the parent transcript, are carried over
+        blocks = pd.read_csv(
             local_file,
             sep='\t',
             comment='#',
             names=col_labels,
             dtype=dtypes,
-            usecols=['seqid', 'type', 'start', 'end', 'strand', 'phase', 'attributes']
+            usecols=['seqid', 'type', 'start', 'end', 'strand', 'phase', 'attributes'],
+            chunksize=self._gff_block
         )
 
-        # filter for coding sequences
-        df = df[df['type'] == 'CDS']
+        categorical = ('seqid', 'strand', 'phase')
+        categories: Dict[str, Dict[str, None]] = {column: {} for column in categorical}
+        kept = []
 
-        # drop rows with NA values
-        df = df.dropna()
+        for block in blocks:
+            # a category the block does not carry is not in its own dtype, so the categories of every
+            # block are collected: a contig without any coding sequence keeps its category and thereby
+            # its (empty) group in a per-contig count, as it has when the file is read in one pass
+            for column in categorical:
+                categories[column].update(dict.fromkeys(block[column].cat.categories))
 
-        # convert start and end to int
-        df['start'] = df['start'].astype(int)
-        df['end'] = df['end'].astype(int)
+            kept.append(self._cds_of_block(block))
 
-        # the transcript each coding sequence belongs to. Codons that span a CDS boundary are completed from the
-        # adjacent CDS, which is only meaningful within one transcript: the nearest CDS by coordinate may belong
-        # to an unrelated gene, possibly on the opposite strand. GFF3 spells this Parent=, GTF transcript_id "..".
-        df['parent'] = df['attributes'].str.extract(
-            r'(?:^|;)\s*(?:Parent|transcript_id)[=\s]"?([^;"]+)', expand=False)
+        df = pd.concat(kept, ignore_index=True) if kept else self._cds_of_block(
+            pd.DataFrame(columns=col_labels))
 
-        # drop type and attributes columns
-        df.drop(columns=['type', 'attributes'], inplace=True)
+        # the categories are ordered by name rather than by the block they first appear in, so that the
+        # frame, which is sorted on the contig, does not depend on where the blocks fall
+        for column in categorical:
+            df[column] = pd.Categorical(df[column], categories=sorted(categories[column]))
 
         # remove duplicates
         df = df.drop_duplicates(subset=['seqid', 'start', 'end'])
@@ -1668,13 +1739,17 @@ class ZarrVariantReader(VariantReader):
     applies.
     """
 
-    def __init__(self, path: str, info_ancestral: str = 'AA', chunk_size: int = 1000):
+    #: The number of variants read per batch where the store does not declare its own chunk grid
+    _default_chunk_size: int = 1000
+
+    def __init__(self, path: str, info_ancestral: str = 'AA', chunk_size: Optional[int] = None):
         """
         Initialize the reader.
 
         :param path: The path to the VCF-Zarr store.
         :param info_ancestral: The INFO tag holding the ancestral allele.
-        :param chunk_size: The number of variants read per chunk.
+        :param chunk_size: The number of variants read per batch, or ``None`` to follow the store's own
+            chunking along the ``variants`` axis.
         """
         try:
             import zarr
@@ -1690,14 +1765,31 @@ class ZarrVariantReader(VariantReader):
         #: The INFO tag holding the ancestral allele
         self._info_ancestral = info_ancestral
 
-        #: The number of variants read per chunk
-        self._chunk_size = int(chunk_size)
+        #: The number of variants read per batch
+        self._chunk_size = int(chunk_size) if chunk_size else self._store_chunk_size()
 
         #: The sample names
         self._sample_ids = [self._decode(s) for s in self._root['sample_id'][:]]
 
         #: The contig names
         self._contig_ids = [self._decode(c) for c in self._root['contig_id'][:]]
+
+    def _store_chunk_size(self) -> int:
+        """
+        The store's own chunk length along the ``variants`` axis, which every variant and call array
+        shares. A batch that straddles the stored chunks makes each of them be fetched and decompressed
+        once per batch overlapping it, so the batch follows the grid rather than a fixed length.
+
+        :return: The number of variants to read per batch.
+        """
+        for name in ('call_genotype', 'variant_position'):
+            if name in self._root:
+                chunks = getattr(self._root[name], 'chunks', None)
+
+                if chunks:
+                    return max(1, int(chunks[0]))
+
+        return self._default_chunk_size
 
     @staticmethod
     def _decode(value) -> str:
@@ -1708,6 +1800,95 @@ class ZarrVariantReader(VariantReader):
         :return: The decoded string.
         """
         return value.decode() if isinstance(value, bytes) else str(value)
+
+    #: The allele entries a VCF-Zarr store uses to pad a site to the widest allele count, and which
+    #: tskit2zarr also writes for a mutation to the empty allele
+    _empty_alleles = frozenset(('', '.'))
+
+    @classmethod
+    def _info_scalar(cls, value, kind: str):
+        """
+        One entry of a ``variant_<key>`` array as an INFO value, with the types cyvcf2 surfaces
+        (str/float/int/bool) and the store's missing markers reported as absent.
+
+        :param value: The stored entry.
+        :param kind: The dtype kind of the array it comes from.
+        :return: The value, or ``None`` where the store marks the entry as absent.
+        """
+        if kind in ('U', 'S', 'O', 'T'):
+            decoded = cls._decode(value)
+
+            return None if decoded in cls._empty_alleles else decoded
+
+        if kind == 'f':
+            # NaN (a plain NaN or the VCF-Zarr missing sentinel) means an absent value
+            return None if np.isnan(value) else float(value)
+
+        if kind == 'b':
+            # a bool array encodes a VCF Flag: surface it only when set, as cyvcf2 does (an absent flag
+            # is stored False and must not read back as present-False)
+            return True if bool(value) else None
+
+        # the VCF-Zarr missing (-1) and fill (-2) sentinels of an integer array, which every writer
+        # emits for a field a site does not carry
+        entry = int(value)
+
+        return None if entry in (-1, -2) else entry
+
+    @classmethod
+    def _info_row(cls, values, kind: str):
+        """
+        One row of a two-dimensional ``variant_<key>`` array as an INFO value. A field of ``Number != 1``
+        is stored one value per column, padded to the widest site, which is collapsed back to the form
+        cyvcf2 hands out: the comma-separated string for a string field, the scalar or the tuple of
+        values for a numeric one.
+
+        :param values: The stored row.
+        :param kind: The dtype kind of the array it comes from.
+        :return: The value, or ``None`` where the site carries no entry at all.
+        """
+        entries = [entry for entry in (cls._info_scalar(v, kind) for v in values) if entry is not None]
+
+        if not entries:
+            return None
+
+        if kind in ('U', 'S', 'O', 'T'):
+            return ','.join(entries)
+
+        return entries[0] if len(entries) == 1 else tuple(entries)
+
+    @classmethod
+    def _alleles(cls, stored, rows: np.ndarray) -> Tuple[List[str], np.ndarray]:
+        """
+        The allele strings of one site alongside its calls. An empty entry is either the padding a site
+        with fewer alleles than the widest carries or, from a tree sequence, a mutation to the empty
+        allele; both are dropped from ``[REF] + ALT``, so the calls are re-indexed onto the alleles that
+        remain and a call of a dropped allele reads back as missing, exactly as the tree sequence itself
+        streams it.
+
+        :param stored: The stored allele entries of the site.
+        :param rows: The stored allele indices of the site.
+        :return: The allele strings and the re-indexed allele indices.
+        """
+        alleles = [cls._decode(x) for x in stored]
+
+        if not any(a in cls._empty_alleles for a in alleles):
+            return alleles, rows
+
+        remap = np.full(len(alleles) + 1, -1, dtype=np.intp)
+        remap[0] = 0
+        kept = [alleles[0]] if alleles else []
+
+        for j, allele in enumerate(alleles[1:], start=1):
+            if allele not in cls._empty_alleles:
+                remap[j] = len(kept)
+                kept.append(allele)
+
+        remapped = remap[np.where((rows >= 0) & (rows < len(alleles)), rows, len(alleles))]
+
+        # the fill of a sample below the widest ploidy is distinct from a call that is missing, so it
+        # survives the re-indexing rather than collapsing onto -1
+        return kept, np.where(rows == -2, -2, remapped)
 
     @property
     def samples(self) -> List[str]:
@@ -1757,11 +1938,12 @@ class ZarrVariantReader(VariantReader):
         # see no INFO, while a plain vcf2zarr store would fabricate INFO from its reserved metadata
         reserved_arrays = {'variant_position', 'variant_contig', 'variant_allele', 'variant_id',
                            'variant_id_mask', 'variant_quality', 'variant_filter', 'variant_length'}
-        # only surface scalar (per-variant, 1-D) INFO fields; multi-valued fields (Number != 1, e.g.
-        # AC/DP4, stored as 2-D variant_<key> arrays) are not part of the streamed scalar Site interface
+        # a field of Number != 1 (AC/DP4, but also the VEP CSQ and SnpEff ANN of a multi-transcript
+        # annotation) is stored as a 2-D variant_<key> array, one column per value, and is surfaced in
+        # the comma-separated form cyvcf2 hands out
         info_arrays = {k[len('variant_'):]: root[k]
                        for k in root.array_keys()
-                       if k.startswith('variant_') and k not in reserved_arrays and root[k].ndim == 1}
+                       if k.startswith('variant_') and k not in reserved_arrays and root[k].ndim in (1, 2)}
 
         n = position.shape[0]
 
@@ -1776,44 +1958,23 @@ class ZarrVariantReader(VariantReader):
             info_batches = {key: arr[start:end] for key, arr in info_arrays.items()}
 
             for i in range(end - start):
-                site_alleles = [self._decode(x) for x in allele_batch[i]]
-
-                # only the padding a site with fewer alleles than the widest carries is dropped: an allele
-                # is identified by its position, so dropping one in place would shift every genotype code
-                # past it onto the wrong allele
-                while site_alleles and site_alleles[-1] in ('', '.'):
-                    site_alleles.pop()
-
                 rows = gt_batch[i] if gt_batch is not None else np.zeros((0, 0), dtype=np.int8)
                 seps = phased_batch[i] if phased_batch is not None else None
+
+                site_alleles, rows = self._alleles(allele_batch[i], rows)
 
                 is_snp = _is_snp(site_alleles[0] if site_alleles else '', site_alleles[1:])
 
                 # surface INFO with native types matching cyvcf2 (float/int/bool/str), so a numeric field
-                # stored typed (by vcf2zarr, or by our own writer) is not silently a string; a missing
-                # value (NaN in a float array, '' in a string array) is treated as absent, as cyvcf2 does
+                # stored typed (by vcf2zarr, or by our own writer) is not silently a string
                 info = {}
                 for key, batch in info_batches.items():
-                    value = batch[i]
                     kind = batch.dtype.kind
+                    value = (self._info_scalar(batch[i], kind) if batch.ndim == 1
+                             else self._info_row(batch[i], kind))
 
-                    if kind in ('U', 'S', 'O', 'T'):
-                        decoded = self._decode(value)
-                        if decoded not in ('', '.'):
-                            info[key] = decoded
-                    elif kind == 'f':
-                        # NaN (a plain NaN or the VCF-Zarr missing sentinel) means an absent value
-                        if not np.isnan(value):
-                            info[key] = float(value)
-                    elif kind == 'b':
-                        # a bool array encodes a VCF Flag: surface it only when set, as cyvcf2 does
-                        # (an absent flag is stored False and must not read back as present-False)
-                        if bool(value):
-                            info[key] = True
-                    else:
-                        # integers round-trip verbatim; the VCF-Zarr -1/-2 missing/fill sentinels are not
-                        # filtered here because our own writer stores legitimate -1/-2 int values as data
-                        info[key] = int(value)
+                    if value is not None:
+                        info[key] = value
 
                 yield Variant(
                     ref=site_alleles[0] if site_alleles else '.',
@@ -1937,12 +2098,13 @@ class ZarrVariantWriter(VariantWriter):
     another VCF-Zarr store). Any INFO fields present on the variants (for example an annotated ancestral
     allele) are persisted as ``variant_<tag>`` arrays.
 
-    Positions, genotypes and alleles accumulate in chunk-sized buffers and each complete chunk is flushed
-    to the store, so the memory held is one chunk rather than the whole input. The two ragged axes (the
-    ploidy and the allele width) are only known once every variant has been seen, so the arrays are
-    created from the first chunk and rebuilt on the rare site that widens them. The INFO values are held
-    until :meth:`close` because the type of a field follows from the values of all variants and a field
-    may first appear at the last one; they are a small fraction of the genotypes.
+    Positions, genotypes, alleles and INFO values accumulate in chunk-sized buffers and each complete
+    chunk is flushed to the store, so the memory held is one chunk rather than the whole input. The two
+    ragged axes (the ploidy and the allele width) are only known once every variant has been seen, so the
+    arrays are created from the first chunk and rebuilt on the rare site that widens them. The same holds
+    of the type of an INFO field, which is taken from the chunk it first appears in and rewritten on the
+    rare chunk that widens it (an integer field first seen without a value, a numeric one that turns out
+    to carry a string).
     """
 
     #: Number of variants per chunk along the ``variants`` axis, as written by vcf2zarr
@@ -1961,6 +2123,14 @@ class ZarrVariantWriter(VariantWriter):
     #: The genotype sentinel of a haplotype a call does not reach, which the VCF-Zarr spec separates from
     #: the ``-1`` of a call that is present but missing, so a shorter call exports at its own ploidy
     _fill: int = -2
+
+    #: The VCF-Zarr missing-float sentinel (a specific NaN bit pattern), which vcztools/sgkit emit as a
+    #: missing INFO value; a plain NaN would be exported as the literal token 'nan'
+    _float_missing: float = np.array([0x7FF0000000000001], dtype=np.uint64).view(np.float64)[0]
+
+    #: How an INFO field is encoded, from the narrowest to the widest. A field is written in the
+    #: encoding of the chunk it first appears in and promoted where a later chunk does not fit it.
+    _info_dtypes: Dict[str, Any] = {'bool': bool, 'int': np.int64, 'float': np.float64, 'str': str}
 
     def __init__(self, output: str, samples: List[str], seqnames: List[str], info_ancestral: str = 'AA'):
         """
@@ -1992,9 +2162,16 @@ class ZarrVariantWriter(VariantWriter):
         # per-contig lengths (the last position seen on each), so a ##contig header can be emitted
         self._contig_length: List[int] = [1] * len(self._contig_ids)
 
-        # the INFO values of every variant, one list per field, padded with the missing marker where a
-        # variant does not carry the field
+        # the INFO values of the variants of the current chunk, one list per field, padded with the
+        # missing marker where a variant does not carry the field
         self._info: Dict[str, List] = {}
+
+        # the encoding each field has been written in so far, so a chunk that does not fit it promotes it
+        self._info_kind: Dict[str, str] = {}
+
+        # whether every value a field has carried so far was an integer, which a numeric array no longer
+        # says once it holds them and which decides how they are spelled if the field turns out to be one
+        self._info_integral: Dict[str, bool] = {}
         self._skipped: Set[str] = set()
 
         self._root = None
@@ -2163,7 +2340,8 @@ class ZarrVariantWriter(VariantWriter):
 
     def _record_info(self, variant: Site) -> None:
         """
-        Buffer the INFO values of a variant, keeping one list per field aligned with the variants.
+        Buffer the INFO values of a variant, keeping one list per field aligned with the rows of the
+        chunk being filled.
 
         :param variant: The variant whose INFO fields to record.
         """
@@ -2177,8 +2355,9 @@ class ZarrVariantWriter(VariantWriter):
                     self._skipped.add(key)
                     continue
 
-                # a field may first appear at any variant, so the earlier ones are marked as missing
-                values = self._info[key] = [self._missing] * self._n
+                # a field may first appear at any variant, so the earlier rows of the chunk are marked as
+                # missing (the chunks already flushed are backfilled when the array is created)
+                values = self._info[key] = [self._missing] * self._row
 
             # cyvcf2 returns a tuple for a Number=A/R/G/. field; write the comma-separated form the VCF
             # uses, so the value stays parseable instead of becoming a Python repr such as "(12, 3)"
@@ -2188,7 +2367,7 @@ class ZarrVariantWriter(VariantWriter):
             values.append(value)
 
         for values in self._info.values():
-            if len(values) == self._n:
+            if len(values) == self._row:
                 values.append(self._missing)
 
     def _reserve(self, ploidy: int, alleles: int) -> None:
@@ -2383,6 +2562,8 @@ class ZarrVariantWriter(VariantWriter):
             array.resize((stop,) + array.shape[1:])
             array[start:stop] = buffer[:self._row]
 
+        self._flush_info(start, stop)
+
         self._flushed = stop
         self._row = 0
 
@@ -2403,79 +2584,234 @@ class ZarrVariantWriter(VariantWriter):
         self._write('contig_id', self._str_data(self._contig_ids), ['contigs'])
         self._write('contig_length', np.array(self._contig_length, dtype=np.int64), ['contigs'])
 
-        self._write_info()
+        for key in sorted(self._skipped):
+            self._logger.warning(f"Skipping INFO field '{key}': it collides with the reserved VCF-Zarr "
+                                 f"dataset 'variant_{key}'.")
 
         # mark the store as a spec-compliant VCF-Zarr so external readers (vcztools/sgkit) accept it
         from . import __version__
         self._root.attrs['vcf_zarr_version'] = '0.5'
         self._root.attrs['source'] = f'sfsutils-{__version__}'
 
-    def _write_info(self) -> None:
+    @staticmethod
+    def _is_bool(value) -> bool:
         """
-        Persist any INFO fields (e.g. an annotated ancestral allele or degeneracy) as ``variant_<tag>``
-        arrays, typed to match the values so a numeric field round-trips as a number rather than a
-        string; skip any whose name would collide with a reserved coordinate/allele/genotype dataset.
+        Whether a value is a boolean, i.e. a VCF Flag.
+
+        :param value: The value.
+        :return: Whether it is a boolean.
         """
-        _missing = self._missing
+        return isinstance(value, (bool, np.bool_))
 
-        def _is_bool(v):
-            return isinstance(v, (bool, np.bool_))
+    @classmethod
+    def _is_int(cls, value) -> bool:
+        """
+        Whether a value is an integer that an int64 array holds and that no reader mistakes for the
+        VCF-Zarr missing or fill sentinel.
 
-        def _is_int(v):
-            return isinstance(v, (int, np.integer)) and not _is_bool(v)
+        :param value: The value.
+        :return: Whether it is such an integer.
+        """
+        return (isinstance(value, (int, np.integer)) and not cls._is_bool(value)
+                and -(2 ** 63) <= int(value) < 2 ** 63 and int(value) not in (-1, -2))
 
-        def _is_float(v):
-            return isinstance(v, (float, np.floating))
+    @classmethod
+    def _is_numeric(cls, value) -> bool:
+        """
+        Whether a value is one a float64 array holds without losing precision. An integer beyond the
+        range of an int64 would, so it is written as a string instead.
 
-        def _absent(v):
-            # a value is absent if unset, the empty string, or the VCF '.' missing marker (which
-            # annotations such as DegeneracyAnnotation write for sites the field does not apply to).
-            # cyvcf2 hands back None for a Number=1 numeric field whose value is '.'
-            if v is _missing or v is None:
-                return True
+        :param value: The value.
+        :return: Whether it is such a number.
+        """
+        return (isinstance(value, (float, np.floating))
+                or (isinstance(value, (int, np.integer)) and not cls._is_bool(value)
+                    and -(2 ** 63) <= int(value) < 2 ** 63))
 
-            if isinstance(v, float) and np.isnan(v):
-                return True
+    def _absent(self, value) -> bool:
+        """
+        Whether a variant carries no value for a field: the value is unset, the empty string, or the VCF
+        ``.`` missing marker (which annotations such as DegeneracyAnnotation write for sites the field
+        does not apply to). cyvcf2 hands back ``None`` for a Number=1 numeric field whose value is ``.``.
 
-            return isinstance(v, str) and v in ('', '.')
+        :param value: The value.
+        :return: Whether the value is absent.
+        """
+        if value is self._missing or value is None:
+            return True
 
-        def _fits_int64(v):
-            return -(2 ** 63) <= int(v) < 2 ** 63
+        if isinstance(value, float) and np.isnan(value):
+            return True
 
-        # the VCF-Zarr missing-float sentinel (a specific NaN bit pattern), which vcztools/sgkit emit as
-        # a missing INFO value; a plain np.nan would be exported as the literal token 'nan'
-        float_missing = np.array([0x7FF0000000000001], dtype=np.uint64).view(np.float64)[0]
+        return isinstance(value, str) and value in ('', '.')
 
-        for key in sorted(self._skipped):
-            self._logger.warning(f"Skipping INFO field '{key}': it collides with the reserved VCF-Zarr "
-                                 f"dataset 'variant_{key}'.")
+    def _kind(self, values: List) -> str:
+        """
+        The narrowest encoding holding one chunk of the values of an INFO field.
 
-        for key in sorted(self._info):
+        :param values: The values of the chunk.
+        :return: The encoding, or ``empty`` where the chunk carries no value at all.
+        """
+        present = [v for v in values if not self._absent(v)]
+
+        if not present:
+            return 'empty'
+
+        if all(self._is_bool(v) for v in present):
+            return 'bool'
+
+        # an integer array has no way of marking a missing value apart from the sentinels, so a field
+        # that is absent anywhere in the chunk is carried as a float
+        if all(self._is_int(v) for v in present) and len(present) == len(values):
+            return 'int'
+
+        if all(self._is_numeric(v) for v in present):
+            return 'float'
+
+        return 'str'
+
+    @staticmethod
+    def _widest(left: str, right: str) -> str:
+        """
+        The encoding holding the values of two encodings at once. A flag and a number have none in
+        common, so both are written out as the strings the VCF spells them with.
+
+        :param left: The one encoding.
+        :param right: The other encoding.
+        :return: The encoding holding both.
+        """
+        if left == 'empty' or left == right:
+            return right
+
+        if right == 'empty':
+            return left
+
+        return 'float' if {left, right} == {'int', 'float'} else 'str'
+
+    def _encode(self, values: List, kind: str) -> np.ndarray:
+        """
+        One chunk of the values of an INFO field in its encoding, with the marker the encoding uses for
+        an absent value.
+
+        :param values: The values of the chunk.
+        :param kind: The encoding.
+        :return: The encoded chunk.
+        """
+        if kind == 'bool':
+            # an absent flag is a flag that is not set
+            return np.array([False if self._absent(v) else bool(v) for v in values], dtype=bool)
+
+        if kind == 'int':
+            return np.array([int(v) for v in values], dtype=np.int64)
+
+        if kind == 'float':
+            return np.array([self._float_missing if self._absent(v) else float(v) for v in values],
+                            dtype=np.float64)
+
+        return self._str_data(['' if self._absent(v) else str(v) for v in values])
+
+    def _recode(self, data: np.ndarray, source: str, kind: str, integral: bool) -> np.ndarray:
+        """
+        One chunk of an INFO field already in the store, in a wider encoding.
+
+        :param data: The stored chunk.
+        :param source: The encoding it is stored in.
+        :param kind: The encoding to carry it over to.
+        :param integral: Whether every value the array holds reached it as an integer.
+        :return: The re-encoded chunk.
+        """
+        if source == kind:
+            return data
+
+        if kind == 'float':
+            return data.astype(np.float64)
+
+        if source == 'float':
+            # a field whose values all reached the store as integers is spelled without a fractional part
+            # again, so that one mixing integers and strings reads back as the VCF wrote it
+            return self._str_data(['' if np.isnan(v) else str(int(v)) if integral else str(float(v))
+                                   for v in data])
+
+        if source == 'int':
+            return self._str_data([str(int(v)) for v in data])
+
+        return self._str_data([str(bool(v)) for v in data])
+
+    def _flush_info(self, start: int, stop: int) -> None:
+        """
+        Write the INFO values of the buffered chunk as ``variant_<tag>`` arrays, typed to match the
+        values so a numeric field round-trips as a number rather than a string. A field first appearing
+        in this chunk is created here, with the variants before it marked as carrying no value, and a
+        field whose values no longer fit its encoding is rewritten in a wider one.
+
+        :param start: The first row of the chunk.
+        :param stop: The row past the chunk.
+        """
+        for key, values in self._info.items():
             name = f'variant_{key}'
 
-            # a field the last variants do not carry is missing on them
-            raw = self._info[key]
-            raw.extend([_missing] * (self._n - len(raw)))
+            # a field the last variants of the chunk do not carry is missing on them
+            values.extend([self._missing] * (self._row - len(values)))
 
-            present = [v for v in raw if not _absent(v)]
+            kind = self._widest(self._info_kind.get(key, 'empty'), self._kind(values))
+            integral = self._info_integral.get(key, True) and all(
+                isinstance(v, (int, np.integer)) and not self._is_bool(v)
+                for v in values if not self._absent(v))
 
-            if present and all(_is_bool(v) for v in present):
-                data = np.array([bool(v) if not _absent(v) else False for v in raw], dtype=bool)
-                self._write(name, data, ['variants'])
-            elif (present and all(_is_int(v) for v in present) and not any(_absent(v) for v in raw)
-                  and all(_fits_int64(v) for v in present)):
-                # every site carries an int64-representable integer: store a plain integer array (an
-                # out-of-range integer falls through to the string branch so it is not silently truncated)
-                self._write(name, np.array([int(v) for v in raw], dtype=np.int64), ['variants'])
-            elif present and all(_is_float(v) or (_is_int(v) and _fits_int64(v)) for v in present):
-                # numeric but possibly missing on some sites: a float array carries the missing sentinel
-                # for the gaps (int values ride along as floats, e.g. a partly-annotated Degeneracy).
-                # An out-of-int64 integer would lose precision as a float, so it falls to the string branch.
-                data = np.array([float(v) if not _absent(v) else float_missing for v in raw], dtype=np.float64)
-                self._write(name, data, ['variants'])
-            else:
-                # strings (or mixed/empty): keep the string array, '' for a missing value
-                self._write(name, self._str_data(['' if _absent(v) else str(v) for v in raw]), ['variants'])
+            if name not in self._root:
+                # the variants before the field first appears carry no value, and an integer array cannot
+                # say so, so a field appearing late is numeric rather than integral
+                if start and kind == 'int':
+                    kind = 'float'
+
+                self._create(name, (start,), self._info_dtypes[kind], ['variants'], extent=(self._n,))
+                self._root[name][:] = self._encode([self._missing] * start, kind)
+            elif kind != self._info_kind[key]:
+                self._rebuild_info(name, self._info_kind[key], kind, self._info_integral[key])
+
+            self._info_kind[key] = kind
+            self._info_integral[key] = integral
+
+            array = self._root[name]
+            array.resize((stop,))
+            array[start:stop] = self._encode(values[:self._row], kind)
+
+            values.clear()
+
+    def _rebuild_info(self, name: str, source: str, kind: str, integral: bool) -> None:
+        """
+        Rewrite an INFO array in a wider encoding, a chunk at a time so only one chunk is held in memory.
+        Zarr fixes the dtype at creation, so the wider encoding needs a fresh array rather than a cast.
+
+        :param name: The array name.
+        :param source: The encoding the array is stored in.
+        :param kind: The encoding to rewrite it in.
+        :param integral: Whether every value the array holds reached it as an integer.
+        """
+        staging = f'{name}_staging'
+        shape = self._root[name].shape
+
+        self._recast(self._root[name], self._create(staging, shape, self._info_dtypes[kind], ['variants']),
+                     source, kind, integral)
+        del self._root[name]
+
+        self._recast(self._root[staging], self._create(name, shape, self._info_dtypes[kind], ['variants']),
+                     kind, kind, integral)
+        del self._root[staging]
+
+    def _recast(self, source, target, source_kind: str, kind: str, integral: bool) -> None:
+        """
+        Copy an INFO array chunk by chunk into a target of a wider encoding.
+
+        :param source: The array to read.
+        :param target: The array to write.
+        :param source_kind: The encoding the source is stored in.
+        :param kind: The encoding of the target.
+        :param integral: Whether every value the source holds reached it as an integer.
+        """
+        for start in range(0, source.shape[0], self._variant_chunk):
+            stop = min(start + self._variant_chunk, source.shape[0])
+            target[start:stop] = self._recode(source[start:stop], source_kind, kind, integral)
 
 
 class TskitVariantWriter(VariantWriter):

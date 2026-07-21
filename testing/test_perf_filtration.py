@@ -25,10 +25,9 @@ def reference_filter_site(variant, samples_mask: np.ndarray | None) -> bool:
     :param samples_mask: The samples mask, or ``None`` for all samples.
     :return: ``True`` if the variant is not poly-allelic, ``False`` otherwise.
     """
-    if samples_mask is None:
-        return len(variant.ALT) < 2
+    genotypes = variant.gt_bases if samples_mask is None else variant.gt_bases[samples_mask]
 
-    return len(get_distinct_called_alleles(variant.gt_bases[samples_mask])) < 3
+    return len(get_distinct_called_alleles(genotypes)) < 3
 
 
 def make_filtration(samples_mask: np.ndarray | None) -> PolyAllelicFiltration:
@@ -171,13 +170,16 @@ class PolyAllelicFiltrationEquivalenceTestCase(TestCase):
         assert make_filtration(all_samples).filter_site(variants[10])
         assert make_filtration(np.array([False, True, True, False])).filter_site(variants[10])
 
-    def test_no_mask_uses_alt_field(self):
+    def test_no_mask_covers_every_sample(self):
         """
-        Without a samples mask the verdict follows the ``ALT`` field.
+        Without a samples mask the verdict is the one a mask naming every sample reaches.
         """
         from cyvcf2 import VCF
 
-        f = make_filtration(None)
+        path = write_multi_allelic()
 
-        for variant in VCF(write_multi_allelic()):
-            assert f.filter_site(variant) == (len(variant.ALT) < 2)
+        f = make_filtration(None)
+        g = make_filtration(np.ones(len(VCF(path).samples), dtype=bool))
+
+        for variant in VCF(path):
+            assert f.filter_site(variant) == g.filter_site(variant)

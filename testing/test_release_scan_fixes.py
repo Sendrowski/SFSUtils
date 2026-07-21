@@ -263,9 +263,9 @@ def test_zarr_degeneracy_dot_sentinel_round_trips_numeric(tmp_path):
     assert "Degeneracy" not in variants[1].INFO          # '.' is absent, not the string "."
 
 
-def test_zarr_reader_skips_multivalued_info(tmp_path):
-    """A multi-valued INFO field (Number != 1, stored as a 2-D variant_<key> array by vcf2zarr) must not
-    crash the reader; it is simply not surfaced on the scalar Site interface."""
+def test_zarr_reader_surfaces_multivalued_info(tmp_path):
+    """A multi-valued INFO field (Number != 1, stored as a 2-D variant_<key> array by vcf2zarr) is
+    surfaced in the form cyvcf2 hands out, a tuple of the values a numeric field carries at the site."""
     import zarr
     from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
 
@@ -279,7 +279,7 @@ def test_zarr_reader_skips_multivalued_info(tmp_path):
     ac.attrs["_ARRAY_DIMENSIONS"] = ["variants", "alt_alleles"]
 
     variant = next(iter(ZarrVariantReader(out)))  # must not raise
-    assert "AC" not in variant.INFO
+    assert variant.INFO["AC"] == (3.0, 5.0)
     assert variant.INFO["AA"] == "A"
 
 

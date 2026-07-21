@@ -180,8 +180,8 @@ class TestHaploidLaterAlleleOutgroups:
 
         handler._reader.close()
 
-    def test_deviant_falls_back_for_multi_character_alleles(self, tmp_path):
-        """An MNP's bases are counted a character at a time, as the genotype strings present them."""
+    def test_deviant_counts_multi_character_alleles_as_one(self, tmp_path):
+        """An MNP is majority-counted as one allele per haplotype rather than one per base."""
         vcf = _write_vcf(tmp_path / "mnp.vcf", [
             ["1", "1", ".", "AT", "GC", ".", ".", ".", "GT", "1/1", "1/1", "0/0", "0/0"],
         ], self.samples)
@@ -191,7 +191,7 @@ class TestHaploidLaterAlleleOutgroups:
         f = _setup(su.DeviantOutgroupFiltration(["a"], ingroups=["b", "c", "d"], retain_monomorphic=False),
                    self.samples)
 
-        # the outgroup's major base is G, the ingroup's is A
+        # the outgroup's majority allele is GC, the ingroup's is AT
         assert not f.filter_site(sites[0])
 
         handler._reader.close()
@@ -199,17 +199,17 @@ class TestHaploidLaterAlleleOutgroups:
 
 class TestPolyAllelicAgreement:
     """
-    A mask selecting every sample restricts nothing, so a parser and a filterer must reach the same
-    poly-allelic verdict.
+    A parser and a filterer must reach the same poly-allelic verdict, which is decided by the alleles the
+    included samples actually carry rather than by the ``ALT`` field.
     """
 
     samples = ("s1", "s2")
 
     def test_parser_and_filterer_agree(self, tmp_path):
-        """A site declaring two alternate alleles is dropped on both paths, whatever the samples carry."""
+        """A site declaring three alleles of which the samples carry three is dropped on both paths."""
         Settings.disable_pbar = True
 
-        rows = [["1", str(10 + i), ".", "A", "T,G", ".", ".", "AA=A", "GT", "0/0", "1/1"] for i in range(20)]
+        rows = [["1", str(10 + i), ".", "A", "T,G", ".", ".", "AA=A", "GT", "0/1", "2/2"] for i in range(20)]
         vcf = _write_vcf(tmp_path / "polyallelic.vcf", rows, self.samples)
 
         direct = su.Parser(source=vcf, n=4, filtrations=[su.PolyAllelicFiltration()]).parse()
@@ -222,24 +222,34 @@ class TestPolyAllelicAgreement:
 
         assert su.Parser(source=out, n=4).parse().data.sum().sum() == 0
 
-    def test_all_true_mask_is_dropped(self, tmp_path):
-        """Naming every sample leaves no mask behind, so the ``ALT`` field alone decides."""
+    def test_all_true_mask_and_no_mask_agree(self, tmp_path):
+        """Naming every sample and naming none of them reach the same verdict."""
         vcf = _write_vcf(tmp_path / "mask.vcf", [
             ["1", "10", ".", "A", "T,G", ".", ".", "AA=A", "GT", "0/0", "1/1"],
+            ["1", "11", ".", "A", "T,G", ".", ".", "AA=A", "GT", "0/1", "2/2"],
         ], self.samples)
 
-        handler = MultiHandler(source=vcf)
+        handler, sites = _sites(vcf)
 
         f = su.PolyAllelicFiltration(include_samples=list(self.samples))
         f._setup(handler)
 
-        assert f._samples_mask is None
+        assert f._samples_mask.tolist() == [True, True]
 
-        # a genuine restriction is kept
-        g = su.PolyAllelicFiltration(include_samples=["s1"])
+        g = su.PolyAllelicFiltration()
         g._setup(handler)
 
-        assert g._samples_mask is not None and g._samples_mask.tolist() == [True, False]
+        assert g._samples_mask is None
+
+        # the third allele is only declared at the first site and carried at the second
+        assert [f.filter_site(v) for v in sites] == [True, False]
+        assert [g.filter_site(v) for v in sites] == [True, False]
+
+        # a genuine restriction is kept
+        h = su.PolyAllelicFiltration(include_samples=["s1"])
+        h._setup(handler)
+
+        assert h._samples_mask is not None and h._samples_mask.tolist() == [True, False]
 
         handler._reader.close()
 

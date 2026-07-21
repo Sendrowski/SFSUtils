@@ -173,6 +173,62 @@ class Annotation(ABC):
         )
 
 
+class _CDSRecord:
+    """
+    One coding sequence.
+
+    The codon machinery reads the fields of the current coding sequence and its two neighbours several
+    times per site. Reading them off a :class:`pandas.Series` row costs a label lookup each time, which
+    dominates the runtime of the degeneracy annotation, so the fields are held in slots here.
+    """
+
+    #: The fields, in the order of the columns of the coding sequence frame.
+    _fields: Tuple[str, ...] = ('seqid', 'start', 'end', 'strand', 'phase', 'parent')
+
+    __slots__ = _fields
+
+    def __init__(
+            self,
+            seqid: Any,
+            start: Any,
+            end: Any,
+            strand: Any = '+',
+            phase: Any = 0,
+            parent: Any = None
+    ):
+        """
+        Create a new record.
+
+        :param seqid: The contig.
+        :param start: The 1-based start position.
+        :param end: The 1-based end position.
+        :param strand: The strand.
+        :param phase: The phase.
+        :param parent: The transcript.
+        """
+        self.seqid = seqid
+        self.start = start
+        self.end = end
+        self.strand = strand
+        self.phase = phase
+        self.parent = parent
+
+    @property
+    def values(self) -> Tuple[Any, ...]:
+        """
+        The field values, mirroring the row of the coding sequence frame this record stands in for.
+
+        :return: The values.
+        """
+        return tuple(getattr(self, field) for field in self._fields)
+
+    def __repr__(self) -> str:
+        """
+        :return: The representation.
+        """
+        return f'{self.__class__.__name__}({", ".join(f"{f}={getattr(self, f)!r}" for f in self._fields)})'
+
+
 class _CDSIndex:
     """
     Positional index over the coding sequences of a single contig.
@@ -214,6 +270,11 @@ class _CDSIndex:
 
         #: The rows, start positions and suffix minimum of the end positions per transcript.
         self._neighbourhoods: Dict[Any, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+
+        #: The columns backing the records, kept as arrays so a record is built without touching the frame.
+        self._columns: Dict[str, np.ndarray] = {
+            field: cds[field].to_numpy() for field in _CDSRecord._fields if field in cds.columns
+        }
 
     def _neighbourhood(self, parent: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -274,14 +335,14 @@ class _CDSIndex:
 
         return int(rows[i]) if i >= 0 else None
 
-    def get(self, row: int) -> pd.Series:
+    def get(self, row: int) -> _CDSRecord:
         """
         Get the given coding sequence.
 
         :param row: The row.
         :return: The coding sequence.
         """
-        return self.cds.iloc[row]
+        return _CDSRecord(**{field: values[row] for field, values in self._columns.items()})
 
 
 class DegeneracyAnnotation(Annotation):
@@ -329,13 +390,13 @@ class DegeneracyAnnotation(Annotation):
         Annotation.__init__(self)
 
         #: The current coding sequence or the closest coding sequence downstream.
-        self._cd: Optional[pd.Series] = None
+        self._cd: Optional[_CDSRecord] = None
 
         #: The coding sequence following the current coding sequence.
-        self._cd_next: Optional[pd.Series] = None
+        self._cd_next: Optional[_CDSRecord] = None
 
         #: The coding sequence preceding the current coding sequence.
-        self._cd_prev: Optional[pd.Series] = None
+        self._cd_prev: Optional[_CDSRecord] = None
 
         #: The current contig.
         self._contig: Optional[SeqRecord] = None
@@ -588,8 +649,8 @@ class DegeneracyAnnotation(Annotation):
 
             # reset coding sequences to mocking positions
             self._cd_prev = None
-            self._cd = pd.Series({'seqid': v.CHROM, 'start': self._pos_mock, 'end': self._pos_mock})
-            self._cd_next = pd.Series({'seqid': v.CHROM, 'start': self._pos_mock, 'end': self._pos_mock})
+            self._cd = _CDSRecord(seqid=v.CHROM, start=self._pos_mock, end=self._pos_mock)
+            self._cd_next = _CDSRecord(seqid=v.CHROM, start=self._pos_mock, end=self._pos_mock)
 
             # the coding sequences of the current chromosome
             index = self._get_index(v.CHROM, aliases)
@@ -607,7 +668,7 @@ class DegeneracyAnnotation(Annotation):
 
                 # only splice codons together within one transcript: the nearest coding sequence by coordinate
                 # may belong to an unrelated gene, whose bases (and strand) have nothing to do with this codon
-                parent = self._cd.get('parent')
+                parent = self._cd.parent
 
                 if parent is None or pd.isna(parent):
                     parent = None
@@ -716,11 +777,14 @@ class DegeneracyAnnotation(Annotation):
             v.INFO['Degeneracy'] = degeneracy
             v.INFO['Degeneracy_Info'] = f"{pos_codon},{self._cd.strand},{codon}"
 
-            self._logger.debug(f'pos codon: {pos_codon}, pos abs: {v.POS}, '
-                               f'codon start: {codon_start}, codon: {codon}, '
-                               f'strand: {self._cd.strand}, ref allele: {self._contig[v.POS - 1]}, '
-                               f'degeneracy: {degeneracy}, codon pos: {str(codon_pos)}, '
-                               f'ref allele: {v.REF}')
+            # reading the reference base back off the contig is too costly to do for a message that is
+            # discarded at the default log level
+            if self._logger.isEnabledFor(logging.DEBUG):
+                self._logger.debug(f'pos codon: {pos_codon}, pos abs: {v.POS}, '
+                                   f'codon start: {codon_start}, codon: {codon}, '
+                                   f'strand: {self._cd.strand}, ref allele: {self._contig[v.POS - 1]}, '
+                                   f'degeneracy: {degeneracy}, codon pos: {str(codon_pos)}, '
+                                   f'ref allele: {v.REF}')
 
 
 class SynonymyAnnotation(DegeneracyAnnotation):
@@ -4688,8 +4752,12 @@ class Annotator(MultiHandler):
             This is used to match the contig names in the input with the contig names in the FASTA file and GFF file.
         :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
             ``source`` or ``vcf``, not both.
+        :raises ValueError: If ``max_sites`` is not positive.
 
         """
+        if max_sites < 1:
+            raise ValueError(f'max_sites must be positive, got {max_sites}.')
+
         super().__init__(
             source=source,
             vcf=vcf,
@@ -4766,7 +4834,7 @@ class Annotator(MultiHandler):
 
                     # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
                     # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
-                    if i + 1 == self.n_sites or i + 1 == self.max_sites:
+                    if i + 1 == self.n_sites or i + 1 >= self.max_sites:
                         break
         finally:
             # tear down the annotator

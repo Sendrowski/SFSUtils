@@ -29,10 +29,24 @@ if (sfsutils_is_installed()) {
     expect_ggplot(j$plot(show = FALSE))                 # implicit self
   })
 
+  test_that("JointSFS honours the requested axis order", {
+    j <- su$JointSFS(matrix(as.double(1:9), 3, 3), pop_names = c("A", "B"))
+
+    p01 <- su$JointSFS$plot(j, pops = c(0, 1), show = FALSE)
+    p10 <- su$JointSFS$plot(j, pops = c(1, 0), show = FALSE)
+
+    # the swapped order transposes the spectrum along with the axis labels
+    expect_false(identical(p01$data$value, p10$data$value))
+    expect_equal(p01$labels$x, p10$labels$y)
+    expect_equal(p01$labels$y, p10$labels$x)
+
+    expect_error(su$JointSFS$plot(j, pops = c(0), show = FALSE), "two populations")
+  })
+
   test_that("Parser derives a spectrum that plots", {
     vcf <- "../../resources/msprime/two_epoch.vcf"
     skip_if_not(file.exists(vcf), "msprime VCF fixture absent")
-    spectra <- su$Parser(vcf = vcf, n = 20L, skip_non_polarized = FALSE,
+    spectra <- su$Parser(source = vcf, n = 20L, skip_non_polarized = FALSE,
                          subsample_mode = "random")$parse()
     expect_ggplot(spectra$all$plot(show = FALSE))
   })

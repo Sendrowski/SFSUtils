@@ -10,6 +10,18 @@ from sfsutils.io_handlers import count_sites
 from testing import TestCase, requires
 
 
+def _string_site(**attributes):
+    """
+    A site carrying its genotypes as strings alone, so the filtrations decide it from ``gt_bases``.
+
+    :param attributes: The site's attributes.
+    :return: The site.
+    """
+    attributes['gt_bases'] = np.array(attributes['gt_bases'], dtype=object)
+
+    return type('_Site', (), attributes)()
+
+
 class FiltrationTestCase(TestCase):
     """
     Test the filterer and filtration classes.
@@ -341,8 +353,11 @@ class FiltrationTestCase(TestCase):
         """
         f = su.SNPFiltration()
 
-        assert not f.filter_site(variant=Mock(is_snp=False))
-        assert f.filter_site(variant=Mock(is_snp=True))
+        assert not f.filter_site(variant=_string_site(is_snp=False, REF='A', ALT=['T'], gt_bases=['A/A', 'A/T']))
+        assert f.filter_site(variant=_string_site(is_snp=True, REF='A', ALT=['T'], gt_bases=['A/A', 'A/T']))
+
+        # an alternate allele the ``ALT`` field declares but no sample carries leaves the site monomorphic
+        assert not f.filter_site(variant=_string_site(is_snp=True, REF='A', ALT=['T'], gt_bases=['A/A', 'A/A']))
 
     @staticmethod
     def test_snv_filtration():
@@ -364,10 +379,13 @@ class FiltrationTestCase(TestCase):
         """
         f = su.PolyAllelicFiltration()
 
-        assert not f.filter_site(variant=Mock(ALT=['T', 'G']))
-        assert not f.filter_site(variant=Mock(ALT=['T', 'G', 'C']))
-        assert f.filter_site(variant=Mock(ALT=['T']))
-        assert f.filter_site(variant=Mock(ALT=[]))
+        assert not f.filter_site(variant=_string_site(REF='A', ALT=['T', 'G'], gt_bases=['A/T', 'G/G']))
+        assert not f.filter_site(variant=_string_site(REF='A', ALT=['T', 'G', 'C'], gt_bases=['A/T', 'G/C']))
+        assert f.filter_site(variant=_string_site(REF='A', ALT=['T'], gt_bases=['A/T', 'A/A']))
+        assert f.filter_site(variant=_string_site(REF='A', ALT=[], gt_bases=['A/A', 'A/A']))
+
+        # a further alternate allele the ``ALT`` field declares but no sample carries is not counted
+        assert f.filter_site(variant=_string_site(REF='A', ALT=['T', 'G'], gt_bases=['A/T', 'A/A']))
 
     @requires('resources/genome/betula/biallelic.subset.10000.vcf.gz')
     def test_coding_sequence_filtration_raises_error_if_no_fasta_given(self):

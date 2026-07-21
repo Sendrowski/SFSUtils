@@ -11,7 +11,8 @@ Logical \code{TRUE} if the \code{sfsutils} Python module is installed, otherwise
 }
 \description{
 This function uses the reticulate package to verify if the \code{sfsutils} Python
-module is currently installed.
+module is currently installed. An unrelated project of the same name exists on
+PyPI, so the module is additionally checked for the \code{Parser} class it provides.
 }
 \examples{
 \dontrun{

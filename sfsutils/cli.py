@@ -222,7 +222,7 @@ def _run_parse(args: argparse.Namespace) -> int:
         two_sfs_offset=args.two_sfs_offset,
     ).parse()
 
-    if len(spectra.types) == 0:
+    if spectra.is_empty:
         logger.error("parse: no sites were included in the spectra, so nothing was written to %s. Check that the "
                      "sample size does not exceed the input, and that the ancestral allele information the "
                      "polarization needs is present (or pass --no-skip-non-polarized).", args.output)
@@ -378,7 +378,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--output", required=True,
                    help="Output spectrum file (CSV for a single-population SFS, JSON for a joint or two-site SFS).")
 
-    p.add_argument("--n", type=int, required=True,
+    p.add_argument("--n", type=_positive_int, required=True,
                    help="SFS sample size (per population for a joint SFS).")
     p.add_argument("--pops", type=_parse_pops, default=None,
                    help="Population spec for a joint SFS, e.g. 'A=s1,s2;B=s3,s4'.")
@@ -397,13 +397,13 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--subsample-mode", choices=["random", "probabilistic"], default="probabilistic",
                    help="Down-sampling mode. Default: probabilistic.")
     p.add_argument("--two-sfs", action="store_true", help="Parse the two-site (2-D) SFS instead.")
-    p.add_argument("--two-sfs-distance", type=int, default=1000,
+    p.add_argument("--two-sfs-distance", type=_positive_int, default=1000,
                    help="Width in bp of the distance window for pairing sites in the two-SFS. Default: 1000.")
     p.add_argument("--two-sfs-offset", dest="two_sfs_offset", type=int, default=0,
                    help="Minimum bp separation (exclusive) between paired sites for the two-SFS. Default: 0.")
     p.add_argument("--outgroups", type=_split_csv, default=None,
                    help="Outgroup samples (for the maximum-likelihood-ancestral annotation).")
-    p.add_argument("--n-ingroups", dest="n_ingroups", type=int, default=11,
+    p.add_argument("--n-ingroups", dest="n_ingroups", type=_positive_int, default=11,
                    help="Minimum ingroups for the maximum-likelihood-ancestral annotation. Default: 11.")
     p.add_argument("--contigs", type=_split_csv, default=None,
                    help="Contigs to keep (for the contig filtration and stratification).")
@@ -451,7 +451,7 @@ def _add_annotate_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--gff", default=None, help="GFF annotation (required by the degeneracy annotation).")
     p.add_argument("--outgroups", type=_split_csv, default=None,
                    help="Outgroup samples (for the maximum-likelihood-ancestral annotation).")
-    p.add_argument("--n-ingroups", dest="n_ingroups", type=int, default=11,
+    p.add_argument("--n-ingroups", dest="n_ingroups", type=_positive_int, default=11,
                    help="Minimum ingroups for the maximum-likelihood-ancestral annotation. Default: 11.")
     p.add_argument("--info-ancestral", default="AA", help="INFO tag to write the ancestral allele to. Default: AA.")
     p.add_argument("--max-sites", type=_positive_int, default=None, help="Maximum number of sites to annotate.")

@@ -15,7 +15,7 @@ import logging
 import random
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict, deque
-from typing import List, Callable, Literal, Optional, Dict, Tuple
+from typing import Any, List, Callable, Literal, Optional, Dict, Tuple
 
 import numpy as np
 from Bio.SeqRecord import SeqRecord
@@ -37,6 +37,41 @@ logger = logging.getLogger('sfsutils')
 #: which accumulates rounding error over a long contig; rebuilding them at this interval bounds that drift while
 #: costing one pass over the window per few thousand sites.
 _TWO_SFS_RESYNC_INTERVAL = 4096
+
+
+def _snapshot_state(component: object) -> Dict[str, Any]:
+    """
+    Record the per-pass state of a parser component (a filtration, annotation or stratification): its counters
+    and its list-valued diagnostics, such as the mismatches an annotation collects. These are the attributes a
+    second pass over the input overwrites, and they are discovered by type rather than by name so that a
+    component gaining a counter does not silently fall out of the snapshot.
+
+    :param component: The component.
+    :return: The per-pass state, with the lists copied rather than aliased.
+    """
+    state = {}
+
+    for name, value in vars(component).items():
+        if isinstance(value, bool):
+            continue
+
+        if isinstance(value, int):
+            state[name] = value
+        elif isinstance(value, list):
+            state[name] = list(value)
+
+    return state
+
+
+def _restore_state(component: object, state: Dict[str, Any]):
+    """
+    Put the per-pass state recorded by :func:`_snapshot_state` back on a component.
+
+    :param component: The component.
+    :param state: The state to restore.
+    """
+    for name, value in state.items():
+        setattr(component, name, value)
 
 
 def _count_valid_type(func: Callable) -> Callable:
@@ -91,6 +126,23 @@ class Stratification(ABC):
         Rewind the stratification.
         """
         self.n_valid = 0
+
+    def _snapshot(self) -> Dict[str, Any]:
+        """
+        Record the per-pass state, so that a second pass over the input (the sampling pass of
+        :class:`TargetSiteCounter`) can be reported on without discarding the counts of the first.
+
+        :return: The per-pass state.
+        """
+        return _snapshot_state(self)
+
+    def _restore(self, state: Dict[str, Any]):
+        """
+        Put the per-pass state recorded by :meth:`_snapshot` back on the stratification.
+
+        :param state: The state to restore.
+        """
+        _restore_state(self, state)
 
     def _teardown(self):
         """
@@ -858,13 +910,6 @@ class TargetSiteCounter:
                                  "make sure to provide DegeneracyAnnotation to make sure the "
                                  "sites sampled from the FASTA file have a degeneracy tag.")
 
-    def _teardown(self):
-        """
-        Perform any necessary post-processing.
-        """
-        # tear down parser
-        self.parser._teardown()
-
     def _suspend_snp_filtration(self):
         """
         Suspend SNP filtration to make sure we sample can actually sample monomorphic sites.
@@ -884,28 +929,37 @@ class TargetSiteCounter:
             self.parser.filtrations = self._filtrations
             self._filtrations = None
 
-    #: The per-pass counters of the annotations, which the sampling pass would otherwise overwrite
-    _counter_names = ('n_annotated', 'n_skipped', 'n_mismatches', 'n_comparisons')
-
-    def _snapshot_counters(self) -> List[Dict[str, int]]:
+    def _components(self) -> List[object]:
         """
-        Record the per-pass counters of every annotation, so the sampling pass can report its own counts
-        without discarding those of the pass that produced the spectra.
+        The parser components the sampling pass rewinds and re-runs, and whose per-pass state it would
+        otherwise overwrite.
 
-        :return: One mapping of counter name to value per annotation.
+        :return: The filtrations, annotations and stratifications.
         """
-        return [{name: getattr(a, name) for name in self._counter_names if hasattr(a, name)}
-                for a in self.parser.annotations]
+        return [*self.parser.filtrations, *self.parser.annotations, *self.parser.stratifications]
 
-    def _restore_counters(self, counters: List[Dict[str, int]]):
+    def _snapshot_counters(self) -> List[Tuple[object, Dict[str, Any]]]:
         """
-        Put the counters of the pass that produced the spectra back on the annotations.
+        Record the per-pass state of every component, so the sampling pass can report its own counts without
+        discarding those of the pass that produced the spectra.
 
-        :param counters: The mappings returned by :meth:`_snapshot_counters`.
+        :return: One component and its state per component.
         """
-        for annotation, snapshot in zip(self.parser.annotations, counters):
-            for name, value in snapshot.items():
-                setattr(annotation, name, value)
+        # components that define the protocol themselves decide what their per-pass state is; the others
+        # (filtrations and annotations) are covered generically
+        return [(c, c._snapshot() if hasattr(c, '_snapshot') else _snapshot_state(c)) for c in self._components()]
+
+    def _restore_counters(self, counters: List[Tuple[object, Dict[str, Any]]]):
+        """
+        Put the state of the pass that produced the spectra back on the components.
+
+        :param counters: The pairs returned by :meth:`_snapshot_counters`.
+        """
+        for component, state in counters:
+            if hasattr(component, '_restore'):
+                component._restore(state)
+            else:
+                _restore_state(component, state)
 
     def count(self):
         """
@@ -914,7 +968,7 @@ class TargetSiteCounter:
         :return: The number of target sites
         """
         # the sampling pass rewinds and then re-runs the components, which would leave their per-pass
-        # counters describing the sampled sites rather than the sites that produced the spectra
+        # counters and diagnostics describing the sampled sites rather than the sites that produced the spectra
         counters = self._snapshot_counters()
 
         # rewind parser components
@@ -939,11 +993,14 @@ class TargetSiteCounter:
             self._resume_snp_filtration()
             self._restore_counters(counters)
 
-        # tear down
-        self._teardown()
-
-        # notify on number of sites included in the SFS
-        self._logger.info(f"{i} out of {self.n_samples} sampled sites were valid.")
+        # a sampling pass that yields nothing leaves the target-site count unadjusted, which is a silent
+        # no-op rather than a cosmetic issue, so it is reported as an error
+        if i == 0 and self.n_samples > 0:
+            self._logger.error(f"None of the {self.n_samples} sampled sites were valid, so the number of "
+                               f"target sites cannot be adjusted. Check that the FASTA file matches the input "
+                               f"and that the filtrations and annotations accept monomorphic sites.")
+        else:
+            self._logger.info(f"{i} out of {self.n_samples} sampled sites were valid.")
 
     def _sample(self, pbar: tqdm) -> int:
         """
@@ -999,8 +1056,15 @@ class TargetSiteCounter:
 
                 self._logger.debug(f"Sampling {n} sites from contig '{contig}'.")
 
-                # fetch contig
-                record = self.parser.get_contig(aliases, notify=False)
+                # the contigs come from the parsed variants, so the FASTA need not hold them all; a contig it
+                # does not cover contributes no target sites rather than discarding the whole first pass
+                try:
+                    record = self.parser.get_contig(aliases, notify=False)
+                except LookupError:
+                    self._logger.warning(f"Skipping contig '{contig}' when sampling target sites: none of its "
+                                         f"aliases {aliases} were found in the FASTA file.")
+                    pbar.update(n)
+                    continue
 
                 # the bounds come from the parsed variants, which may reach beyond the end of the FASTA record
                 # if the two files disagree on the contig; sample only from the part backed by the reference
@@ -1185,50 +1249,67 @@ class TargetSiteCounter:
             distance: int,
     ) -> np.ndarray:
         """
-        Add the monomorphic-involving pairs to a two-SFS by extrapolating from the target-site count.
+        Add the pairs involving the sites the input never showed to a two-SFS, extrapolating their number from
+        the target-site count.
 
-        The observed matrix holds mainly the polymorphic-polymorphic pairs. Under a uniform site density the
-        ``+/- distance`` window around a site holds on average ``2 * rho_m * distance`` monomorphic sites, where
-        ``rho_m = n_monomorphic / region_length`` and ``n_monomorphic = n_target_sites - n_polymorphic``. Each
-        polymorphic site of derived count ``j`` therefore pairs with that many monomorphic sites (the ``(0, j)``
-        and ``(j, 0)`` entries) and each monomorphic site pairs with that many others (the ``(0, 0)`` entry),
-        which the symmetric storage splits evenly between the two slots. The window
-        offset drops out: a band of width ``distance`` holds the same expected number of sites regardless of where it
-        starts. This anchors the marginal for :meth:`~sfsutils.spectrum.TwoSFS.cov` / ``corr`` only approximately;
+        The parse pairs every site it saw with every other site it saw within the window, so the observed matrix
+        is complete except for the pairs that involve a site missing from the input. Those missing sites number
+        ``n_missing = n_target_sites - marginal.sum()`` and are monomorphic and ancestral (a site absent from a
+        SNP-only input carries no derived allele), so they belong to bin ``0``. Under a uniform site density the
+        ``+/- distance`` window around a site holds ``2 * rho * distance`` of them, with
+        ``rho = n_missing / region_length``. An observed site of derived count ``j`` therefore contributes that
+        many pairs to ``(0, j)`` and ``(j, 0)`` together, which the symmetric storage splits evenly between the
+        two slots, and the missing sites contribute ``n_missing * rho * distance`` pairs among themselves to
+        ``(0, 0)``. This holds for every observed bin, the monomorphic ones included: a divergence site (bin
+        ``n``, all-derived) pairs with the missing sites just as a segregating site does, so the divergence row
+        and column are populated too. The window offset drops out: a band of width ``distance`` holds the same
+        expected number of sites regardless of where it starts.
+
+        Only the sites that are truly missing are extrapolated, so passing an all-sites input (where the
+        monomorphic sites are observed and their pairs already counted) does not double-count them. This anchors
+        the marginal for :meth:`~sfsutils.spectrum.TwoSFS.cov` / ``corr`` only approximately;
         :meth:`~sfsutils.spectrum.TwoSFS.fpmi` needs no monomorphic sites and is preferred for SNP-only input.
 
-        :param two_sfs: The symmetrized polymorphic-polymorphic two-SFS.
-        :param marginal: The one-dimensional marginal of the polymorphic sites.
+        :param two_sfs: The symmetrized two-SFS of the observed sites.
+        :param marginal: The one-dimensional marginal of the observed sites.
         :param region_length: The length (bp) over which the sites are distributed.
         :param distance: The two-SFS distance window width (bp).
-        :return: The two-SFS with the monomorphic-involving pairs added.
+        :return: The two-SFS with the pairs involving the missing sites added.
         """
         two_sfs = np.array(two_sfs, dtype=float)
-        # bins 0 (all-ancestral) and -1 (all-derived) are monomorphic; only 1..n-1 are polymorphic
-        n_polymorphic = float(marginal[1:-1].sum())
-        n_monomorphic = self.n_target_sites - n_polymorphic
+        marginal = np.asarray(marginal, dtype=float)
 
-        if n_monomorphic <= 0:
+        # the sites of the region the input did not show, monomorphic sites it did show included
+        n_observed = float(marginal.sum())
+        n_missing = self.n_target_sites - n_observed
+
+        # all-ancestral sites in the marginal mean the input is not SNP-only, so there is little left to
+        # extrapolate and the counter is not what anchors the marginal
+        if marginal[0] > 0:
+            self._logger.warning("The input already contains all-ancestral sites, whose pairs the parse counted "
+                                 "directly; only the sites missing from the input are extrapolated. Consider "
+                                 "parsing an all-sites input without a TargetSiteCounter.")
+
+        if n_missing <= 0:
             self._logger.warning(f"The number of target sites ({self.n_target_sites}) does not exceed the number of "
-                                 f"polymorphic sites ({n_polymorphic:.0f}); the two-SFS is left unchanged.")
+                                 f"sites observed in the input ({n_observed:.0f}); the two-SFS is left unchanged.")
             return two_sfs
 
         if region_length <= 0:
             self._logger.warning("The region length is zero; cannot extrapolate the monomorphic pairs of the two-SFS.")
             return two_sfs
 
-        rho_m = n_monomorphic / region_length
+        rho = n_missing / region_length
 
-        # monomorphic-polymorphic pairs: the parse pairs each site with every site within +/- distance, so a
-        # polymorphic site of derived count j has 2 * rho_m * distance monomorphic partners; symmetrize()
-        # ((A + A.T) / 2) redistributes those between the two symmetric slots without changing their total, so
-        # each slot holds rho_m * distance. The (0, 0) entry follows the same accounting for monomorphic pairs.
-        contribution = marginal * rho_m * distance
-        contribution[0] = 0.0
-        contribution[-1] = 0.0
+        # pairs of an observed site with a missing one, spread over the two symmetric slots. Bin 0 is not
+        # excluded here: the two slots coincide there, so an observed all-ancestral site correctly receives
+        # both halves of its 2 * rho * distance partners
+        contribution = marginal * rho * distance
         two_sfs[0, :] += contribution
         two_sfs[:, 0] += contribution
-        two_sfs[0, 0] += n_monomorphic * rho_m * distance
+
+        # pairs among the missing sites themselves
+        two_sfs[0, 0] += n_missing * rho * distance
 
         return two_sfs
 
@@ -1373,7 +1454,7 @@ class Parser(MultiHandler):
             are used. Note that this restriction does not apply to the annotations and filtrations.
         :param exclude_samples: List of sample names to exclude when determining the SFS. If ``None``, no samples
             are excluded. Note that this restriction does not apply to the annotations and filtrations.
-        :param max_sites: Maximum number of sites to parse from the input.
+        :param max_sites: Maximum number of sites to parse from the input, which must be positive.
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from URLs.
         :param aliases: Dictionary of aliases for the contigs in the input, e.g. ``{'chr1': ['1']}``.
@@ -1417,6 +1498,11 @@ class Parser(MultiHandler):
         :param vcf: Deprecated alias for ``source``, kept for backward compatibility. Provide either
             ``source`` or ``vcf``, not both.
         """
+        # a non-positive cap would parse the whole input rather than nothing, as the site count it is
+        # compared against is itself capped at that value
+        if max_sites <= 0:
+            raise ValueError(f"'max_sites' must be positive, got {max_sites}.")
+
         MultiHandler.__init__(
             self,
             source=source,
@@ -1735,6 +1821,15 @@ class Parser(MultiHandler):
 
         return m
 
+    def _select_samples(self, values: np.ndarray) -> np.ndarray:
+        """
+        Restrict per-sample values to the samples the SFS is determined from.
+
+        :param values: The per-sample values.
+        :return: The values of the selected samples, which are all of them when no restriction was requested.
+        """
+        return values if self._samples_mask is None else values[self._samples_mask]
+
     def _project(self, variant: Site) -> Optional[np.ndarray]:
         """
         Down-project a single site to the one-dimensional SFS, returning the mass over derived-allele counts.
@@ -1753,7 +1848,7 @@ class Parser(MultiHandler):
             if site is not None and site.single_character:
                 counter = site.counts(self._samples_mask)
             else:
-                counter = Counter(get_called_bases(variant.gt_bases[self._samples_mask]))
+                counter = Counter(get_called_bases(self._select_samples(variant.gt_bases)))
 
             # number of samples
             n_samples = sum(counter.values())
@@ -1808,18 +1903,23 @@ class Parser(MultiHandler):
         # if we have a mono-allelic SNPs
         elif is_monomorphic_snp(variant):
             # apply the same coverage requirement as segregating sites, so a low-coverage monomorphic
-            # site is not asymmetrically retained and does not inflate the monomorphic:polymorphic ratio
-            # (TargetSiteCounter's DummyVariant sites are fully covered by construction and always pass)
-            site = SiteAlleles.from_site(variant)
+            # site is not asymmetrically retained and does not inflate the monomorphic:polymorphic ratio.
+            # A site sampled from the FASTA by the TargetSiteCounter stands for a fully covered site by
+            # construction, and its synthetic genotypes are diploid whatever the input's ploidy, so the
+            # gate is not applied to it: it would otherwise reject every sampled site once ``n`` exceeds
+            # twice the number of samples, silently turning the extrapolation into a no-op
+            if not isinstance(variant, DummyVariant):
+                site = SiteAlleles.from_site(variant)
 
-            if site is not None and site.single_character:
-                n_called = site.n_called(self._samples_mask)
-            else:
-                n_called = len(get_called_bases(variant.gt_bases[self._samples_mask]))
+                if site is not None and site.single_character:
+                    n_called = site.n_called(self._samples_mask)
+                else:
+                    n_called = len(get_called_bases(self._select_samples(variant.gt_bases)))
 
-            if n_called < self.n:
-                self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
-                return None
+                if n_called < self.n:
+                    self._logger.debug(
+                        f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
+                    return None
 
             # a site fixed for the derived allele carries all n derived alleles and belongs in the
             # divergence bin, while an ancestral monomorphic site carries none
@@ -1918,17 +2018,21 @@ class Parser(MultiHandler):
 
         # if we have a mono-allelic SNP
         elif is_monomorphic_snp(variant):
-            # apply the same per-population coverage requirement as segregating sites
-            site = SiteAlleles.from_site(variant)
+            # apply the same per-population coverage requirement as segregating sites, exempting the sites the
+            # TargetSiteCounter samples from the FASTA, whose synthetic genotypes are diploid whatever the
+            # input's ploidy and would otherwise fail the gate for every sampled site (see :meth:`_project`)
+            if not isinstance(variant, DummyVariant):
+                site = SiteAlleles.from_site(variant)
 
-            if site is not None and site.single_character:
-                pop_sizes = [site.n_called(mask) for mask in self._pop_masks]
-            else:
-                pop_sizes = [len(get_called_bases(variant.gt_bases[mask])) for mask in self._pop_masks]
+                if site is not None and site.single_character:
+                    pop_sizes = [site.n_called(mask) for mask in self._pop_masks]
+                else:
+                    pop_sizes = [len(get_called_bases(variant.gt_bases[mask])) for mask in self._pop_masks]
 
-            if any(size < n for size, n in zip(pop_sizes, self._n_per_pop)):
-                self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
-                return None
+                if any(size < n for size, n in zip(pop_sizes, self._n_per_pop)):
+                    self._logger.debug(
+                        f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
+                    return None
 
             # a site fixed for the derived allele has every population fixed for it, so its mass sits in the
             # all-derived corner, while an ancestral monomorphic site sits at the origin
@@ -2193,6 +2297,13 @@ class Parser(MultiHandler):
 
             return
 
+        # an all-True mask would make every site fancy-index-copy the whole genotype array, so no mask is
+        # installed unless the samples are actually restricted. A mask of ``None`` means every sample,
+        # judged from the genotypes, both here and in the filtrations that copy it
+        if self.include_samples is None and self.exclude_samples is None:
+            self._samples_mask = None
+            return
+
         # determine samples to include
         if self.include_samples is None:
             mask = np.ones(len(samples)).astype(bool)
@@ -2264,7 +2375,7 @@ class Parser(MultiHandler):
 
             # explicitly stopping after ``n`` sites fixes a bug with cyvcf2:
             # 'error parsing variant with `htslib::bcf_read` error-code: 0 and ret: -2'
-            if i + 1 == self.n_sites or i + 1 == self.max_sites:
+            if i + 1 >= self.n_sites or i + 1 >= self.max_sites:
                 break
 
         # close progress bar

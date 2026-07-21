@@ -13,7 +13,8 @@ for(package in required_packages){
 #' Check if the `sfsutils` Python module is installed
 #'
 #' This function uses the reticulate package to verify if the `sfsutils` Python
-#' module is currently installed.
+#' module is currently installed. An unrelated project of the same name exists on
+#' PyPI, so the module is additionally checked for the `Parser` class it provides.
 #'
 #' @return Logical `TRUE` if the `sfsutils` Python module is installed, otherwise `FALSE`.
 #'
@@ -26,7 +27,15 @@ for(package in required_packages){
 sfsutils_is_installed <- function() {
 
   # Check if sfsutils is installed
-  installed <- reticulate::py_module_available("sfsutils")
+  if (!reticulate::py_module_available("sfsutils")) {
+    return(FALSE)
+  }
+
+  # Check that the module found is this package and not a namesake
+  installed <- tryCatch({
+    sf <- reticulate::import("sfsutils", delay_load = FALSE)
+    !is.null(sf$Parser)
+  }, error = function(e) FALSE)
 
   return(installed)
 }
@@ -58,8 +67,9 @@ sfsutils_is_installed <- function() {
 #' @export
 install_sfsutils <- function(version = NULL, force = FALSE, silent = FALSE, python_version = '3.11') {
 
-  # Create the package string with the version if specified
-  package_name <- "sfsutils"
+  # Create the package string with the version if specified. The distribution is named
+  # 'sfsutils-popgen' on PyPI, where 'sfsutils' is an unrelated project
+  package_name <- "sfsutils-popgen"
   if (!is.null(version)) {
     package_name <- paste0(package_name, "==", version)
   }
@@ -71,7 +81,6 @@ install_sfsutils <- function(version = NULL, force = FALSE, silent = FALSE, pyth
       method = "conda",
       pip = TRUE,
       python_version = python_version,
-      version = version,
       ignore_installed = TRUE
    )
   } else {
@@ -388,9 +397,10 @@ load_sfsutils <- function(install = FALSE) {
   # Plot a joint (multi-population) SFS (JointSFS) as a heatmap.
   #
   # Reimplements JointSFS.plot using a ggplot2 geom_tile heatmap with a viridis
-  # palette. For more than two populations the joint SFS is first marginalized
-  # onto the two requested populations. The monomorphic corners are masked, and
-  # allele counts are shown on both axes with the origin at the bottom left.
+  # palette. The joint SFS is marginalized onto the two requested populations,
+  # which also puts their axes in the requested order. The monomorphic corners
+  # are masked, and allele counts are shown on both axes with the origin at the
+  # bottom left.
   #
   # @param self The JointSFS object (passed implicitly as the instance).
   # @param pops Numeric vector of length two. The (0-based) population indices to
@@ -416,8 +426,13 @@ load_sfsutils <- function(install = FALSE) {
     file = NULL,
     ...
   ) {
-    # marginalize onto the two requested populations if needed
-    jsfs <- if (self$n_pops > 2) self$marginalize(as.integer(pops)) else self
+    if (length(pops) != 2) {
+      stop("Exactly two populations must be specified for a 2-dimensional plot.")
+    }
+
+    # marginalize onto the two requested populations, which also applies the requested axis order:
+    # for pops = c(1, 0) the spectrum is transposed, as in Python
+    jsfs <- self$marginalize(as.integer(pops))
 
     mat <- as.matrix(jsfs$data)
     storage.mode(mat) <- "double"

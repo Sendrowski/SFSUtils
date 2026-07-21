@@ -133,7 +133,23 @@ def _serializable_types() -> List[type]:
     :return: The allowed types.
     """
     return [Spectrum, Spectra, TwoSFS, TwoLocusSFS, JointSFS, JointSpectra, TwoSpectra,
-            np.ndarray, pd.DataFrame]
+            np.ndarray, np.dtype, pd.DataFrame]
+
+
+def _serializable_names() -> List[str]:
+    """
+    Further fully qualified names a spectrum payload may construct: the numpy helpers the encoder emits for
+    array scalars that reached the object through user-supplied metadata. Both multiarray paths are listed,
+    as the module was renamed in numpy 2.
+
+    :return: The allowed names.
+    """
+    return [
+        'numpy._core.multiarray.scalar',
+        'numpy.core.multiarray.scalar',
+        'numpy._core.multiarray._reconstruct',
+        'numpy.core.multiarray._reconstruct',
+    ]
 
 
 class AbstractSpectrum(ABC):
@@ -236,7 +252,7 @@ class AbstractSpectrum(ABC):
         :return: Spectrum
         :raises ValueError: If the payload does not decode to this class.
         """
-        obj = _decode_json(json, _serializable_types(), cls)
+        obj = _decode_json(json, _serializable_types(), cls, _serializable_names())
 
         # convert list back to numpy array
         obj.data = np.array(obj.data)
@@ -499,12 +515,16 @@ class Spectrum(AbstractSpectrum):
         else:
             rng = np.random.default_rng(None if seed is None else int(seed))
 
-        return Spectrum.from_polydfe(
-            # resample polymorphic sites only
-            polymorphic=rng.poisson(lam=self.polymorphic),
-            n_sites=self.n_sites,
-            n_div=rng.poisson(self.n_div)
-        )
+        # draw every bin, monomorphic one included, so the counts really are independent Poisson draws; deriving
+        # bin 0 as the residual n_sites - rest instead makes it anti-correlated with the noise and lets it go
+        # negative whenever the spectrum carries no monomorphic mass to absorb it
+        data = np.concatenate([
+            [rng.poisson(self.data[0])],
+            rng.poisson(lam=self.polymorphic),
+            [rng.poisson(self.n_div)]
+        ])
+
+        return Spectrum(data)
 
     def is_folded(self) -> bool:
         """
@@ -846,6 +866,23 @@ class AbstractSpectra(ABC):
         """
         pass
 
+    @property
+    def is_empty(self) -> bool:
+        """
+        Whether the collection holds no parsed mass, either because there are no types or because every spectrum
+        is all zero. Counting types alone does not answer this for the two-site and joint collections, which always
+        carry an ``all`` type even when no site made it into the spectra.
+
+        :return: True if nothing was counted.
+        """
+        for spectrum in self.to_dict().values():
+            data = np.asarray(spectrum, dtype=float)
+
+            if data.size and np.any(data != 0):
+                return False
+
+        return True
+
     @abstractmethod
     def __getitem__(self, key):
         """
@@ -1149,13 +1186,25 @@ class Spectra(AbstractSpectra):
         :param keys: String or list of strings, possibly regex to match type names
         :param use_regex: Whether to use regex to match type names
         :return: Spectrum or Spectra object depending on the number of matches
+        :raises KeyError: If there are no types at all, or if a single key matches no type.
         """
         # whether the input in an array
         is_array = isinstance(keys, (np.ndarray, list, tuple))
 
+        # an empty Spectra (a parse in which every site was skipped) has an integer column index, on which the
+        # string matching below would fail with an accessor error rather than report the missing type
+        if self.data.shape[1] == 0:
+            raise KeyError(keys)
+
         if use_regex:
-            # subset dataframe using column names using regex
-            subset = self.data.loc[:, self.data.columns.str.fullmatch('|'.join(keys) if is_array else keys)]
+            # subset dataframe using column names using regex; cast the index to string so a numeric type name does
+            # not break the match
+            subset = self.data.loc[:, self.data.columns.astype(str).str.fullmatch(
+                '|'.join(keys) if is_array else keys)]
+
+            # a key matching nothing is a typo, not an empty selection, so say so instead of returning nothing
+            if subset.shape[1] == 0 and not is_array:
+                raise KeyError(keys)
         else:
             # subset dataframe using column names
             subset = self.data.loc[:, keys]
@@ -1754,7 +1803,7 @@ class TwoSFS(AbstractSpectrum):
 
         return TwoSFS(data)
 
-    def _branch_length_covariance(self) -> np.ndarray:
+    def _branch_length_covariance(self) -> Tuple[np.ndarray, np.ndarray]:
         """
         The full-spectrum branch-length covariance ``Cov(L_i, L_j) = P(i, j) - P(i) P(j)``, where ``P`` is the
         two-SFS normalized over *all* pairs (monomorphic bins included) and ``P(i)`` is its marginal. For a two-SFS
@@ -1770,7 +1819,8 @@ class TwoSFS(AbstractSpectrum):
         model-blind conditional joint, which does not recover the coalescent signal. The two-SFS is symmetrized here
         (it counts unordered site pairs), so the covariance is symmetric regardless of the input.
 
-        :return: The full ``(n + 1) x (n + 1)`` covariance matrix.
+        :return: The full ``(n + 1) x (n + 1)`` covariance matrix and the marginal ``P(i)`` it was built from, which
+            fixes the probability scale the covariance has to be judged against.
         :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
         """
         # a two-SFS counts unordered site pairs, so symmetrize; this makes the row and column marginals (the SFS)
@@ -1797,7 +1847,7 @@ class TwoSFS(AbstractSpectrum):
         p = data / total
         m = p.sum(axis=0)
 
-        return p - np.outer(m, m)
+        return p - np.outer(m, m), m
 
     def cov(self) -> 'TwoSFS':
         """
@@ -1821,7 +1871,7 @@ class TwoSFS(AbstractSpectrum):
         :return: The branch-length covariance over the interior, embedded in a full-size :class:`TwoSFS`.
         :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
         """
-        return self._embed(self._branch_length_covariance()[1:-1, 1:-1])
+        return self._embed(self._branch_length_covariance()[0][1:-1, 1:-1])
 
     def corr(self) -> 'TwoSFS':
         """
@@ -1838,17 +1888,25 @@ class TwoSFS(AbstractSpectrum):
         :return: The branch-length correlation over the interior, embedded in a full-size :class:`TwoSFS`.
         :raises ValueError: If the 2-SFS is empty, non-finite, or carries no monomorphic-involving pairs.
         """
-        c = self._branch_length_covariance()
+        c, m = self._branch_length_covariance()
         var = np.clip(np.diag(c), 0.0, None)
 
-        # treat a class whose branch-length variance is negligible relative to the covariance scale as having no
-        # variance (return zero for it) rather than dividing by ~0 and amplifying noise
-        floor = 1e-10 * np.abs(c).max()
+        # judge smallness against the probability scale the covariance lives on, not against the covariance itself:
+        # for independent loci the covariance is pure roundoff, and a self-scaled floor would sink with it and turn
+        # every noise/noise ratio into a spurious +/-1
+        scale = float(np.max(m)) ** 2
+        floor = 1e-12 * scale
+
+        # a class whose branch-length variance is negligible has no correlation to report, so return zero for it
+        # rather than dividing by ~0 and amplifying noise
         sd = np.sqrt(np.where(var > floor, var, 0.0))
         denom = np.outer(sd, sd)
 
         with np.errstate(divide='ignore', invalid='ignore'):
             r = np.where(denom > 0, c / denom, 0.0)
+
+        # a covariance at roundoff carries no signal whatever the variances are, so zero it before clipping
+        r = np.where(np.abs(c) > floor, r, 0.0)
 
         # the standardized cross-covariance is not Cauchy-Schwarz bounded for a non-coalescent input, so clip
         return self._embed(np.clip(r, -1.0, 1.0)[1:-1, 1:-1])
@@ -2148,7 +2206,11 @@ class JointSFS(AbstractSpectrum):
         self.data: np.ndarray = np.array(data, dtype=float)
 
         #: Names of the populations (one per axis); falls back to ``pop_0, ..., pop_{P-1}`` if not provided.
-        self.pop_names: List[str] = list(pop_names) if pop_names is not None else [f'pop_{i}' for i in range(data.ndim)]
+        # coerce to plain strings: names taken from a numpy or pandas array arrive as numpy scalars, which serialize
+        # into a payload the loader's type screen rejects, making the user's own file unreadable
+        self.pop_names: List[str] = (
+            [str(p) for p in pop_names] if pop_names is not None else [f'pop_{i}' for i in range(data.ndim)]
+        )
 
     def _names(self) -> List[str]:
         """
@@ -2503,7 +2565,7 @@ class _DictSpectraSerialization:
         :return: Spectra.
         :raises ValueError: If the payload does not decode to this class.
         """
-        obj = _decode_json(json, _serializable_types(), cls)
+        obj = _decode_json(json, _serializable_types(), cls, _serializable_names())
 
         # convert each spectrum's list back to a numpy array
         for s in {id(s): s for s in obj.data.values()}.values():
