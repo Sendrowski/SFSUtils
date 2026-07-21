@@ -94,3 +94,25 @@ def test_vcztools_reads_writer_output(tmp_path):
     assert first[1] == "10" and first[3] == "A" and first[4] == "T"
     assert first[9] == "0|1" and first[10] == "1|1"
     assert "AA=A" in first[7] and "AA_prob=0.9" in first[7]
+
+
+VCF_FIXTURE = "resources/msprime/two_epoch.vcf"
+
+
+@pytest.mark.skipif(_vcztools_bin() is None, reason="no vcztools binary reachable")
+@pytest.mark.skipif(not os.path.exists(VCF_FIXTURE), reason="the VCF fixture is absent")
+def test_vcztools_reads_filterer_vcf_to_vcz_output(tmp_path):
+    """The real VCF-in -> vcz-out pipeline (Filterer, no template) produces a store vcztools reads back
+    to a VCF, so a plain VCF input yields spec-compliant VCF-Zarr without any template."""
+    import sfsutils as su
+    from sfsutils.settings import Settings
+    Settings.disable_pbar = True
+
+    out = str(tmp_path / "filtered.vcz")
+    su.Filterer(source=VCF_FIXTURE, output=out, filtrations=[su.SNPFiltration()]).filter()
+
+    result = subprocess.run([_vcztools_bin(), "view", out], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    body = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith("#")]
+    assert len(body) == 608  # every SNP survived and round-tripped
+    assert any("##contig" in ln for ln in result.stdout.splitlines())
