@@ -130,6 +130,117 @@ class Annotation(ABC):
         )
 
 
+class _CDSIndex:
+    """
+    Positional index over the coding sequences of a single contig.
+
+    The coding sequences are ordered by start position, so all lookups are binary searches. End positions
+    are not monotonic, as coding sequences of different transcripts overlap, so queries on the end position
+    run against a running maximum (the first coding sequence reaching a position) and a suffix minimum (the
+    last coding sequence ending before a position). Both preserve the ordering of the underlying frame.
+    """
+
+    def __init__(self, cds: pd.DataFrame):
+        """
+        Create a new index.
+
+        :param cds: The coding sequences of one contig.
+        """
+        starts = cds.start.to_numpy(dtype=np.int64)
+
+        # a contig matching several seqids interleaves blocks that are each sorted on their own
+        if not np.all(starts[:-1] <= starts[1:]):
+            cds = cds.iloc[np.argsort(starts, kind='stable')]
+            starts = cds.start.to_numpy(dtype=np.int64)
+
+        #: The coding sequences of this contig.
+        self.cds: pd.DataFrame = cds
+
+        #: The start positions.
+        self._starts: np.ndarray = starts
+
+        #: The end positions.
+        self._ends: np.ndarray = cds.end.to_numpy(dtype=np.int64)
+
+        #: The running maximum of the end positions.
+        self._reach: np.ndarray = np.maximum.accumulate(self._ends) if len(cds) else self._ends
+
+        #: The rows of each transcript.
+        self._rows: Dict[Any, np.ndarray] = cds.groupby('parent', observed=True).indices \
+            if 'parent' in cds.columns else {}
+
+        #: The rows, start positions and suffix minimum of the end positions per transcript.
+        self._neighbourhoods: Dict[Any, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+
+    def _neighbourhood(self, parent: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Get the coding sequences a codon may be completed from.
+
+        :param parent: The transcript, or ``None`` to allow every coding sequence on the contig.
+        :return: The rows, their start positions and the suffix minimum of their end positions.
+        """
+        if parent not in self._neighbourhoods:
+            rows = self._rows[parent] if parent is not None else np.arange(len(self._starts))
+
+            ends = self._ends[rows]
+
+            self._neighbourhoods[parent] = (
+                rows,
+                self._starts[rows],
+                np.minimum.accumulate(ends[::-1])[::-1] if len(rows) else ends
+            )
+
+        return self._neighbourhoods[parent]
+
+    def locate(self, pos: int) -> Optional[int]:
+        """
+        Locate the first coding sequence reaching the given position.
+
+        :param pos: The 1-based position.
+        :return: The row, or ``None`` if the contig has no coding sequence reaching the position.
+        """
+        row = int(np.searchsorted(self._reach, pos, side='left'))
+
+        return row if row < len(self._reach) else None
+
+    def locate_next(self, row: int, parent: Any) -> Optional[int]:
+        """
+        Locate the first coding sequence starting after the given one.
+
+        :param row: The row of the current coding sequence.
+        :param parent: The transcript, or ``None`` to allow every coding sequence on the contig.
+        :return: The row, or ``None`` if there is none.
+        """
+        rows, starts, _ = self._neighbourhood(parent)
+
+        i = int(np.searchsorted(starts, self._ends[row], side='right'))
+
+        return int(rows[i]) if i < len(rows) else None
+
+    def locate_prev(self, row: int, parent: Any) -> Optional[int]:
+        """
+        Locate the last coding sequence ending before the given one.
+
+        :param row: The row of the current coding sequence.
+        :param parent: The transcript, or ``None`` to allow every coding sequence on the contig.
+        :return: The row, or ``None`` if there is none.
+        """
+        rows, _, reach = self._neighbourhood(parent)
+
+        i = int(np.searchsorted(reach, self._starts[row], side='left')) - 1
+
+        return int(rows[i]) if i >= 0 else None
+
+    def get(self, row: int) -> pd.Series:
+        """
+        Get the given coding sequence.
+
+        :param row: The row.
+        :return: The coding sequence.
+        """
+        return self.cds.iloc[row]
+
+
 class DegeneracyAnnotation(Annotation):
     """
     Degeneracy annotation. We annotate the degeneracy by looking at each codon for coding variants.
@@ -186,6 +297,9 @@ class DegeneracyAnnotation(Annotation):
         #: The current contig.
         self._contig: Optional[SeqRecord] = None
 
+        #: The coding sequence index per contig.
+        self._indexes: Dict[str, _CDSIndex] = {}
+
         #: The variants that could not be annotated correctly.
         self.mismatches: List['cyvcf2.Variant'] = []
 
@@ -204,6 +318,9 @@ class DegeneracyAnnotation(Annotation):
         # require FASTA and GFF files
         handler._require_fasta(self.__class__.__name__)
         handler._require_gff(self.__class__.__name__)
+
+        # the indexes are tied to the handler's coding sequences
+        self._indexes = {}
 
         # call super
         super()._setup(handler)
@@ -391,6 +508,21 @@ class DegeneracyAnnotation(Annotation):
 
         return codon_degeneracy
 
+    def _get_index(self, chrom: str, aliases: List[str]) -> _CDSIndex:
+        """
+        Get the coding sequence index for the given contig.
+
+        :param chrom: The contig of the current variant.
+        :param aliases: The aliases of the contig.
+        :return: The index.
+        """
+        if chrom not in self._indexes:
+            cds = self._handler._cds
+
+            self._indexes[chrom] = _CDSIndex(cds[cds.seqid.isin(aliases)])
+
+        return self._indexes[chrom]
+
     def _fetch_cds(self, v: Site):
         """
         Fetch the coding sequence for the given variant.
@@ -410,15 +542,14 @@ class DegeneracyAnnotation(Annotation):
             self._cd = pd.Series({'seqid': v.CHROM, 'start': self._pos_mock, 'end': self._pos_mock})
             self._cd_next = pd.Series({'seqid': v.CHROM, 'start': self._pos_mock, 'end': self._pos_mock})
 
-            # filter for the current chromosome
-            on_contig = self._handler._cds[(self._handler._cds.seqid.isin(aliases))]
+            # the coding sequences of the current chromosome
+            index = self._get_index(v.CHROM, aliases)
 
-            # filter for positions ending after the variant
-            cds = on_contig[(on_contig.end >= v.POS)]
+            # the first coding sequence ending after the variant
+            row = index.locate(v.POS)
 
-            if not cds.empty:
-                # take the first coding sequence
-                self._cd = cds.iloc[0]
+            if row is not None:
+                self._cd = index.get(row)
 
                 self._logger.debug(f'Found coding sequence: {self._cd.seqid}:{self._cd.start}-{self._cd.end}, '
                                    f'reminder: {(self._cd.end - self._cd.start + 1) % 3}, '
@@ -427,24 +558,22 @@ class DegeneracyAnnotation(Annotation):
 
                 # only splice codons together within one transcript: the nearest coding sequence by coordinate
                 # may belong to an unrelated gene, whose bases (and strand) have nothing to do with this codon
-                if 'parent' in on_contig.columns and pd.notna(self._cd.get('parent')):
-                    neighbours = on_contig[on_contig.parent == self._cd.parent]
-                else:
-                    neighbours = on_contig
+                parent = self._cd.get('parent')
 
-                # filter for positions ending after the current coding sequence
-                cds = neighbours[(neighbours.start > self._cd.end)]
+                if parent is None or pd.isna(parent):
+                    parent = None
 
-                if not cds.empty:
-                    # take the first coding sequence
-                    self._cd_next = cds.iloc[0]
+                # the first coding sequence starting after the current one
+                row_next = index.locate_next(row, parent)
 
-                # filter for positions starting before the current coding sequence
-                cds = neighbours[(neighbours.end < self._cd.start)]
+                if row_next is not None:
+                    self._cd_next = index.get(row_next)
 
-                if not cds.empty:
-                    # take the last coding sequence
-                    self._cd_prev = cds.iloc[-1]
+                # the last coding sequence ending before the current one
+                row_prev = index.locate_prev(row, parent)
+
+                if row_prev is not None:
+                    self._cd_prev = index.get(row_prev)
 
             if self._cd.start == self._pos_mock and self.n_annotated == 0:
                 self._logger.warning(f"No coding sequence found on all of contig '{v.CHROM}' and no previous "
@@ -595,6 +724,9 @@ class SynonymyAnnotation(DegeneracyAnnotation):
         # require FASTA and GFF files
         handler._require_fasta(self.__class__.__name__)
         handler._require_gff(self.__class__.__name__)
+
+        # the indexes are tied to the handler's coding sequences
+        self._indexes = {}
 
         Annotation._setup(self, handler)
 

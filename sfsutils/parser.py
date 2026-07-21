@@ -32,6 +32,12 @@ from .spectrum import Spectra, TwoSFS, TwoSpectra, JointSFS, JointSpectra
 # logger
 logger = logging.getLogger('sfsutils')
 
+#: Number of sites between full rebuilds of the two-SFS running window sums from the sites in the window. The
+#: sums are maintained by adding a site's vector when it enters the window and subtracting it when it leaves,
+#: which accumulates rounding error over a long contig; rebuilding them at this interval bounds that drift while
+#: costing one pass over the window per few thousand sites.
+_TWO_SFS_RESYNC_INTERVAL = 4096
+
 
 def _count_valid_type(func: Callable) -> Callable:
     """
@@ -1470,11 +1476,30 @@ class Parser(MultiHandler):
         #: spectrum including the monomorphic bins; used to warn when the monomorphic sites appear to be missing.
         self._two_sfs_marginal: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros(self.n + 1))
 
-        #: Sliding buffer of ``(position, down-projection vector, type)`` for recent sites on the current contig
-        self._two_sfs_buffer: deque = deque()
+        #: Buffered ``(position, down-projection vector, type)`` of sites that are still closer than
+        #: :attr:`two_sfs_offset` to the current site and thus not yet eligible to form a pair
+        self._two_sfs_pending: deque = deque()
 
-        #: The contig currently held in the two-SFS buffer
+        #: Buffered ``(position, down-projection vector, type)`` of the sites inside the eligible band
+        #: ``(two_sfs_offset, two_sfs_offset + d]``, i.e. those making up :attr:`_two_sfs_window_sums`
+        self._two_sfs_active: deque = deque()
+
+        #: Sum of the down-projection vectors of the sites in the eligible band, per type. Pairing the current
+        #: site with this sum in a single outer product is equivalent to pairing it with each site separately
+        self._two_sfs_window_sums: Dict[str, np.ndarray] = {}
+
+        #: Number of sites in the eligible band per type, used to drop a type's running sum once its band empties
+        self._two_sfs_window_counts: Dict[str, int] = {}
+
+        #: Number of sites processed since the running sums were last rebuilt from the window
+        self._two_sfs_since_resync: int = 0
+
+        #: The contig currently held in the two-SFS window
         self._two_sfs_contig: str | None = None
+
+        #: Cache of hypergeometric down-projection vectors keyed by ``(M, n, N)``. The projection depends on
+        #: nothing else, and with a fixed sample set only a handful of keys occur, so it is filled lazily
+        self._projection_cache: Dict[Tuple[int, int, int], np.ndarray] = {}
 
     def _reset(self):
         """
@@ -1488,8 +1513,16 @@ class Parser(MultiHandler):
         self._contig_bounds = defaultdict(lambda: (np.inf, -np.inf))
         self._two_sfs_matrices = defaultdict(lambda: np.zeros((self.n + 1, self.n + 1)))
         self._two_sfs_marginal = defaultdict(lambda: np.zeros(self.n + 1))
-        self._two_sfs_buffer = deque()
+        self._two_sfs_pending = deque()
+        self._two_sfs_active = deque()
+        self._two_sfs_window_sums = {}
+        self._two_sfs_window_counts = {}
+        self._two_sfs_since_resync = 0
         self._two_sfs_contig = None
+
+        # the cached projections are only valid for the sample sizes of the pass that filled them
+        self._projection_cache = {}
+
         self.rng = np.random.default_rng(seed=self.seed)
 
     def _get_ancestral(self, variant: Site) -> str:
@@ -1579,6 +1612,28 @@ class Parser(MultiHandler):
 
         return True
 
+    def _projection(self, n_samples: int, n_der: int, n: int) -> np.ndarray:
+        """
+        The hypergeometric down-projection of a site onto ``n`` drawn genotypes: the probability of observing
+        ``k = 0, ..., n`` derived alleles when drawing without replacement. The vector depends on nothing but its
+        three arguments, so it is looked up in :attr:`_projection_cache` and computed only on the first sighting.
+
+        :param n_samples: The number of called genotypes at the site.
+        :param n_der: The number of derived alleles among them.
+        :param n: The number of genotypes drawn.
+        :return: A read-only array of length ``n + 1``. It is handed out again on every matching site, so callers
+            must build a new array instead of writing to it.
+        """
+        key = (n_samples, n_der, n)
+        m = self._projection_cache.get(key)
+
+        if m is None:
+            m = hypergeom.pmf(k=range(n + 1), M=n_samples, n=n_der, N=n)
+            m.flags.writeable = False
+            self._projection_cache[key] = m
+
+        return m
+
     def _project(self, variant: Site) -> Optional[np.ndarray]:
         """
         Down-project a single site to the one-dimensional SFS, returning the mass over derived-allele counts.
@@ -1639,7 +1694,7 @@ class Parser(MultiHandler):
                     m[k] += 1.0
             else:
                 # subsample probabilistically drawing from the hypergeometric distribution (without replacement)
-                m = hypergeom.pmf(k=range(self.n + 1), M=n_samples, n=n_samples - n_aa, N=self.n)
+                m = self._projection(n_samples, n_samples - n_aa, self.n)
 
                 # polarize probabilistically, which is well defined for every site reaching here
                 if aa_prob != 1.0:
@@ -1716,7 +1771,7 @@ class Parser(MultiHandler):
                     vec = np.zeros(n + 1)
                     vec[hypergeom.rvs(M=n_samples, n=n_der, N=n, random_state=self.rng)] = 1.0
                 else:
-                    vec = hypergeom.pmf(k=range(n + 1), M=n_samples, n=n_der, N=n)
+                    vec = self._projection(n_samples, n_der, n)
 
                 projections.append(vec)
 
@@ -1752,9 +1807,14 @@ class Parser(MultiHandler):
         Add a single site to the two-SFS by pairing it with the recently seen sites within the distance window.
 
         The site's down-projection vector is paired (via an outer product) with that of every buffered site on the
-        same contig whose separation falls in ``(two_sfs_offset, two_sfs_offset + d]``. A sliding
-        buffer keeps only the sites still within reach, so the pass is linear in the number of pairs. When
-        stratifications are used, only pairs of sites of the same type are counted, into that type's matrix.
+        same contig whose separation falls in ``(two_sfs_offset, two_sfs_offset + d]``. Since the outer product is
+        bilinear, all those pairs are accumulated in one outer product with the running sum of the vectors of the
+        sites currently in that band (:attr:`_two_sfs_window_sums`), which makes the cost per site independent of
+        how many sites the window holds. Sites arrive position-sorted, so the band is maintained with two sliding
+        buffers: a site waits in :attr:`_two_sfs_pending` until its separation exceeds ``two_sfs_offset``, then
+        moves to :attr:`_two_sfs_active` and joins the running sum, and leaves the sum once its separation exceeds
+        ``two_sfs_offset + d``. When stratifications are used, only pairs of sites of the same type are counted,
+        into that type's matrix, so the running sums are kept per type.
 
         :param variant: The variant.
         :return: Whether the site was included (i.e. had a valid down-projection and, if stratified, a type).
@@ -1777,29 +1837,82 @@ class Parser(MultiHandler):
         # accumulate the one-dimensional marginal (the site-frequency spectrum, incl. the monomorphic bins)
         self._two_sfs_marginal[t] += m
 
-        # reset the buffer when we move to a new contig (pairs never cross contigs)
+        # reset the window when we move to a new contig (pairs never cross contigs)
         if variant.CHROM != self._two_sfs_contig:
-            self._two_sfs_buffer.clear()
+            self._two_sfs_pending.clear()
+            self._two_sfs_active.clear()
+            self._two_sfs_window_sums.clear()
+            self._two_sfs_window_counts.clear()
             self._two_sfs_contig = variant.CHROM
+
+        pos = variant.POS
 
         # the furthest separation at which a pair is still formed
         max_distance = self.two_sfs_offset + self.d
 
-        # drop buffered sites that are now too far behind to pair with any future site
-        while self._two_sfs_buffer and variant.POS - self._two_sfs_buffer[0][0] > max_distance:
-            self._two_sfs_buffer.popleft()
+        # admit the sites whose separation has grown past the offset into the eligible band
+        while self._two_sfs_pending and pos - self._two_sfs_pending[0][0] > self.two_sfs_offset:
+            entry = self._two_sfs_pending.popleft()
+            self._two_sfs_active.append(entry)
 
-        # pair with each buffered site of the same type whose separation falls in the window
-        for pos, m_prev, t_prev in self._two_sfs_buffer:
-            distance = variant.POS - pos
+            t_prev = entry[2]
+            if t_prev in self._two_sfs_window_sums:
+                self._two_sfs_window_sums[t_prev] += entry[1]
+                self._two_sfs_window_counts[t_prev] += 1
+            else:
+                # a fresh writable array, as the projection vectors are shared read-only across sites
+                self._two_sfs_window_sums[t_prev] = np.array(entry[1], dtype=float)
+                self._two_sfs_window_counts[t_prev] = 1
 
-            if self.two_sfs_offset < distance <= max_distance and t_prev == t:
-                # accumulate the (forward) within-stratum pair; the matrix is symmetrized once at the end
-                self._two_sfs_matrices[t] += np.multiply.outer(m_prev, m)
+        # retire the sites that are now too far behind to pair with this or any later site
+        while self._two_sfs_active and pos - self._two_sfs_active[0][0] > max_distance:
+            entry = self._two_sfs_active.popleft()
 
-        self._two_sfs_buffer.append((variant.POS, m, t))
+            t_prev = entry[2]
+            self._two_sfs_window_counts[t_prev] -= 1
+
+            # an emptied band is dropped rather than left as a sum of cancelling terms
+            if self._two_sfs_window_counts[t_prev] == 0:
+                del self._two_sfs_window_counts[t_prev]
+                del self._two_sfs_window_sums[t_prev]
+            else:
+                self._two_sfs_window_sums[t_prev] -= entry[1]
+
+        self._two_sfs_since_resync += 1
+
+        if self._two_sfs_since_resync >= _TWO_SFS_RESYNC_INTERVAL:
+            self._resync_two_sfs_window()
+
+        window_sum = self._two_sfs_window_sums.get(t)
+
+        # accumulate the (forward) within-stratum pairs; the matrix is symmetrized once at the end
+        if window_sum is not None:
+            self._two_sfs_matrices[t] += np.multiply.outer(window_sum, m)
+
+        self._two_sfs_pending.append((pos, m, t))
 
         return True
+
+    def _resync_two_sfs_window(self):
+        """
+        Rebuild the two-SFS running window sums from the sites currently in the eligible band, discarding the
+        rounding error accumulated by the incremental additions and subtractions (see
+        :data:`_TWO_SFS_RESYNC_INTERVAL`).
+        """
+        sums: Dict[str, np.ndarray] = {}
+        counts: Dict[str, int] = {}
+
+        for _, m_prev, t_prev in self._two_sfs_active:
+            if t_prev in sums:
+                sums[t_prev] += m_prev
+                counts[t_prev] += 1
+            else:
+                sums[t_prev] = np.array(m_prev, dtype=float)
+                counts[t_prev] = 1
+
+        self._two_sfs_window_sums = sums
+        self._two_sfs_window_counts = counts
+        self._two_sfs_since_resync = 0
 
     def _warn_if_monomorphic_missing(self):
         """

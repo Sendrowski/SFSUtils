@@ -11,14 +11,13 @@ import gzip
 import hashlib
 import logging
 import os
-import re
 import shutil
 import tempfile
 import warnings
 from abc import ABC, abstractmethod
 from collections import Counter
 from functools import cached_property
-from typing import List, Iterable, Iterator, TextIO, Dict, Optional, Tuple, Union, Sequence, Protocol, \
+from typing import List, Iterable, Iterator, TextIO, Dict, Optional, Set, Tuple, Union, Sequence, Protocol, \
     runtime_checkable
 from urllib.parse import urlparse
 
@@ -166,13 +165,48 @@ def is_monomorphic_snp(variant: Site) -> bool:
             and not variant.ALT and variant.REF in bases)
 
 
+def count_indexed_sites(vcf: str) -> int | None:
+    """
+    Read the number of records of a VCF from its tabix or CSI index, which htslib stores alongside the
+    per-contig offsets, so the file itself does not have to be decompressed a second time.
+
+    :param vcf: The path to the input
+    :return: The number of records, or ``None`` where the file carries no readable index
+    """
+    # only look for an index next to a local file: a URL or a directory (a VCF-Zarr store) has none, and
+    # probing for one would cost a request
+    if not any(os.path.exists(vcf + extension) for extension in ('.tbi', '.csi')):
+        return None
+
+    try:
+        from cyvcf2 import VCF
+    except ImportError:
+        return None
+
+    try:
+        reader = VCF(vcf)
+
+        try:
+            n = int(reader.num_records)
+        finally:
+            reader.close()
+    except Exception as e:
+        logger.debug(f"Could not read the record count of '{vcf}' from its index: {e}")
+        return None
+
+    # an index written without the record-count metadata reports zero, which is indistinguishable from an
+    # empty file, so the caller falls back to counting
+    return n if n > 0 else None
+
+
 def count_sites(
         vcf: str | Iterable['cyvcf2.Variant'],
         max_sites: int = np.inf,
         desc: str = 'Counting sites'
 ) -> int:
     """
-    Count the number of sites in the input.
+    Count the number of sites in the input. Where the input is an indexed VCF, the count comes from the
+    index rather than from a pass over the records.
 
     :param vcf: The path to the input or an iterable of variants
     :param max_sites: Maximum number of sites to consider
@@ -183,6 +217,10 @@ def count_sites(
     # if we don't have a file path, we can just count the number of variants
     if not isinstance(vcf, str):
         return len(list(vcf))
+
+    indexed = count_indexed_sites(vcf)
+    if indexed is not None:
+        return int(min(indexed, max_sites))
 
     i = 0
     with open_file(vcf) as f:
@@ -1598,9 +1636,28 @@ class ZarrVariantWriter(VariantWriter):
     Write variants to a VCF-Zarr store in the `vcf2zarr <https://sgkit-dev.github.io/bio2zarr>`_ (VCZ) layout
     read back by :class:`~sfsutils.io_handlers.ZarrVariantReader`, so the output can come from any input (VCF, tree sequence or
     another VCF-Zarr store). Any INFO fields present on the variants (for example an annotated ancestral
-    allele) are persisted as ``variant_<tag>`` arrays. Variants are buffered in memory and the arrays written
-    on :meth:`close`, since the ragged allele dimension needs a global maximum.
+    allele) are persisted as ``variant_<tag>`` arrays.
+
+    Positions, genotypes and alleles accumulate in chunk-sized buffers and each complete chunk is flushed
+    to the store, so the memory held is one chunk rather than the whole input. The two ragged axes (the
+    ploidy and the allele width) are only known once every variant has been seen, so the arrays are
+    created from the first chunk and rebuilt on the rare site that widens them. The INFO values are held
+    until :meth:`close` because the type of a field follows from the values of all variants and a field
+    may first appear at the last one; they are a small fraction of the genotypes.
     """
+
+    #: Number of variants per chunk along the ``variants`` axis, as written by vcf2zarr
+    _variant_chunk: int = 10000
+
+    #: Number of samples per chunk along the ``samples`` axis, as written by vcf2zarr
+    _sample_chunk: int = 1000
+
+    #: The coordinate, allele and genotype datasets an INFO field must not collide with
+    _reserved = frozenset({'variant_position', 'variant_contig', 'variant_allele',
+                           'call_genotype', 'call_genotype_phased', 'sample_id', 'contig_id'})
+
+    #: Marker for an INFO field a variant does not carry
+    _missing = object()
 
     def __init__(self, output: str, samples: List[str], seqnames: List[str], info_ancestral: str = 'AA'):
         """
@@ -1621,120 +1678,380 @@ class ZarrVariantWriter(VariantWriter):
 
         self._output = output
         self._logger = logger.getChild(self.__class__.__name__)
+
+        #: Whether the store has been finalised, so that closing again is a no-op
+        self._closed: bool = False
         self._samples = list(samples)
         self._contig_ids = list(seqnames)
         self._contig_index = {c: i for i, c in enumerate(self._contig_ids)}
         self._info_ancestral = info_ancestral
 
-        self._positions: List[int] = []
-        self._contigs: List[int] = []
-        self._alleles: List[List[str]] = []
-        self._genotypes: List[List[List[int]]] = []
-        self._phased: List[List[bool]] = []
-        self._infos: List[Dict[str, object]] = []
+        # per-contig lengths (the last position seen on each), so a ##contig header can be emitted
+        self._contig_length: List[int] = [1] * len(self._contig_ids)
+
+        # the INFO values of every variant, one list per field, padded with the missing marker where a
+        # variant does not carry the field
+        self._info: Dict[str, List] = {}
+        self._skipped: Set[str] = set()
+
+        self._root = None
+        self._n: int = 0
+        self._flushed: int = 0
+        self._row: int = 0
+        self._ploidy: Optional[int] = None
+        self._max_alleles: Optional[int] = None
+
+        self._buf_position: Optional[np.ndarray] = None
+        self._buf_contig: Optional[np.ndarray] = None
+        self._buf_genotype: Optional[np.ndarray] = None
+        self._buf_phased: Optional[np.ndarray] = None
+        self._buf_allele: Optional[np.ndarray] = None
+
+    @property
+    def _axis_ploidy(self) -> int:
+        """
+        The extent of the ploidy axis: the widest call seen, or two where no variant carries any call.
+
+        :return: The ploidy.
+        """
+        return self._ploidy if self._ploidy else 2
+
+    @property
+    def _axis_alleles(self) -> int:
+        """
+        The extent of the allele axis: the most alleles seen at any variant.
+
+        :return: The allele count.
+        """
+        return self._max_alleles if self._max_alleles else 1
+
+    @property
+    def _gt_dtype(self) -> np.dtype:
+        """
+        The genotype dtype, sized to the data so many-allele sites do not wrap.
+
+        :return: The dtype.
+        """
+        return np.dtype(np.int8 if self._axis_alleles <= np.iinfo(np.int8).max else np.int32)
 
     def write(self, variant: Site) -> None:
         """
-        Buffer a single variant.
+        Buffer a single variant, flushing the current chunk to the store once it is full.
 
         :param variant: The variant to write.
         """
         alleles = [variant.REF] + list(variant.ALT)
         index = {a: i for i, a in enumerate(alleles)}
 
-        rows, phased = [], []
-        for gt in np.asarray(variant.gt_bases):
+        # the same genotype string recurs across most samples, so each distinct one is split and looked
+        # up once and the samples only carry a row index into the table of distinct calls
+        table: List[List[int]] = []
+        phased: List[bool] = []
+        codes: Dict[str, int] = {}
+        gt_bases = np.asarray(variant.gt_bases)
+        rows = np.empty(len(gt_bases), dtype=np.intp)
+
+        for i, gt in enumerate(gt_bases):
             gt = str(gt)
-            phased.append('|' in gt)
-            rows.append([index.get(c, -1) for c in re.split(r'[|/]', gt)])
+            code = codes.get(gt)
+            if code is None:
+                code = codes[gt] = len(table)
+                table.append([index.get(c, -1) for c in gt.replace('|', '/').split('/')])
+                phased.append('|' in gt)
+            rows[i] = code
 
         chrom = variant.CHROM
-        if chrom not in self._contig_index:
-            self._contig_index[chrom] = len(self._contig_ids)
+        contig = self._contig_index.get(chrom)
+        if contig is None:
+            contig = self._contig_index[chrom] = len(self._contig_ids)
             self._contig_ids.append(chrom)
+            self._contig_length.append(1)
 
-        self._positions.append(int(variant.POS))
-        self._contigs.append(self._contig_index[chrom])
-        self._alleles.append(alleles)
-        self._genotypes.append(rows)
-        self._phased.append(phased)
-        self._infos.append(dict(variant.INFO) if getattr(variant, 'INFO', None) else {})
+        pos = int(variant.POS)
+        if pos > self._contig_length[contig]:
+            self._contig_length[contig] = pos
 
-    def close(self) -> None:
+        width = max((len(call) for call in table), default=0)
+        self._reserve(width, len(alleles))
+
+        row = self._row
+        calls = np.full((len(table), width), -1, dtype=self._buf_genotype.dtype)
+        for i, call in enumerate(table):
+            calls[i, :len(call)] = call
+
+        # the buffers are reused across chunks, so the row is cleared before it is filled
+        self._buf_position[row] = pos
+        self._buf_contig[row] = contig
+        self._buf_allele[row] = ''
+        self._buf_allele[row, :len(alleles)] = alleles
+        self._buf_genotype[row] = -1
+        self._buf_genotype[row, :len(rows), :width] = calls[rows]
+        self._buf_phased[row] = False
+        self._buf_phased[row, :len(rows)] = np.asarray(phased, dtype=bool)[rows]
+
+        self._record_info(variant)
+
+        self._n += 1
+        self._row += 1
+
+        if self._row == self._variant_chunk:
+            self._flush()
+
+    def _record_info(self, variant: Site) -> None:
         """
-        Write the buffered variants to the store.
+        Buffer the INFO values of a variant, keeping one list per field aligned with the variants.
+
+        :param variant: The variant whose INFO fields to record.
+        """
+        info = dict(variant.INFO) if getattr(variant, 'INFO', None) else {}
+
+        for key, value in info.items():
+            values = self._info.get(key)
+
+            if values is None:
+                if f'variant_{key}' in self._reserved:
+                    self._skipped.add(key)
+                    continue
+
+                # a field may first appear at any variant, so the earlier ones are marked as missing
+                values = self._info[key] = [self._missing] * self._n
+
+            # cyvcf2 returns a tuple for a Number=A/R/G/. field; write the comma-separated form the VCF
+            # uses, so the value stays parseable instead of becoming a Python repr such as "(12, 3)"
+            if isinstance(value, (tuple, list, np.ndarray)):
+                value = ','.join(str(x) for x in value)
+
+            values.append(value)
+
+        for values in self._info.values():
+            if len(values) == self._n:
+                values.append(self._missing)
+
+    def _reserve(self, ploidy: int, alleles: int) -> None:
+        """
+        Make room in the buffers for a variant of the given ploidy and allele count, allocating them on
+        the first variant and widening them where a ragged axis grows.
+
+        :param ploidy: The widest call of the variant.
+        :param alleles: The number of alleles the variant carries.
+        """
+        self._ploidy = ploidy if self._ploidy is None else max(self._ploidy, ploidy)
+        self._max_alleles = alleles if self._max_alleles is None else max(self._max_alleles, alleles)
+
+        n_samples = len(self._samples)
+
+        if self._buf_position is None:
+            self._buf_position = np.empty(self._variant_chunk, dtype=np.int64)
+            self._buf_contig = np.empty(self._variant_chunk, dtype=np.int64)
+            self._buf_phased = np.zeros((self._variant_chunk, n_samples), dtype=bool)
+            self._buf_genotype = np.full((self._variant_chunk, n_samples, self._axis_ploidy), -1,
+                                         dtype=self._gt_dtype)
+            self._buf_allele = np.full((self._variant_chunk, self._axis_alleles), '', dtype=object)
+            return
+
+        if self._buf_genotype.shape[2] != self._axis_ploidy or self._buf_genotype.dtype != self._gt_dtype:
+            widened = np.full((self._variant_chunk, n_samples, self._axis_ploidy), -1, dtype=self._gt_dtype)
+
+            # the axis narrows where the variants so far carry no call at all and the default ploidy of
+            # two gives way to the first call seen, whose columns beyond it hold nothing but the fill
+            width = min(self._buf_genotype.shape[2], self._axis_ploidy)
+            widened[:self._row, :, :width] = self._buf_genotype[:self._row, :, :width]
+            self._buf_genotype = widened
+
+        if self._buf_allele.shape[1] != self._axis_alleles:
+            widened = np.full((self._variant_chunk, self._axis_alleles), '', dtype=object)
+            widened[:self._row, :self._buf_allele.shape[1]] = self._buf_allele[:self._row]
+            self._buf_allele = widened
+
+    def _chunks(self, shape: Tuple[int, ...], dimensions: List[str]) -> Tuple[int, ...]:
+        """
+        The chunk grid of an array. The spec requires a single chunk size along ``variants`` across all
+        variant and call arrays, and a single one along ``samples`` across the call arrays, so readers
+        such as vcztools can align the chunk grids. Zarr's own auto-chunking would pick a different grid
+        per array and leave the store readable only by us.
+
+        :param shape: The final shape of the array.
+        :param dimensions: The names of its axes.
+        :return: The chunk shape.
+        """
+        sizes = {'variants': self._variant_chunk, 'samples': self._sample_chunk}
+
+        # any remaining axis (ploidy, alleles, contigs) stays in a single chunk, and an empty axis
+        # still needs a positive chunk length
+        return tuple(max(1, min(sizes.get(dim, extent), extent)) for dim, extent in zip(dimensions, shape))
+
+    def _create(self, name: str, shape: Tuple[int, ...], dtype, dimensions: List[str], extent=None):
+        """
+        Create an array in the store. Every array carries an ``_ARRAY_DIMENSIONS`` attribute naming its
+        axes, so the store is a spec-compliant VCF-Zarr readable by vcztools / sgkit and not only by our
+        own reader. Variable-length strings use the native zarr-3 ``str`` dtype.
+
+        :param name: The array name.
+        :param shape: The shape to create it with.
+        :param dtype: The dtype.
+        :param dimensions: The names of its axes.
+        :param extent: The final shape the chunk grid is clamped to, where it differs from ``shape``.
+        :return: The created array.
+        """
+        array = self._root.create_array(name, shape=shape, dtype=dtype,
+                                        chunks=self._chunks(shape if extent is None else extent, dimensions))
+        array.attrs['_ARRAY_DIMENSIONS'] = list(dimensions)
+
+        return array
+
+    def _write(self, name: str, data, dimensions: List[str]) -> None:
+        """
+        Create an array and write it whole.
+
+        :param name: The array name.
+        :param data: The data.
+        :param dimensions: The names of its axes.
+        """
+        data = np.asarray(data)
+        array = self._create(name, data.shape, str if data.dtype == object else data.dtype, dimensions)
+        array[...] = data
+
+    @staticmethod
+    def _str_data(values) -> np.ndarray:
+        """
+        Cast values to an object array of strings, which is written as a variable-length string array.
+
+        :param values: The values.
+        :return: The object array.
+        """
+        return np.asarray([str(v) for v in values], dtype=object)
+
+    def _open(self) -> None:
+        """
+        Open the store and create the streamed arrays. A mid-stream flush only happens once the first
+        chunk is complete, so clamping the grid to the variants seen so far gives the same result as
+        clamping it to the final count.
         """
         import zarr
 
-        root = zarr.open(self._output, mode='w')
+        self._root = zarr.open(self._output, mode='w')
 
-        # the spec requires a single chunk size along ``variants`` across all variant and call arrays,
-        # and a single one along ``samples`` across the call arrays, so readers such as vcztools can
-        # align the chunk grids; the defaults match those of vcf2zarr. Zarr's own auto-chunking would
-        # pick a different grid per array and leave the store readable only by us.
-        variant_chunk = 10000
-        sample_chunk = 1000
-
-        def _chunks(shape, dimensions):
-            sizes = {'variants': variant_chunk, 'samples': sample_chunk}
-            # any remaining axis (ploidy, alleles, contigs) stays in a single chunk, and an empty axis
-            # still needs a positive chunk length
-            return tuple(max(1, min(sizes.get(dim, extent), extent)) for dim, extent in zip(dimensions, shape))
-
-        # every array carries an _ARRAY_DIMENSIONS attribute naming its axes, and the root carries the
-        # vcf_zarr_version, so the store is a spec-compliant VCF-Zarr readable by vcztools / sgkit and
-        # not only by our own reader. Variable-length strings use the native zarr-3 ``str`` dtype.
-        def _array(name: str, data, dimensions):
-            data = np.asarray(data)
-            dtype = str if data.dtype == object else data.dtype
-            arr = root.create_array(name, shape=data.shape, dtype=dtype,
-                                    chunks=_chunks(data.shape, dimensions))
-            arr[...] = data
-            arr.attrs['_ARRAY_DIMENSIONS'] = list(dimensions)
-
-        def _str_data(values):
-            return np.asarray([str(v) for v in values], dtype=object)
-
-        _array('sample_id', _str_data(self._samples), ['samples'])
-        _array('contig_id', _str_data(self._contig_ids), ['contigs'])
-
-        n = len(self._positions)
         n_samples = len(self._samples)
-        ploidy = max((len(call) for rows in self._genotypes for call in rows), default=2)
-        max_alleles = max((len(a) for a in self._alleles), default=1)
+        genotype = (self._n, n_samples, self._axis_ploidy)
 
-        # per-contig lengths (from the last position seen on each), so a ##contig header can be emitted
-        contig_length = np.ones(len(self._contig_ids), dtype=np.int64)
-        for cid, pos in zip(self._contigs, self._positions):
-            contig_length[cid] = max(int(contig_length[cid]), int(pos))
-        _array('contig_length', contig_length, ['contigs'])
+        self._create('variant_position', (0,), np.int64, ['variants'], extent=(self._n,))
+        self._create('variant_contig', (0,), np.int64, ['variants'], extent=(self._n,))
+        self._create('call_genotype', (0, n_samples, self._axis_ploidy), self._gt_dtype,
+                     ['variants', 'samples', 'ploidy'], extent=genotype)
+        self._create('call_genotype_phased', (0, n_samples), bool, ['variants', 'samples'],
+                     extent=(self._n, n_samples))
+        self._create('variant_allele', (0, self._axis_alleles), str, ['variants', 'alleles'],
+                     extent=(self._n, self._axis_alleles))
 
-        _array('variant_position', np.array(self._positions, dtype=np.int64), ['variants'])
-        _array('variant_contig', np.array(self._contigs, dtype=np.int64), ['variants'])
+    def _widen(self) -> None:
+        """
+        Grow the ragged axes of the arrays already in the store to their current extent, so the buffered
+        chunk fits.
+        """
+        genotype = self._root['call_genotype']
 
-        # size the allele-index dtype to the data so many-allele sites do not wrap
-        gt_dtype = np.int8 if max_alleles <= np.iinfo(np.int8).max else np.int32
-        genotype = np.full((n, n_samples, ploidy), -1, dtype=gt_dtype)
-        phased = np.zeros((n, n_samples), dtype=bool)
-        for vi, (rows, ph) in enumerate(zip(self._genotypes, self._phased)):
-            for si, call in enumerate(rows):
-                genotype[vi, si, :len(call)] = call
-                phased[vi, si] = ph[si]
+        if genotype.shape[2] != self._axis_ploidy or genotype.dtype != self._gt_dtype:
+            self._rebuild('call_genotype', (len(self._samples), self._axis_ploidy), self._gt_dtype, -1,
+                          ['variants', 'samples', 'ploidy'])
 
-        _array('call_genotype', genotype, ['variants', 'samples', 'ploidy'])
-        _array('call_genotype_phased', phased, ['variants', 'samples'])
+        if self._root['variant_allele'].shape[1] != self._axis_alleles:
+            self._rebuild('variant_allele', (self._axis_alleles,), str, '', ['variants', 'alleles'])
 
-        allele = np.full((n, max_alleles), '', dtype=object)
-        for vi, a in enumerate(self._alleles):
-            allele[vi, :len(a)] = a
-        _array('variant_allele', allele, ['variants', 'alleles'])
+    def _rebuild(self, name: str, tail: Tuple[int, ...], dtype, fill, dimensions: List[str]) -> None:
+        """
+        Recreate an array with a wider trailing shape, carrying the data over a chunk at a time so only
+        one chunk is held in memory. Zarr fixes the chunk grid at creation, so the widened axis needs a
+        fresh array rather than a resize.
 
-        # persist any INFO fields (e.g. an annotated ancestral allele or degeneracy) as variant_<tag>
-        # arrays, typed to match the values so a numeric field round-trips as a number rather than a
-        # string; skip any whose name would collide with a reserved coordinate/allele/genotype dataset
-        reserved = {'variant_position', 'variant_contig', 'variant_allele',
-                    'call_genotype', 'call_genotype_phased', 'sample_id', 'contig_id'}
-        _missing = object()
+        :param name: The array name.
+        :param tail: The shape after the ``variants`` axis.
+        :param dtype: The dtype.
+        :param fill: The value the widened columns take.
+        :param dimensions: The names of its axes.
+        """
+        staging = f'{name}_staging'
+        shape = (self._root[name].shape[0],) + tail
+
+        self._copy(self._root[name], self._create(staging, shape, dtype, dimensions), fill)
+        del self._root[name]
+
+        self._copy(self._root[staging], self._create(name, shape, dtype, dimensions), fill)
+        del self._root[staging]
+
+    def _copy(self, source, target, fill) -> None:
+        """
+        Copy an array chunk by chunk into a target whose trailing axis is at least as wide.
+
+        :param source: The array to read.
+        :param target: The array to write.
+        :param fill: The value the columns beyond the source's width take.
+        """
+        dtype = object if isinstance(fill, str) else target.dtype
+        width = min(source.shape[-1], target.shape[-1])
+
+        for start in range(0, source.shape[0], self._variant_chunk):
+            stop = min(start + self._variant_chunk, source.shape[0])
+            block = np.full((stop - start,) + target.shape[1:], fill, dtype=dtype)
+            block[..., :width] = source[start:stop][..., :width]
+            target[start:stop] = block
+
+    def _flush(self) -> None:
+        """
+        Write the buffered chunk to the store, creating or widening the arrays as needed.
+        """
+        if self._root is None:
+            self._open()
+        else:
+            self._widen()
+
+        if self._row == 0:
+            return
+
+        start, stop = self._flushed, self._flushed + self._row
+
+        for name, buffer in (('variant_position', self._buf_position),
+                             ('variant_contig', self._buf_contig),
+                             ('call_genotype', self._buf_genotype),
+                             ('call_genotype_phased', self._buf_phased),
+                             ('variant_allele', self._buf_allele)):
+            array = self._root[name]
+            array.resize((stop,) + array.shape[1:])
+            array[start:stop] = buffer[:self._row]
+
+        self._flushed = stop
+        self._row = 0
+
+    def close(self) -> None:
+        """
+        Write the remaining variants and finalise the store.
+        """
+        # the arrays are created as the store is finalised, so finalising twice would fail on them; a
+        # teardown that runs again after an error must not turn that into a second, confusing exception
+        if self._closed:
+            return
+
+        self._closed = True
+
+        self._flush()
+
+        self._write('sample_id', self._str_data(self._samples), ['samples'])
+        self._write('contig_id', self._str_data(self._contig_ids), ['contigs'])
+        self._write('contig_length', np.array(self._contig_length, dtype=np.int64), ['contigs'])
+
+        self._write_info()
+
+        # mark the store as a spec-compliant VCF-Zarr so external readers (vcztools/sgkit) accept it
+        from . import __version__
+        self._root.attrs['vcf_zarr_version'] = '0.5'
+        self._root.attrs['source'] = f'sfsutils-{__version__}'
+
+    def _write_info(self) -> None:
+        """
+        Persist any INFO fields (e.g. an annotated ancestral allele or degeneracy) as ``variant_<tag>``
+        arrays, typed to match the values so a numeric field round-trips as a number rather than a
+        string; skip any whose name would collide with a reserved coordinate/allele/genotype dataset.
+        """
+        _missing = self._missing
 
         def _is_bool(v):
             return isinstance(v, (bool, np.bool_))
@@ -1764,45 +2081,36 @@ class ZarrVariantWriter(VariantWriter):
         # a missing INFO value; a plain np.nan would be exported as the literal token 'nan'
         float_missing = np.array([0x7FF0000000000001], dtype=np.uint64).view(np.float64)[0]
 
-        info_keys = sorted({k for info in self._infos for k in info})
-        for key in info_keys:
+        for key in sorted(self._skipped):
+            self._logger.warning(f"Skipping INFO field '{key}': it collides with the reserved VCF-Zarr "
+                                 f"dataset 'variant_{key}'.")
+
+        for key in sorted(self._info):
             name = f'variant_{key}'
 
-            if name in reserved:
-                self._logger.warning(f"Skipping INFO field '{key}': it collides with the reserved VCF-Zarr "
-                                     f"dataset '{name}'.")
-                continue
-
-            raw = [info.get(key, _missing) for info in self._infos]
-
-            # cyvcf2 returns a tuple for a Number=A/R/G/. field; write the comma-separated form the VCF uses,
-            # so the value stays parseable instead of becoming a Python repr such as "(12, 3)"
-            raw = [','.join(str(x) for x in v) if isinstance(v, (tuple, list, np.ndarray)) else v for v in raw]
+            # a field the last variants do not carry is missing on them
+            raw = self._info[key]
+            raw.extend([_missing] * (self._n - len(raw)))
 
             present = [v for v in raw if not _absent(v)]
 
             if present and all(_is_bool(v) for v in present):
                 data = np.array([bool(v) if not _absent(v) else False for v in raw], dtype=bool)
-                _array(name, data, ['variants'])
+                self._write(name, data, ['variants'])
             elif (present and all(_is_int(v) for v in present) and not any(_absent(v) for v in raw)
                   and all(_fits_int64(v) for v in present)):
                 # every site carries an int64-representable integer: store a plain integer array (an
                 # out-of-range integer falls through to the string branch so it is not silently truncated)
-                _array(name, np.array([int(v) for v in raw], dtype=np.int64), ['variants'])
+                self._write(name, np.array([int(v) for v in raw], dtype=np.int64), ['variants'])
             elif present and all(_is_float(v) or (_is_int(v) and _fits_int64(v)) for v in present):
                 # numeric but possibly missing on some sites: a float array carries the missing sentinel
                 # for the gaps (int values ride along as floats, e.g. a partly-annotated Degeneracy).
                 # An out-of-int64 integer would lose precision as a float, so it falls to the string branch.
                 data = np.array([float(v) if not _absent(v) else float_missing for v in raw], dtype=np.float64)
-                _array(name, data, ['variants'])
+                self._write(name, data, ['variants'])
             else:
                 # strings (or mixed/empty): keep the string array, '' for a missing value
-                _array(name, _str_data(['' if _absent(v) else str(v) for v in raw]), ['variants'])
-
-        # mark the store as a spec-compliant VCF-Zarr so external readers (vcztools/sgkit) accept it
-        from . import __version__
-        root.attrs['vcf_zarr_version'] = '0.5'
-        root.attrs['source'] = f'sfsutils-{__version__}'
+                self._write(name, self._str_data(['' if _absent(v) else str(v) for v in raw]), ['variants'])
 
 
 class TskitVariantWriter(VariantWriter):

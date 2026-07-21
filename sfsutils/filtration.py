@@ -266,12 +266,35 @@ class PolyAllelicFiltration(MaskedFiltration):
         :param variant: The variant to filter.
         :return: ``True`` if the variant is not poly-allelic, ``False`` otherwise.
         """
-        # if we don't have a samples mask, simply check whether the variant is poly-allelic
-        if self._samples_mask is None or isinstance(variant, DummyVariant):
-            return len(variant.ALT) < 2
+        # with at most one alternate allele no subset of samples can carry three alleles, so the site is kept
+        # without decoding any genotype. This settles the monomorphic and bi-allelic bulk of a typical input
+        if len(variant.ALT) < 2:
+            return True
 
-        # otherwise check whether the variant is poly-allelic among the included samples
-        return len(get_distinct_called_alleles(variant.gt_bases[self._samples_mask])) < 3
+        # without a samples mask the ``ALT`` field alone decides
+        if self._samples_mask is None or isinstance(variant, DummyVariant):
+            return False
+
+        # otherwise check whether the variant is poly-allelic among the included samples. cyvcf2 rebuilds
+        # gt_bases on every access and splitting it into alleles dominates this check, so use the numeric
+        # genotype codes to skip the samples they already settle
+        types = getattr(variant, 'gt_types', None)
+
+        if types is None:
+            return len(get_distinct_called_alleles(variant.gt_bases[self._samples_mask])) < 3
+
+        # a homozygous reference call has every called allele equal to the reference, so it contributes the
+        # reference allele and nothing else and need not be decoded. Any other code, including a partially
+        # missing call, may carry an alternate allele that the code does not identify, so it is decoded
+        hom_ref = np.asarray(types) == HOM_REF
+
+        alleles = get_distinct_called_alleles(variant.gt_bases[self._samples_mask & ~hom_ref])
+
+        if (self._samples_mask & hom_ref).any():
+            # route the reference through the same helper so it is subject to the same allele validity test
+            alleles = alleles | get_distinct_called_alleles([variant.REF or ''])
+
+        return len(alleles) < 3
 
 
 class AllFiltration(Filtration):
