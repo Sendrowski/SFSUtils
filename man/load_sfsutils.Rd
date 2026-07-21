@@ -29,4 +29,3 @@ load_sfsutils(install = TRUE)
 \seealso{
 \link[reticulate]{import} for importing Python modules in R.
 }
-}
