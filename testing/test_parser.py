@@ -1,6 +1,7 @@
 import logging
 
 import sfsutils as su
+from sfsutils.io_handlers import DummyVariant
 import numpy as np
 import pandas as pd
 import pytest
@@ -980,7 +981,7 @@ def test_chunked_stratification_rewind_resets_counter_and_no_overshoot():
     s._rewind()
     assert s.counter == 0 and s.n_valid == 0
 
-    types = [s.get_type(None) for _ in range(9)]  # 9 > sum(chunk_sizes) == 6
+    types = [s.get_type(DummyVariant("A", i + 1, "1")) for i in range(9)]  # 9 > sum(chunk_sizes) == 6
     assert types[:6] == ['chunk0', 'chunk0', 'chunk1', 'chunk1', 'chunk2', 'chunk2']
     assert all(t == 'chunk2' for t in types[6:])  # overshoot -> last chunk, no StopIteration
 

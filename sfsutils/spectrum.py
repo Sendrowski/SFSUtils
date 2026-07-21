@@ -75,14 +75,17 @@ class AbstractSpectrum(ABC):
         """
         return float(np.sum(self.data))
 
-    def __array__(self, dtype=None) -> np.ndarray:
+    def __array__(self, dtype=None, copy=None) -> np.ndarray:
         """
         Numpy array interface so the spectrum can be used directly in numpy operations.
 
         :param dtype: Optional dtype.
+        :param copy: Whether to copy the underlying array, as numpy 2 requires this interface to accept.
         :return: The underlying array.
         """
-        return self.data if dtype is None else self.data.astype(dtype)
+        data = self.data if dtype is None else self.data.astype(dtype)
+
+        return np.array(data, copy=True) if copy else data
 
     def __iter__(self) -> Iterator:
         """
@@ -557,6 +560,37 @@ class Spectrum(AbstractSpectrum):
         """
         return Spectrum(self.data / self._array_or_scalar(other))
 
+    # the reflected operators, so a scalar or array on the left is handled rather than raising. Subtraction and
+    # division do not commute, hence the explicit operand order.
+    __radd__ = __add__
+
+    def __rsub__(self, other: Iterable | float) -> 'Spectrum':
+        """
+        Subtract the spectrum from an iterable or scalar.
+
+        :param other: Iterable or scalar
+        :return: Spectrum
+        """
+        return Spectrum(self._array_or_scalar(other) - self.data)
+
+    def __rtruediv__(self, other: Iterable | float) -> 'Spectrum':
+        """
+        Divide an iterable or scalar by the spectrum.
+
+        :param other: Iterable or scalar
+        :return: Spectrum
+        """
+        return Spectrum(self._array_or_scalar(other) / self.data)
+
+    def __rfloordiv__(self, other: Iterable | float) -> 'Spectrum':
+        """
+        Floor-divide an iterable or scalar by the spectrum.
+
+        :param other: Iterable or scalar
+        :return: Spectrum
+        """
+        return Spectrum(self._array_or_scalar(other) // self.data)
+
     def __iter__(self):
         """
         Get iterator.
@@ -992,14 +1026,25 @@ class Spectra(AbstractSpectra):
         """
         return self.k
 
-    def __add__(self, other: 'Spectra') -> 'Spectra':
+    def __add__(self, other: Union['Spectra', Iterable, float]) -> 'Spectra':
         """
-        Merge types of two spectra objects by adding up their counts entry-wise.
+        Merge types of two spectra objects by adding up their counts entry-wise, or add a scalar or array to
+        every type.
 
-        :param other: Spectra object
+        :param other: Spectra object, iterable or scalar
         :return: Spectra with merged types
+        :raises ValueError: If the sample sizes differ, which would align the counts by position and silently
+            shift the divergence counts into a polymorphic class.
         """
-        return Spectra.from_dataframe(self.data.add(other.data, fill_value=0))
+        if not isinstance(other, Spectra):
+            return Spectra.from_dataframe(self.data.add(other, axis=0))
+
+        if self.n != other.n:
+            raise ValueError(f'Cannot add spectra of different sample sizes ({self.n} and {other.n}): the counts '
+                             f'would be aligned by position rather than by allele count.')
+
+        # types present in only one operand are filled with zeros rather than left as NaN
+        return Spectra.from_dataframe(self.data.add(other.data, fill_value=0).fillna(0))
 
     def __getitem__(
             self,
@@ -1189,10 +1234,13 @@ class Spectra(AbstractSpectra):
         :param file: Path to file, possibly URL
         :return: Spectra object
         """
-        return Spectra.from_dataframe(pd.read_csv(download_if_url(
-            file,
-            desc=f'{cls.__name__}>Downloading file'))
-        )
+        path = download_if_url(file, desc=f'{cls.__name__}>Downloading file')
+
+        try:
+            return Spectra.from_dataframe(pd.read_csv(path))
+        except pd.errors.EmptyDataError:
+            # a Spectra with no types writes a header-less file, which pandas cannot parse back
+            return Spectra({})
 
     @staticmethod
     def from_spectra(spectra: Dict[str, Spectrum]) -> 'Spectra':
@@ -1418,6 +1466,9 @@ class TwoSFS(AbstractSpectrum):
     :class:`JointSFS`.
     """
 
+    #: Defer to the reflected operators so a numpy scalar on the left does not broadcast over the 2-SFS
+    __array_ufunc__ = None
+
     # class-level defaults so jsonpickle can restore spectra serialized without these attributes
     n: int = None
     w: int = None
@@ -1515,6 +1566,29 @@ class TwoSFS(AbstractSpectrum):
             return self / other.data
 
         return TwoSFS(self.data / other)
+
+
+    # the reflected operators, so a scalar or array on the left yields a 2-SFS rather than a bare ndarray
+    __radd__ = __add__
+    __rmul__ = __mul__
+
+    def __rsub__(self, other) -> 'TwoSFS':
+        """
+        Subtract the 2-SFS from a scalar or array.
+
+        :param other: A scalar or array.
+        :return: 2-SFS
+        """
+        return TwoSFS(other - self.data)
+
+    def __rtruediv__(self, other) -> 'TwoSFS':
+        """
+        Divide a scalar or array by the 2-SFS.
+
+        :param other: A scalar or array.
+        :return: 2-SFS
+        """
+        return TwoSFS(other / self.data)
 
     def __pow__(self, power) -> 'TwoSFS':
         """
@@ -1954,6 +2028,9 @@ class JointSFS(AbstractSpectrum):
     unlike the square :class:`TwoSFS`); for three populations it is a 3-dimensional array, and so on.
     """
 
+    #: Defer to the reflected operators so a numpy scalar on the left does not broadcast over the joint SFS
+    __array_ufunc__ = None
+
     # class-level default so jsonpickle can restore spectra serialized without population names
     pop_names: List[str] = None
 
@@ -2041,6 +2118,29 @@ class JointSFS(AbstractSpectrum):
         :return: Joint SFS.
         """
         return JointSFS(self.data / (other.data if isinstance(other, JointSFS) else other), self.pop_names)
+
+
+    # the reflected operators, so a scalar or array on the left keeps the population names
+    __radd__ = __add__
+    __rmul__ = __mul__
+
+    def __rsub__(self, other) -> 'JointSFS':
+        """
+        Subtract the joint SFS from a scalar or array.
+
+        :param other: A scalar or array.
+        :return: Joint SFS
+        """
+        return JointSFS(other - self.data, self.pop_names)
+
+    def __rtruediv__(self, other) -> 'JointSFS':
+        """
+        Divide a scalar or array by the joint SFS.
+
+        :param other: A scalar or array.
+        :return: Joint SFS
+        """
+        return JointSFS(other / self.data, self.pop_names)
 
     def __pow__(self, power) -> 'JointSFS':
         """

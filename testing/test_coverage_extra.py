@@ -309,11 +309,15 @@ def test_synonymy_stratification_missing_tag_raises():
 
 # --- filtration dummy-variant branches --------------------------------------------------------
 
-def test_deviant_outgroup_filtration_drops_dummy():
-    """A monomorphic dummy site is dropped when monomorphic sites are not retained."""
+def test_deviant_outgroup_filtration_keeps_dummy():
+    """A dummy site is all-ancestral by construction, so ingroup and outgroup major bases agree and the
+    filtration's criterion keeps it, regardless of ``retain_monomorphic``. That flag governs monomorphic
+    sites of the sequence itself; dropping the dummy target sites instead would leave the
+    :class:`~sfsutils.parser.TargetSiteCounter` without any sampled monomorphic site, silently turning
+    ``n_target_sites`` into a no-op."""
     from sfsutils.io_handlers import DummyVariant
     f = su.DeviantOutgroupFiltration(outgroups=["o1"], retain_monomorphic=False)
-    assert f.filter_site(DummyVariant("A", 1, "chr1")) is False
+    assert f.filter_site(DummyVariant("A", 1, "chr1")) is True
 
 
 def test_existing_outgroup_filtration_keeps_dummy():

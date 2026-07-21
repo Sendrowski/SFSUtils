@@ -4518,10 +4518,13 @@ class Annotator(MultiHandler):
         for annotation in self.annotations:
             annotation._teardown()
 
-        # close the writer and reader (guarded so an error mid-setup still releases what was opened)
+        # close the writer and reader (guarded so an error mid-setup still releases what was opened).
+        # _reader is a cached_property, so only close it when it was actually opened, checking the cache
+        # directly rather than via hasattr, which would open (and for a URL download) it just to close it.
         if self._writer is not None:
             self._writer.close()
-        self._reader.close()
+        if '_reader' in self.__dict__:
+            self._reader.close()
 
     def annotate(self):
         """

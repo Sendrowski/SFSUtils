@@ -25,27 +25,27 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
 .. code-block:: bash
 
    # one-dimensional SFS, projected to 20 haplotypes
-   sfsutils parse --vcf variants.vcf.gz --n 20 --out sfs.csv
+   sfsutils parse --vcf variants.vcf.gz --n 20 --output sfs.csv
 
    # the same, reading a VCF-Zarr store instead
-   sfsutils parse --zarr variants.vcz --n 20 --out sfs.csv
+   sfsutils parse --zarr variants.vcz --n 20 --output sfs.csv
 
    # a tree sequence stores the ancestral state as the reference allele rather than in an AA tag, so the
    # polarization has to be told not to skip the sites that carry no such tag
-   sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --out sfs.csv
+   sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --output sfs.csv
 
    # neutral vs selected SFS, annotating and stratifying by degeneracy
    sfsutils parse --vcf variants.vcf.gz --n 20 \
        --fasta genome.fasta --gff genome.gff.gz \
        --annotate degeneracy --stratify degeneracy \
-       --filter snp --out sfs.csv
+       --filter snp --output sfs.csv
 
    # joint SFS across two populations
    sfsutils parse --vcf variants.vcf.gz --n 10 \
-       --pops "CEU=NA06984,NA06985;YRI=NA18486,NA18487" --out jsfs.json
+       --pops "CEU=NA06984,NA06985;YRI=NA18486,NA18487" --output jsfs.json
 
    # two-site SFS, pairing sites within 1 kb
-   sfsutils parse --vcf variants.vcf.gz --n 20 --two-sfs --two-sfs-distance 1000 --out two_sfs.json
+   sfsutils parse --vcf variants.vcf.gz --n 20 --two-sfs --two-sfs-distance 1000 --output two_sfs.json
 
 .. list-table::
    :header-rows: 1
@@ -55,7 +55,7 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
      - Description
    * - ``--vcf`` / ``--zarr`` / ``--trees``
      - Input source: a VCF (gzipped or a URL), a VCF-Zarr store (``.vcz`` / ``.zarr``), or a tskit tree sequence (``.trees``). Exactly one is required.
-   * - ``--out``
+   * - ``--output``
      - Output spectrum (CSV for one population, JSON for a joint or two-site SFS). Required.
    * - ``--n``
      - Sample size to project to (per population for a joint SFS). Required.
@@ -85,7 +85,7 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
 filter
 ------
 
-Write only the sites that pass the given filtrations. The output format follows the ``--out`` extension: a VCF
+Write only the sites that pass the given filtrations. The output format follows the ``--output`` extension: a VCF
 (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store
 can be written from any input. A tree-sequence output requires a tree-sequence input, since a genealogy cannot be
 reconstructed from genotype data (the surviving sites are kept via ``delete_sites``). A VCF output requires a VCF
@@ -95,14 +95,14 @@ input because the writer copies the header (contigs, INFO/FORMAT definitions) fr
 
    # keep only biallelic SNPs in coding sequences
    sfsutils filter --vcf variants.vcf.gz --filter snp,coding-sequence \
-       --gff genome.gff.gz --out coding.vcf.gz
+       --gff genome.gff.gz --output coding.vcf.gz
 
    # the same, writing a VCF-Zarr store instead
    sfsutils filter --vcf variants.vcf.gz --filter snp,coding-sequence \
-       --gff genome.gff.gz --out coding.vcz
+       --gff genome.gff.gz --output coding.vcz
 
    # subset a tree sequence to its SNP sites, keeping the genealogy
-   sfsutils filter --trees ancestry.trees --filter snp --out coding.trees
+   sfsutils filter --trees ancestry.trees --filter snp --output coding.trees
 
 .. list-table::
    :header-rows: 1
@@ -112,7 +112,7 @@ input because the writer copies the header (contigs, INFO/FORMAT definitions) fr
      - Description
    * - ``--vcf`` / ``--zarr`` / ``--trees``
      - Input source (VCF, VCF-Zarr store, or tree sequence). Exactly one is required.
-   * - ``--out``
+   * - ``--output``
      - Output path; its extension selects the format (``.vcf``/``.vcf.gz``, ``.vcz``/``.zarr``, ``.trees``). Required.
    * - ``--filter``
      - Comma-separated filtrations (see ``parse``). Required.
@@ -126,7 +126,7 @@ annotate
 
 Write the input back with added site-level information: site degeneracy from a reference (``degeneracy``), or the
 ancestral allele inferred from outgroups under a maximum-likelihood substitution model
-(``maximum-likelihood-ancestral``). As for ``filter``, the output format follows the ``--out`` extension: a VCF
+(``maximum-likelihood-ancestral``). As for ``filter``, the output format follows the ``--output`` extension: a VCF
 (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store can
 be written from any input; a VCF requires a VCF input (its header is copied from the source) and a tree sequence a
 tree-sequence input.
@@ -135,16 +135,16 @@ tree-sequence input.
 
    # annotate site degeneracy
    sfsutils annotate --vcf variants.vcf.gz --annotation degeneracy \
-       --fasta genome.fasta --gff genome.gff.gz --out degeneracy.vcf.gz
+       --fasta genome.fasta --gff genome.gff.gz --output degeneracy.vcf.gz
 
    # the same, writing a VCF-Zarr store instead
    sfsutils annotate --vcf variants.vcf.gz --annotation degeneracy \
-       --fasta genome.fasta --gff genome.gff.gz --out degeneracy.vcz
+       --fasta genome.fasta --gff genome.gff.gz --output degeneracy.vcz
 
    # infer the ancestral allele from two outgroups
    sfsutils annotate --vcf variants.with_outgroups.vcf.gz \
        --annotation maximum-likelihood-ancestral \
-       --outgroups ERR2103730,ERR2103731 --n-ingroups 15 --out polarized.vcf.gz
+       --outgroups ERR2103730,ERR2103731 --n-ingroups 15 --output polarized.vcf.gz
 
 .. list-table::
    :header-rows: 1
@@ -154,7 +154,7 @@ tree-sequence input.
      - Description
    * - ``--vcf`` / ``--zarr`` / ``--trees``
      - Input source (VCF, VCF-Zarr store, or tree sequence). Exactly one is required.
-   * - ``--out``
+   * - ``--output``
      - Output path; its extension selects the format (``.vcf``/``.vcf.gz``, ``.vcz``/``.zarr``, ``.trees``). Required.
    * - ``--annotation``
      - Comma-separated annotations (``degeneracy``, ``maximum-likelihood-ancestral``). Required.

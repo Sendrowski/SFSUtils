@@ -26,7 +26,7 @@ requires_fixtures = pytest.mark.skipif(
 # --- parser-level ---------------------------------------------------------------------------------
 
 def test_defaults():
-    ns = build_parser().parse_args(["parse", "--vcf", "x.vcf", "--n", "10", "--out", "o.csv"])
+    ns = build_parser().parse_args(["parse", "--vcf", "x.vcf", "--n", "10", "--output", "o.csv"])
     assert ns.command == "parse"
     assert ns.n == 10
     assert ns.filter == ["poly-allelic"]
@@ -38,7 +38,7 @@ def test_defaults():
 
 def test_csv_and_flag_parsing():
     ns = build_parser().parse_args(
-        ["parse", "--vcf", "x", "--n", "8", "--out", "o", "--stratify", "degeneracy,synonymy",
+        ["parse", "--vcf", "x", "--n", "8", "--output", "o", "--stratify", "degeneracy,synonymy",
          "--filter", "snp,coding-sequence", "--no-skip-non-polarized", "--two-sfs"]
     )
     assert ns.stratify == ["degeneracy", "synonymy"]
@@ -61,7 +61,7 @@ def test_subcommand_required():
 
 def test_verbose_quiet_mutually_exclusive():
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["-v", "-q", "parse", "--vcf", "x", "--n", "2", "--out", "o"])
+        build_parser().parse_args(["-v", "-q", "parse", "--vcf", "x", "--n", "2", "--output", "o"])
 
 
 # --- helper units ---------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ def test_build_filtrations_contig_requires_contigs():
 
 def test_two_sfs_offset_flag_parsed():
     ns = build_parser().parse_args(
-        ["parse", "--vcf", "x", "--n", "2", "--out", "o", "--two-sfs", "--two-sfs-offset", "50"])
+        ["parse", "--vcf", "x", "--n", "2", "--output", "o", "--two-sfs", "--two-sfs-offset", "50"])
     assert ns.two_sfs_offset == 50
 
 
@@ -128,7 +128,7 @@ def test_run_parse_one_dimensional(tmp_path):
     Settings.disable_pbar = True
     out = tmp_path / "sfs.csv"
     code = run(["-q", "parse", "--vcf", VCF, "--n", "20", "--no-skip-non-polarized",
-                "--subsample-mode", "random", "--out", str(out)])
+                "--subsample-mode", "random", "--output", str(out)])
     assert code == 0 and out.exists()
     # at full sample size the CLI must reproduce the tskit ground-truth SFS bin for bin
     expected = np.loadtxt(GROUND_TRUTH_SFS, dtype=int)
@@ -143,7 +143,7 @@ def test_run_parse_joint(tmp_path):
     out = tmp_path / "jsfs.json"
     code = run(["-q", "parse", "--vcf", JOINT_VCF, "--n", "6",
                 "--pops", "A=tsk_0,tsk_1,tsk_2,tsk_3;B=tsk_4,tsk_5,tsk_6",
-                "--no-skip-non-polarized", "--subsample-mode", "random", "--out", str(out)])
+                "--no-skip-non-polarized", "--subsample-mode", "random", "--output", str(out)])
     assert code == 0 and out.exists()
     loaded = su.JointSpectra.from_file(str(out))
     assert loaded.types == ["all"] and loaded.n_pops == 2
@@ -160,7 +160,7 @@ def test_run_parse_two_sfs(tmp_path):
     out = tmp_path / "two_sfs.json"
     code = run(["-q", "parse", "--vcf", TWO_SFS_VCF, "--n", "20", "--two-sfs",
                 "--two-sfs-distance", "1000", "--no-skip-non-polarized",
-                "--subsample-mode", "random", "--out", str(out)])
+                "--subsample-mode", "random", "--output", str(out)])
     assert code == 0 and out.exists()
     # the two-SFS parse mode writes a single-entry TwoSpectra collection (keyed 'all')
     sfs2 = su.TwoSpectra.from_file(str(out))["all"]
@@ -177,5 +177,5 @@ def test_run_parse_two_sfs(tmp_path):
 def test_run_filter(tmp_path):
     Settings.disable_pbar = True
     out = tmp_path / "filtered.vcf"
-    code = run(["-q", "filter", "--vcf", VCF, "--filter", "snp,poly-allelic", "--out", str(out)])
+    code = run(["-q", "filter", "--vcf", VCF, "--filter", "snp,poly-allelic", "--output", str(out)])
     assert code == 0 and out.exists() and out.stat().st_size > 0

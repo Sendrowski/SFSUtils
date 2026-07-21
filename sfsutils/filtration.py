@@ -149,16 +149,27 @@ class MaskedFiltration(Filtration, ABC):
 
         else:
 
+            samples = np.array(self._handler._reader.samples)
+
+            def _check(names, label):
+                """Reject names that are absent from the input rather than quietly ignoring them."""
+                missing = sorted(set(names) - set(samples.tolist()))
+
+                if missing:
+                    raise ValueError(f'The following {label} samples are not present in the input: {missing}.')
+
             # determine samples to include
             if self.include_samples is None:
 
-                mask = np.ones(len(self._handler._reader.samples)).astype(bool)
+                mask = np.ones(len(samples)).astype(bool)
             else:
-                mask = np.isin(self._handler._reader.samples, self.include_samples)
+                _check(self.include_samples, 'included')
+                mask = np.isin(samples, self.include_samples)
 
             # determine samples to exclude
             if self.exclude_samples is not None:
-                mask &= ~np.isin(self._handler._reader.samples, self.exclude_samples)
+                _check(self.exclude_samples, 'excluded')
+                mask &= ~np.isin(samples, self.exclude_samples)
 
             self._samples_mask = mask
 
@@ -481,9 +492,11 @@ class DeviantOutgroupFiltration(Filtration):
         if not variant.is_snp and self.retain_monomorphic:
             return True
 
-        # filter out dummies if retain_monomorphic is false
+        # a dummy target site is all-ancestral by construction, so its ingroup and outgroup major bases agree
+        # and this filter's own criterion keeps it. Dropping it would leave the TargetSiteCounter with no
+        # sampled monomorphic sites at all, making n_target_sites a no-op.
         if isinstance(variant, DummyVariant):
-            return False
+            return True
 
         # get major base among ingroup samples
         ingroup_base = get_major_base(variant.gt_bases[self.ingroup_mask])
@@ -809,6 +822,7 @@ class Filterer(MultiHandler):
         """
         for f in self.filtrations:
             f._teardown()
+            f._rewind()
 
         # close the writer and reader (guarded so an error mid-setup still releases what was opened).
         # _reader is a cached_property, so only close it when it was actually opened, checking the cache

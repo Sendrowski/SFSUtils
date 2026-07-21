@@ -8,6 +8,7 @@ __author__ = "Janek Sendrowski"
 __contact__ = "sendrowski.janek@gmail.com"
 __date__ = "2023-03-26"
 
+import bisect
 import functools
 import itertools
 import logging
@@ -195,8 +196,12 @@ class BaseContextStratification(Stratification, FASTAHandler):
         if self.contig is None or self.contig.id not in aliases:
             self._logger.debug(f"Fetching contig '{variant.CHROM}'.")
 
-            # fetch contig
-            self.contig = self.get_contig(aliases)
+            # fetch contig; a contig missing from the FASTA makes the site untypeable rather than being fatal,
+            # as every other consumer of get_contig already treats it
+            try:
+                self.contig = self.get_contig(aliases)
+            except LookupError as e:
+                raise NoTypeException(str(e))
 
         # check if position is valid
         if pos < 0 or pos >= len(self.contig):
@@ -524,10 +529,29 @@ class ContigStratification(GenomePositionDependentStratification):
         :param variant: The site
         :return: The contig name
         """
-        if self.contigs is not None and variant.CHROM not in self.contigs:
-            raise NoTypeException(f"Contig '{variant.CHROM}' not in list of contigs.")
+        if self.contigs is not None:
+            # match through the aliases, as ContigFiltration does, so an aliased contig is not dropped
+            # match through the aliases where a parser is attached, so an aliased contig is not dropped
+            aliases = self.parser.get_aliases(variant.CHROM) if self.parser is not None else [variant.CHROM]
+            matched = next((c for c in self.contigs if c in aliases), None)
 
-        return variant.CHROM
+            if matched is None:
+                raise NoTypeException(f"Contig '{variant.CHROM}' not in list of contigs.")
+
+            return self._sanitize(matched)
+
+        return self._sanitize(variant.CHROM)
+
+    @staticmethod
+    def _sanitize(contig: str) -> str:
+        """
+        Replace the dots of an accession-style contig name, which Spectra uses to separate stratification
+        levels and would otherwise split such a name into several levels.
+
+        :param contig: The contig name.
+        :return: The type name.
+        """
+        return contig.replace('.', '_')
 
     def get_types(self) -> List[str]:
         """
@@ -535,7 +559,7 @@ class ContigStratification(GenomePositionDependentStratification):
 
         :return: List of contexts
         """
-        return self.contigs or list(self.parser._reader.seqnames)
+        return [self._sanitize(c) for c in (self.contigs or list(self.parser._reader.seqnames))]
 
 
 class ChunkedStratification(GenomePositionDependentStratification):
@@ -553,8 +577,12 @@ class ChunkedStratification(GenomePositionDependentStratification):
         ``n_included / n_sites`` fraction of the record range, so they concentrate in the leading
         chunks and the trailing chunks come out under-filled or empty. The included count is not known
         at setup without an extra pass over the data, so the chunks cannot be pre-balanced; a warning
-        is logged at setup when the parser carries filtrations. Sites seen beyond the last boundary
-        (for instance during a second, target-site sampling pass) are folded into the final chunk.
+        is logged at setup when the parser carries filtrations.
+
+    The first pass assigns sites by counting them and records the genomic position at which each chunk
+    begins. Any further pass over the same input (the :class:`TargetSiteCounter` sampling pass, which visits a
+    different number of sites) is assigned by position instead, so a sampled site lands in the same chunk as the
+    variants surrounding it.
     """
 
     def __init__(self, n_chunks: int):
@@ -574,6 +602,15 @@ class ChunkedStratification(GenomePositionDependentStratification):
         #: Number of sites seen so far
         self.counter: int = 0
 
+        #: Index of each contig in the order in which the first pass encountered it
+        self._contig_order: Dict[str, int] = {}
+
+        #: Sort key (contig index, position) of the first site of each chunk, as recorded by the first pass
+        self._chunk_starts: List[Tuple[int, int]] = []
+
+        #: Whether sites are assigned by position rather than by counting them
+        self._positional: bool = False
+
     def _setup(self, parser: 'Parser'):
         """
         Set up the stratification.
@@ -581,6 +618,12 @@ class ChunkedStratification(GenomePositionDependentStratification):
         :param parser: The parser
         """
         super()._setup(parser)
+
+        # a parse derives the chunk boundaries from the input it is about to read, so any boundaries left
+        # over from an earlier parse of a different input or site cap are discarded
+        self._contig_order = {}
+        self._chunk_starts = []
+        self._positional = False
 
         # chunk boundaries are sized from the raw record count, but sites are assigned only after
         # surviving filtration and projection, so with active filtrations the included sites bunch into
@@ -608,6 +651,16 @@ class ChunkedStratification(GenomePositionDependentStratification):
         super()._rewind()
         self.counter = 0
 
+    def _teardown(self):
+        """
+        Tear down the stratification, switching subsequent passes to positional assignment.
+        """
+        super()._teardown()
+
+        # the boundaries recorded by the pass that just finished span the input, so any further pass can be
+        # assigned by position, which keeps its sites in the chunk their genomic neighbourhood belongs to
+        self._positional = len(self._chunk_starts) > 0
+
     def get_types(self) -> List[str]:
         """
         Get all possible window types.
@@ -624,20 +677,30 @@ class ChunkedStratification(GenomePositionDependentStratification):
         :param variant: The site
         :return: The type
         """
-        # find the index of the chunk to which the current site belongs; a second pass may process
-        # more sites than the first (e.g. target-site sampling), so fall back to the last chunk
+        # sites are ordered by contig of first appearance and then by position, as the input is read
+        key = (self._contig_order.setdefault(variant.CHROM, len(self._contig_order)), variant.POS)
+
+        if self._positional:
+            # sites preceding the first recorded boundary, and contigs the first pass never saw, fall into
+            # the first and last chunk respectively
+            return f'chunk{max(bisect.bisect_right(self._chunk_starts, key) - 1, 0)}'
+
+        # find the index of the chunk to which the current site belongs; a pass may process more sites than
+        # the chunk sizes account for (e.g. when a previous pass saw fewer), so fall back to the last chunk
         chunk_index = next(
             (i for i, size in enumerate(self.chunk_sizes) if self.counter < sum(self.chunk_sizes[:i + 1])),
             self.n_chunks - 1,
         )
 
-        # get the type
-        t = f'chunk{chunk_index}'
+        # record where each chunk begins; chunks of size zero share the start of the chunk that follows them,
+        # and the bisect above then resolves such a tie to the last of them, which is the non-empty one
+        while len(self._chunk_starts) <= chunk_index:
+            self._chunk_starts.append(key)
 
         # update the counter
         self.counter += 1
 
-        return t
+        return f'chunk{chunk_index}'
 
 
 class RandomStratification(Stratification):
@@ -962,38 +1025,67 @@ class TargetSiteCounter:
         """
         Extrapolate the monomorphic corner of a joint SFS. All monomorphic (all-ancestral) sites map to the single
         origin ``(0, ..., 0)`` of the joint spectrum, so the number of target sites fixes the mass placed there.
-        The monomorphic budget ``n_target_sites - (observed sites)`` is distributed across stratification types in
-        proportion to the valid monomorphic sites sampled from the FASTA file for each type.
+        The sites sampled from the FASTA file are drawn without regard to polymorphism, so their per-type shares
+        estimate the composition of all sites: each type is scaled to its share of ``n_target_sites`` in total, and
+        the sites it was observed at in the input are subtracted from its monomorphic mass, exactly as in the
+        one-dimensional :meth:`_update_target_sites`.
 
         :param sfs: The per-type joint SFS after sampling (its origin holds the sampled monomorphic mass).
         :return: The per-type joint SFS with the origin set to the extrapolated monomorphic count.
         """
-        origin = (0,) * len(self.parser._joint_shape)
+        shape = self.parser._joint_shape
+        origin = (0,) * len(shape)
+        corner = tuple(n - 1 for n in shape)
 
         def _before(t: str) -> np.ndarray:
             # the type's polymorphic joint SFS from before sampling (zeros if the type only appears from sampling)
-            return self._sfs_polymorphic.get(t, np.zeros(self.parser._joint_shape))
+            return np.array(self._sfs_polymorphic.get(t, np.zeros(shape)), dtype=float)
 
-        # observed (polymorphic) mass, from before the monomorphic sampling
-        n_observed = sum(float(arr.sum()) for arr in self._sfs_polymorphic.values())
-        n_monomorphic = self.n_target_sites - n_observed
+        before = {t: _before(t) for t in sfs}
 
-        if n_monomorphic <= 0:
-            self._logger.warning(f"The number of target sites ({self.n_target_sites}) does not exceed the number "
-                                 f"of observed sites ({n_observed:.0f}); the joint SFS is left unchanged.")
-            # return the pre-sampling polymorphic spectrum; ``sfs`` has the sampled monomorphic mass at the origin
-            return {t: np.array(_before(t), dtype=float) for t in sfs}
+        # every site seen in the input consumes target-site budget, the fixed-derived (divergence) ones included
+        n_observed = {t: float(arr.sum() - arr[origin]) for t, arr in before.items()}
+
+        # the divergence corner is monomorphic, so it is not part of the polymorphic mass
+        n_polymorphic = sum(n_observed[t] - float(before[t][corner]) for t in before)
 
         # monomorphic mass sampled from the FASTA file per type (added at the origin during sampling)
-        sampled = {t: float(sfs[t][origin] - _before(t)[origin]) for t in sfs}
-        total_sampled = sum(sampled.values())
+        sampled = {t: float(sfs[t][origin] - before[t][origin]) for t in sfs}
+        n_monomorphic = sum(sampled.values())
+
+        if self.n_target_sites < n_polymorphic:
+            self._logger.warning(f"Number of polymorphic sites ({n_polymorphic:.0f}) exceeds the total "
+                                 f"number of target sites ({self.n_target_sites}) which does not make sense. "
+                                 f"The number of target sites unchanged is left unchanged.")
+            # ``sfs`` has the sampled monomorphic mass at the origin, so return the pre-sampling spectrum
+            return before
+
+        if n_monomorphic == 0:
+            self._logger.warning(f"Number of monomorphic sites is zero which should only happen "
+                                 f"if there are very few sites considered. Failed to adjust "
+                                 f"the number of monomorphic sites.")
+            return before
+
+        # scale the sampled monomorphic mass so that each type totals its share of the target sites
+        x = self.n_target_sites / n_monomorphic
 
         updated = {}
+        negative = []
         for t in sfs:
-            arr = np.array(_before(t), dtype=float)
-            fraction = sampled[t] / total_sampled if total_sampled > 0 else 1.0 / len(sfs)
-            arr[origin] += n_monomorphic * fraction
+            arr = before[t]
+            arr[origin] = sampled[t] * x - n_observed[t]
+
+            # a type whose observed sites outnumber its share of the target sites would otherwise be assigned a
+            # negative mutational opportunity, which is meaningless downstream
+            if arr[origin] < 0:
+                negative.append(t)
+                arr[origin] = 0
+
             updated[t] = arr
+
+        if negative:
+            self._logger.warning(f"The number of target sites is too small to accommodate the observed sites "
+                                 f"of type(s) {negative}; their monomorphic counts were clipped to zero.")
 
         return updated
 
@@ -1443,8 +1535,16 @@ class Parser(MultiHandler):
             # cast explicitly; a missing value (None) or an empty / '.' sentinel means the site is not
             # probabilistically polarized and is treated as certain (probability 1)
             if raw is not None and raw not in ('', '.'):
+                prob = float(raw)
+
+                # the projection mixes the spectrum with its reflection using this as a weight, so anything
+                # outside [0, 1] would put negative counts into the SFS
+                if not 0.0 <= prob <= 1.0 or not np.isfinite(prob):
+                    raise ValueError(f"The ancestral allele probability at {variant.CHROM}:{variant.POS} is "
+                                     f"{raw}, which is not a probability in [0, 1].")
+
                 self.n_aa_prob += 1
-                return float(raw)
+                return prob
 
         return 1.0
 
@@ -1529,9 +1629,10 @@ class Parser(MultiHandler):
                 m = np.zeros(self.n + 1)
                 k = hypergeom.rvs(M=n_samples, n=n_samples - n_aa, N=self.n, random_state=self.rng)
 
-                # polarize probabilistically only for bi-allelic sites, as the probabilistic branch and
-                # both joint branches do; otherwise the two subsample modes disagree on the same input
-                if len(counter) == 2:
+                # every site reaching here has at most two alleles, so the reflection is well defined. A site
+                # fixed for the derived allele shows a single observed base but is bi-allelic all the same,
+                # and its mass is reflected just as at a segregating site
+                if aa_prob != 1.0:
                     m[k] += aa_prob
                     m[self.n - k] += 1 - aa_prob
                 else:
@@ -1540,8 +1641,8 @@ class Parser(MultiHandler):
                 # subsample probabilistically drawing from the hypergeometric distribution (without replacement)
                 m = hypergeom.pmf(k=range(self.n + 1), M=n_samples, n=n_samples - n_aa, N=self.n)
 
-                # polarize probabilistically if site is bi-allelic
-                if len(counter) == 2:
+                # polarize probabilistically, which is well defined for every site reaching here
+                if aa_prob != 1.0:
                     m = aa_prob * m + (1 - aa_prob) * m[::-1]
 
         # if we have a mono-allelic SNPs
@@ -1622,9 +1723,10 @@ class Parser(MultiHandler):
             # the joint mass is the outer product of the per-population projections
             m = functools.reduce(np.multiply.outer, projections)
 
-            # probabilistically polarize bi-allelic sites: a mispolarized site flips every population's
-            # derived count simultaneously, i.e. reflects the joint array on all axes
-            if len(counter) == 2 and aa_prob != 1.0:
+            # probabilistically polarize: a mispolarized site flips every population's derived count
+            # simultaneously, i.e. reflects the joint array on all axes. This covers sites fixed for the
+            # derived allele, which show a single observed base but are bi-allelic all the same
+            if aa_prob != 1.0:
                 reflected = m[tuple(slice(None, None, -1) for _ in projections)]
                 m = aa_prob * m + (1 - aa_prob) * reflected
 
@@ -1929,6 +2031,10 @@ class Parser(MultiHandler):
             if self.polarize_probabilistically:
                 self._logger.info(f'Considered {self.n_aa_prob} sites with valid ancestral allele probability.')
 
+        # the region length is read off the still-open reader, as closing it below discards the cached reader
+        # and asking afterwards would load the whole source a second time
+        region_length = self._region_length() if self.two_sfs and self.target_site_counter is not None else None
+
         # close VCF reader
         VCFHandler._rewind(self)
 
@@ -1947,7 +2053,7 @@ class Parser(MultiHandler):
                 matrix = TwoSFS(self._two_sfs_matrices['all']).symmetrize().data
                 if self.target_site_counter is not None:
                     matrix = self.target_site_counter._extrapolate_two_sfs(
-                        matrix, self._two_sfs_marginal['all'], self._region_length(), self.d
+                        matrix, self._two_sfs_marginal['all'], region_length, self.d
                     )
                 return TwoSpectra({'all': TwoSFS(matrix)})
 

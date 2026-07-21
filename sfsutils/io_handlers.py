@@ -506,7 +506,12 @@ class FASTAHandler(FileHandler):
 
         :return: The contig names.
         """
-        return [contig.id for contig in self._ref]
+        if self.fasta is None:
+            return []
+
+        # iterate a throwaway handle: consuming the cached one would leave its cursor at the end of the file,
+        # so a following get_contig would have to rewind and a second call here would return nothing
+        return [contig.id for contig in self.load_fasta(self.fasta)]
 
     def _rewind(self):
         """
@@ -1663,13 +1668,27 @@ class ZarrVariantWriter(VariantWriter):
 
         root = zarr.open(self._output, mode='w')
 
+        # the spec requires a single chunk size along ``variants`` across all variant and call arrays,
+        # and a single one along ``samples`` across the call arrays, so readers such as vcztools can
+        # align the chunk grids; the defaults match those of vcf2zarr. Zarr's own auto-chunking would
+        # pick a different grid per array and leave the store readable only by us.
+        variant_chunk = 10000
+        sample_chunk = 1000
+
+        def _chunks(shape, dimensions):
+            sizes = {'variants': variant_chunk, 'samples': sample_chunk}
+            # any remaining axis (ploidy, alleles, contigs) stays in a single chunk, and an empty axis
+            # still needs a positive chunk length
+            return tuple(max(1, min(sizes.get(dim, extent), extent)) for dim, extent in zip(dimensions, shape))
+
         # every array carries an _ARRAY_DIMENSIONS attribute naming its axes, and the root carries the
         # vcf_zarr_version, so the store is a spec-compliant VCF-Zarr readable by vcztools / sgkit and
         # not only by our own reader. Variable-length strings use the native zarr-3 ``str`` dtype.
         def _array(name: str, data, dimensions):
             data = np.asarray(data)
             dtype = str if data.dtype == object else data.dtype
-            arr = root.create_array(name, shape=data.shape, dtype=dtype)
+            arr = root.create_array(name, shape=data.shape, dtype=dtype,
+                                    chunks=_chunks(data.shape, dimensions))
             arr[...] = data
             arr.attrs['_ARRAY_DIMENSIONS'] = list(dimensions)
 

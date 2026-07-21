@@ -202,11 +202,11 @@ def _run_parse(args: argparse.Namespace) -> int:
     if len(spectra.types) == 0:
         logger.error("parse: no sites were included in the spectra, so nothing was written to %s. Check that the "
                      "sample size does not exceed the input, and that the ancestral allele information the "
-                     "polarization needs is present (or pass --no-skip-non-polarized).", args.out)
+                     "polarization needs is present (or pass --no-skip-non-polarized).", args.output)
         return 1
 
-    spectra.to_file(args.out)
-    logger.info("parse: wrote spectrum to %s", args.out)
+    spectra.to_file(args.output)
+    logger.info("parse: wrote spectrum to %s", args.output)
 
     return 0
 
@@ -222,14 +222,14 @@ def _run_filter(args: argparse.Namespace) -> int:
 
     Filterer(
         source=_input_source(args),
-        output=args.out,
+        output=args.output,
         filtrations=_build_filtrations(args.filter, args.contigs),
         gff=args.gff,
         fasta=args.fasta,
         max_sites=args.max_sites if args.max_sites is not None else float("inf"),
     ).filter()
 
-    logger.info("filter: wrote filtered sites to %s", args.out)
+    logger.info("filter: wrote filtered sites to %s", args.output)
 
     return 0
 
@@ -245,7 +245,7 @@ def _run_annotate(args: argparse.Namespace) -> int:
 
     Annotator(
         source=_input_source(args),
-        output=args.out,
+        output=args.output,
         annotations=_build_annotations(args.annotation, args.outgroups, args.n_ingroups),
         gff=args.gff,
         fasta=args.fasta,
@@ -254,7 +254,7 @@ def _run_annotate(args: argparse.Namespace) -> int:
         seed=args.seed,
     ).annotate()
 
-    logger.info("annotate: wrote annotated sites to %s", args.out)
+    logger.info("annotate: wrote annotated sites to %s", args.output)
 
     return 0
 
@@ -263,13 +263,13 @@ def _run_annotate(args: argparse.Namespace) -> int:
 
 def _add_common_io(p: argparse.ArgumentParser, out_help: str) -> None:
     """
-    Add the input-source group and ``--out`` shared by the ``filter`` and ``annotate`` subcommands.
+    Add the input-source group and ``--output`` shared by the ``filter`` and ``annotate`` subcommands.
 
     :param p: The subparser.
-    :param out_help: Help text for ``--out``.
+    :param out_help: Help text for ``--output``.
     """
     _add_input_source(p)
-    p.add_argument("--out", required=True, help=out_help)
+    p.add_argument("--output", required=True, help=out_help)
 
 
 def _add_input_source(p: argparse.ArgumentParser) -> None:
@@ -332,7 +332,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
                        description="Derive a one-dimensional, joint (multi-population), or two-site SFS from a VCF, "
                                    "VCF-Zarr store, or tskit tree sequence.")
     _add_input_source(p)
-    p.add_argument("--out", required=True,
+    p.add_argument("--output", required=True,
                    help="Output spectrum file (CSV for a single-population SFS, JSON for a joint or two-site SFS).")
 
     p.add_argument("--n", type=int, required=True,
@@ -348,8 +348,9 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--filter", type=_split_csv, default=["poly-allelic"],
                    help="Comma-separated filtrations. Default: poly-allelic.")
     p.add_argument("--info-ancestral", default="AA", help="INFO tag holding the ancestral allele. Default: AA.")
-    p.add_argument("--no-skip-non-polarized", dest="skip_non_polarized", action="store_false",
-                   help="Use the reference allele as ancestral for sites without a valid ancestral tag.")
+    p.add_argument("--skip-non-polarized", action=argparse.BooleanOptionalAction, default=True,
+                   help="Skip sites without a valid ancestral tag. Pass --no-skip-non-polarized to use the "
+                        "reference allele as ancestral for those sites instead. Default: enabled.")
     p.add_argument("--subsample-mode", choices=["random", "probabilistic"], default="probabilistic",
                    help="Down-sampling mode. Default: probabilistic.")
     p.add_argument("--two-sfs", action="store_true", help="Parse the two-site (2-D) SFS instead.")
@@ -376,7 +377,7 @@ def _add_filter_parser(sub: argparse._SubParsersAction) -> None:
     """
     p = sub.add_parser("filter", help="Filter a dataset and write the result.",
                        description="Filter a VCF, VCF-Zarr store, or tree sequence using one or more filtrations. "
-                                   "The output format follows the --out extension (a tree sequence may only be "
+                                   "The output format follows the --output extension (a tree sequence may only be "
                                    "written from a tree-sequence input).")
     _add_common_io(p, "Output path; the format follows its extension (.vcf/.vcf.gz, .vcz/.zarr, or .trees).")
 
@@ -397,7 +398,7 @@ def _add_annotate_parser(sub: argparse._SubParsersAction) -> None:
     """
     p = sub.add_parser("annotate", help="Annotate a dataset and write the result.",
                        description="Annotate a VCF, VCF-Zarr store, or tree sequence with site degeneracy or "
-                                   "ancestral-allele information. The output format follows the --out extension "
+                                   "ancestral-allele information. The output format follows the --output extension "
                                    "(a tree sequence may only be written from a tree-sequence input).")
     _add_common_io(p, "Output path; the format follows its extension (.vcf/.vcf.gz, .vcz/.zarr, or .trees).")
 

@@ -175,10 +175,10 @@ def test_help_commands_exit_zero(argv, capsys):
 # =========================================== parse ==========================================
 
 def test_parse_one_dimensional(snp_vcf, tmp_path):
-    # sfsutils parse --vcf variants.vcf.gz --n 20 --out sfs.csv
+    # sfsutils parse --vcf variants.vcf.gz --n 20 --output sfs.csv
     vcf, _ = snp_vcf
     out = tmp_path / "sfs.csv"
-    assert _run("parse", "--vcf", vcf, "--n", "20", "--out", str(out)) == 0
+    assert _run("parse", "--vcf", vcf, "--n", "20", "--output", str(out)) == 0
     assert out.exists() and out.stat().st_size > 0
     sfs = np.array(su.Spectra.from_file(str(out)).all.to_list())
     assert sfs.shape == (21,)
@@ -186,9 +186,9 @@ def test_parse_one_dimensional(snp_vcf, tmp_path):
 
 
 def test_parse_from_zarr(zarr_store, tmp_path):
-    # sfsutils parse --zarr variants.vcz --n 20 --out sfs.csv
+    # sfsutils parse --zarr variants.vcz --n 20 --output sfs.csv
     out = tmp_path / "sfs.csv"
-    assert _run("parse", "--zarr", zarr_store, "--n", "20", "--out", str(out)) == 0
+    assert _run("parse", "--zarr", zarr_store, "--n", "20", "--output", str(out)) == 0
     assert out.exists() and out.stat().st_size > 0
     sfs = np.array(su.Spectra.from_file(str(out)).all.to_list())
     assert sfs.shape == (21,)
@@ -196,17 +196,17 @@ def test_parse_from_zarr(zarr_store, tmp_path):
 
 
 def test_parse_from_trees(trees_path, tmp_path):
-    # sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --out sfs.csv
+    # sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --output sfs.csv
     # A tree sequence carries no AA tag (tskit stores the ancestral state as REF, recovered only with
     # skip_non_polarized=False), so the documented command passes --no-skip-non-polarized and the SFS is
     # populated. Without it every site is skipped and the command now fails rather than writing an empty file.
     trees, _ = trees_path
     out = tmp_path / "sfs.csv"
-    assert _run("parse", "--trees", trees, "--n", "20", "--no-skip-non-polarized", "--out", str(out)) == 0
+    assert _run("parse", "--trees", trees, "--n", "20", "--no-skip-non-polarized", "--output", str(out)) == 0
 
     # the unpolarized form includes no sites, so it must fail loudly instead of writing an unreadable stub
     empty = tmp_path / "empty.csv"
-    assert _run("parse", "--trees", trees, "--n", "20", "--out", str(empty)) == 1
+    assert _run("parse", "--trees", trees, "--n", "20", "--output", str(empty)) == 1
     assert not empty.exists()
     assert out.exists()
     polarized = np.array(su.Parser(source=trees, n=20, skip_non_polarized=False,
@@ -216,11 +216,11 @@ def test_parse_from_trees(trees_path, tmp_path):
 
 def test_parse_degeneracy_stratified(coding_fixture, tmp_path):
     # sfsutils parse --vcf ... --n 20 --fasta ... --gff ... --annotate degeneracy --stratify degeneracy \
-    #     --filter snp --out sfs.csv
+    #     --filter snp --output sfs.csv
     out = tmp_path / "sfs.csv"
     code = _run("parse", "--vcf", coding_fixture["vcf"], "--n", "20",
                 "--fasta", coding_fixture["fasta"], "--gff", coding_fixture["gff"],
-                "--annotate", "degeneracy", "--stratify", "degeneracy", "--filter", "snp", "--out", str(out))
+                "--annotate", "degeneracy", "--stratify", "degeneracy", "--filter", "snp", "--output", str(out))
     assert code == 0 and out.exists() and out.stat().st_size > 0
     spectra = su.Spectra.from_file(str(out))
     assert "neutral" in spectra.types and "selected" in spectra.types
@@ -230,11 +230,11 @@ def test_parse_degeneracy_stratified(coding_fixture, tmp_path):
 
 
 def test_parse_joint(snp_vcf, tmp_path):
-    # sfsutils parse --vcf ... --n 10 --pops "A=...;B=..." --out jsfs.json  (5 diploid samples per population)
+    # sfsutils parse --vcf ... --n 10 --pops "A=...;B=..." --output jsfs.json  (5 diploid samples per population)
     vcf, samples = snp_vcf
     pops = f"A={','.join(samples[:5])};B={','.join(samples[5:])}"
     out = tmp_path / "jsfs.json"
-    assert _run("parse", "--vcf", vcf, "--n", "10", "--pops", pops, "--out", str(out)) == 0
+    assert _run("parse", "--vcf", vcf, "--n", "10", "--pops", pops, "--output", str(out)) == 0
     assert out.exists() and out.stat().st_size > 0
     loaded = su.JointSpectra.from_file(str(out))
     assert loaded.n_pops == 2
@@ -242,11 +242,11 @@ def test_parse_joint(snp_vcf, tmp_path):
 
 
 def test_parse_two_sfs(snp_vcf, tmp_path):
-    # sfsutils parse --vcf ... --n 20 --two-sfs --two-sfs-distance 1000 --out two_sfs.json
+    # sfsutils parse --vcf ... --n 20 --two-sfs --two-sfs-distance 1000 --output two_sfs.json
     vcf, _ = snp_vcf
     out = tmp_path / "two_sfs.json"
     assert _run("parse", "--vcf", vcf, "--n", "20", "--two-sfs", "--two-sfs-distance", "1000",
-                "--out", str(out)) == 0
+                "--output", str(out)) == 0
     assert out.exists() and out.stat().st_size > 0
     # the two-SFS parse mode writes a single-entry TwoSpectra collection (keyed 'all')
     sfs2 = su.TwoSpectra.from_file(str(out))["all"]
@@ -258,10 +258,10 @@ def test_parse_two_sfs(snp_vcf, tmp_path):
 # =========================================== filter =========================================
 
 def test_filter_snp_coding_to_vcf(coding_fixture, tmp_path):
-    # sfsutils filter --vcf ... --filter snp,coding-sequence --gff ... --out coding.vcf.gz
+    # sfsutils filter --vcf ... --filter snp,coding-sequence --gff ... --output coding.vcf.gz
     out = tmp_path / "coding.vcf.gz"
     code = _run("filter", "--vcf", coding_fixture["vcf"], "--filter", "snp,coding-sequence",
-                "--gff", coding_fixture["gff"], "--out", str(out))
+                "--gff", coding_fixture["gff"], "--output", str(out))
     assert code == 0 and out.exists() and out.stat().st_size > 0
     n_in = count_sites(coding_fixture["vcf"])
     n_out = count_sites(str(out))
@@ -269,22 +269,22 @@ def test_filter_snp_coding_to_vcf(coding_fixture, tmp_path):
 
 
 def test_filter_snp_coding_to_zarr(coding_fixture, tmp_path):
-    # sfsutils filter --vcf ... --filter snp,coding-sequence --gff ... --out coding.vcz
+    # sfsutils filter --vcf ... --filter snp,coding-sequence --gff ... --output coding.vcz
     import zarr
     out = tmp_path / "coding.vcz"
     code = _run("filter", "--vcf", coding_fixture["vcf"], "--filter", "snp,coding-sequence",
-                "--gff", coding_fixture["gff"], "--out", str(out))
+                "--gff", coding_fixture["gff"], "--output", str(out))
     assert code == 0 and out.is_dir()
     root = zarr.open(str(out), mode="r")
     assert "call_genotype" in list(root.array_keys())
 
 
 def test_filter_trees_to_trees(trees_path, tmp_path):
-    # sfsutils filter --trees ancestry.trees --filter snp --out coding.trees
+    # sfsutils filter --trees ancestry.trees --filter snp --output coding.trees
     import tskit
     trees, n_in = trees_path
     out = tmp_path / "coding.trees"
-    assert _run("filter", "--trees", trees, "--filter", "snp", "--out", str(out)) == 0
+    assert _run("filter", "--trees", trees, "--filter", "snp", "--output", str(out)) == 0
     assert out.exists() and out.stat().st_size > 0
     ts_out = tskit.load(str(out))
     assert ts_out.num_sites <= n_in  # SNP-only subset via delete_sites
@@ -293,11 +293,11 @@ def test_filter_trees_to_trees(trees_path, tmp_path):
 # =========================================== annotate =======================================
 
 def test_annotate_degeneracy_to_vcf(coding_fixture, tmp_path):
-    # sfsutils annotate --vcf ... --annotation degeneracy --fasta ... --gff ... --out degeneracy.vcf.gz
+    # sfsutils annotate --vcf ... --annotation degeneracy --fasta ... --gff ... --output degeneracy.vcf.gz
     from cyvcf2 import VCF
     out = tmp_path / "degeneracy.vcf.gz"
     code = _run("annotate", "--vcf", coding_fixture["vcf"], "--annotation", "degeneracy",
-                "--fasta", coding_fixture["fasta"], "--gff", coding_fixture["gff"], "--out", str(out))
+                "--fasta", coding_fixture["fasta"], "--gff", coding_fixture["gff"], "--output", str(out))
     assert code == 0 and out.exists() and out.stat().st_size > 0
     reader = VCF(str(out))
     assert "Degeneracy" in reader.raw_header
@@ -306,11 +306,11 @@ def test_annotate_degeneracy_to_vcf(coding_fixture, tmp_path):
 
 
 def test_annotate_degeneracy_to_zarr(coding_fixture, tmp_path):
-    # sfsutils annotate --vcf ... --annotation degeneracy --fasta ... --gff ... --out degeneracy.vcz
+    # sfsutils annotate --vcf ... --annotation degeneracy --fasta ... --gff ... --output degeneracy.vcz
     import zarr
     out = tmp_path / "degeneracy.vcz"
     code = _run("annotate", "--vcf", coding_fixture["vcf"], "--annotation", "degeneracy",
-                "--fasta", coding_fixture["fasta"], "--gff", coding_fixture["gff"], "--out", str(out))
+                "--fasta", coding_fixture["fasta"], "--gff", coding_fixture["gff"], "--output", str(out))
     assert code == 0 and out.is_dir()
     root = zarr.open(str(out), mode="r")
     assert "variant_Degeneracy" in list(root.array_keys())  # the added INFO tag persisted to the store
@@ -319,12 +319,12 @@ def test_annotate_degeneracy_to_zarr(coding_fixture, tmp_path):
 @pytest.mark.slow
 def test_annotate_maximum_likelihood_ancestral(outgroup_vcf, tmp_path):
     # sfsutils annotate --vcf variants.with_outgroups.vcf.gz --annotation maximum-likelihood-ancestral \
-    #     --outgroups ERR2103730,ERR2103731 --n-ingroups 15 --out polarized.vcf.gz
+    #     --outgroups ERR2103730,ERR2103731 --n-ingroups 15 --output polarized.vcf.gz
     from cyvcf2 import VCF
     vcf, outgroups = outgroup_vcf
     out = tmp_path / "polarized.vcf.gz"
     code = _run("annotate", "--vcf", vcf, "--annotation", "maximum-likelihood-ancestral",
-                "--outgroups", ",".join(outgroups), "--n-ingroups", "15", "--out", str(out))
+                "--outgroups", ",".join(outgroups), "--n-ingroups", "15", "--output", str(out))
     assert code == 0 and out.exists() and out.stat().st_size > 0
     reader = VCF(str(out))
     assert "AA" in reader.raw_header
