@@ -149,3 +149,67 @@ def test_target_site_counter_single_position_does_not_crash(tmp_path):
     spectra = su.Parser(source=str(vcf), n=4, skip_non_polarized=False, fasta=str(fasta),
                         target_site_counter=su.TargetSiteCounter(n_samples=100, n_target_sites=1000)).parse()
     assert spectra["all"].n_polymorphic == 1
+
+
+def _prob_vcf(tmp_path):
+    """A small VCF carrying AA + a Float AA_prob tag."""
+    vcf = tmp_path / "prob.vcf"
+    header = [
+        "##fileformat=VCFv4.2", "##contig=<ID=1,length=100>",
+        '##INFO=<ID=AA,Number=1,Type=String,Description="aa">',
+        '##INFO=<ID=AA_prob,Number=1,Type=Float,Description="p">',
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">',
+        "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "a", "b"]),
+    ]
+    # numeric GT allele indices (0=REF A, 1=ALT T), as htslib requires for a real VCF
+    rows = ["\t".join(["1", str(p), ".", "A", "T", ".", ".", "AA=A;AA_prob=0.9", "GT", "0|1", "1|1"])
+            for p in (10, 20, 30)]
+    vcf.write_text("\n".join(header + rows) + "\n")
+    return str(vcf)
+
+
+def _prob_vcz(tmp_path):
+    """The same sites as a VCF-Zarr store (INFO stored as strings)."""
+    from sfsutils.io_handlers import ZarrVariantWriter
+    out = str(tmp_path / "prob.vcz")
+    w = ZarrVariantWriter(out, samples=["a", "b"], seqnames=["1"], info_ancestral="AA")
+    for p in (10, 20, 30):
+        w.write(Variant(ref="A", pos=p, chrom="1", gt_bases=["A|T", "T|T"], alt=["T"], is_snp=True,
+                        info={"AA": "A", "AA_prob": 0.9}))
+    w.close()
+    return out
+
+
+@requires_zarr
+def test_probabilistic_polarization_agrees_across_vcf_and_zarr(tmp_path):
+    """AA_prob is typed by cyvcf2 but a string from the Zarr backend; probabilistic polarization must
+    cast it and give the same spectrum from either source (previously the Zarr path raised on '0.9'*array)."""
+    Settings.disable_pbar = True
+
+    def spectrum(source):
+        return su.Parser(source=source, n=4, skip_non_polarized=True,
+                         polarize_probabilistically=True).parse()["all"].to_list()
+
+    from_vcf = spectrum(_prob_vcf(tmp_path))
+    from_vcz = spectrum(_prob_vcz(tmp_path))
+    # equal within float precision (cyvcf2 returns AA_prob as float32, the Zarr string casts to float64)
+    np.testing.assert_allclose(from_vcf, from_vcz, atol=1e-6)
+    assert sum(from_vcf) > 0  # sites were actually kept and polarized
+
+
+def test_ancestral_prob_sentinels_treated_as_unpolarized():
+    """Empty / '.' AA_prob values are treated as certain (probability 1), like a missing tag."""
+    from sfsutils.io_handlers import Variant as V
+    p = su.Parser(source=None, vcf="x", n=4, polarize_probabilistically=True) if False else None
+    # exercise _get_ancestral_prob directly against the sentinels
+    parser = su.Parser.__new__(su.Parser)
+    parser.polarize_probabilistically = True
+    parser.info_ancestral_prob = "AA_prob"
+    parser.n_aa_prob = 0
+    for sentinel in ("", ".", None):
+        v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True,
+              info={} if sentinel is None else {"AA_prob": sentinel})
+        assert parser._get_ancestral_prob(v) == 1.0
+    # a real string value is cast to float
+    v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True, info={"AA_prob": "0.75"})
+    assert parser._get_ancestral_prob(v) == 0.75

@@ -1359,6 +1359,8 @@ class ZarrVariantReader(VariantReader):
                 observed = [a for a in site_alleles if a]
                 is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
 
+                # every INFO value is decoded to a string (unlike cyvcf2, which types them from the VCF
+                # header); a consumer that needs a number must cast explicitly (see _get_ancestral_prob)
                 info = {key: self._decode(batch[i]) for key, batch in info_batches.items()}
 
                 yield Variant(

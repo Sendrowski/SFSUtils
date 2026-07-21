@@ -1389,10 +1389,15 @@ class Parser(MultiHandler):
         :param variant: The site
         :return: The probability of the ancestral allele being the true ancestral allele
         """
-        if variant.is_snp and self.polarize_probabilistically and variant.INFO.get(
-                self.info_ancestral_prob) is not None:
-            self.n_aa_prob += 1
-            return variant.INFO[self.info_ancestral_prob]
+        if variant.is_snp and self.polarize_probabilistically:
+            raw = variant.INFO.get(self.info_ancestral_prob)
+
+            # INFO comes through typed from cyvcf2 but as a plain string from the VCF-Zarr backend, so
+            # cast explicitly; a missing value (None) or an empty / '.' sentinel means the site is not
+            # probabilistically polarized and is treated as certain (probability 1)
+            if raw is not None and raw not in ('', '.'):
+                self.n_aa_prob += 1
+                return float(raw)
 
         return 1.0
 
