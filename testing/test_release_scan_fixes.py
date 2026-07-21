@@ -302,3 +302,68 @@ def test_zarr_degeneracy_stratification_end_to_end(tmp_path):
                         stratifications=[su.DegeneracyStratification()]).parse()
     assert spectra["neutral"].n_polymorphic == 3
     assert spectra["selected"].n_polymorphic == 2
+
+
+# --- round 4: INFO int/bool/overflow round-trips + base-context casing ------------------------------
+
+def test_zarr_integer_info_minus_one_two_round_trip(tmp_path):
+    """Legitimate integer INFO values of -1/-2 (e.g. SVLEN) must round-trip; the round-3 reader briefly
+    treated them as the VCF-Zarr missing/fill sentinels and dropped them."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+    out = str(tmp_path / "sv.vcz")
+    w = ZarrVariantWriter(out, samples=["s"], seqnames=["1"], info_ancestral="AA")
+    for pos, sv in [(10, 5), (20, -1), (30, -2), (40, 7)]:
+        w.write(Variant(ref="A", pos=pos, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"SVLEN": sv}))
+    w.close()
+    assert [v.INFO.get("SVLEN") for v in ZarrVariantReader(out)] == [5, -1, -2, 7]
+
+
+def test_zarr_flag_info_absent_is_omitted(tmp_path):
+    """A bool/Flag INFO field is surfaced only where set (as cyvcf2 does); an absent flag must not read
+    back as present-False."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+    out = str(tmp_path / "flag.vcz")
+    w = ZarrVariantWriter(out, samples=["s"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"DB": True}))
+    w.write(Variant(ref="C", pos=20, chrom="1", gt_bases=["C|G"], alt=["G"], is_snp=True, info={}))
+    w.close()
+    variants = list(ZarrVariantReader(out))
+    assert variants[0].INFO["DB"] is True
+    assert "DB" not in variants[1].INFO
+
+
+def test_zarr_out_of_int64_info_does_not_crash(tmp_path):
+    """An integer INFO value beyond int64 must not crash the write; it is kept exactly as a string
+    rather than truncated or lost to float precision."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+    out = str(tmp_path / "big.vcz")
+    w = ZarrVariantWriter(out, samples=["s"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"BIG": 10 ** 19}))
+    w.close()
+    assert next(iter(ZarrVariantReader(out))).INFO["BIG"] == "10000000000000000000"
+
+
+def test_base_context_stratification_uppercases_soft_masked(tmp_path):
+    """BaseContextStratification must upper-case soft-masked (lowercase) flanking bases so they match the
+    upper-case contexts, and skip a site whose context contains a non-ACGT base (e.g. N)."""
+    Settings.disable_pbar = True
+    import gzip
+    # soft-masked reference: lowercase repeat bases around an upper-case site, plus an N
+    fasta = tmp_path / "g.fasta.gz"
+    with gzip.open(fasta, "wt") as fh:
+        fh.write(">1\nacgTacgNtac\n")  # positions (1-based): 1..11
+    vcf = tmp_path / "v.vcf"
+    vcf.write_text(
+        "##fileformat=VCFv4.2\n##contig=<ID=1,length=11>\n"
+        '##INFO=<ID=AA,Number=1,Type=String,Description="aa">\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+        "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "s1"]) + "\n"
+        # a SNP at pos 4 (T, flanked by lowercase c/a -> context CTA); one at pos 8 (t, next to N -> skipped)
+        + "\t".join(["1", "4", ".", "T", "A", ".", ".", "AA=T", "GT", "0/1"]) + "\n"
+        + "\t".join(["1", "8", ".", "T", "A", ".", ".", "AA=T", "GT", "0/1"]) + "\n")
+
+    spectra = su.Parser(source=str(vcf), n=2, skip_non_polarized=True,
+                        stratifications=[su.BaseContextStratification(n_flanking=1, fasta=str(fasta))]).parse()
+    # the valid site's context is upper-case ACGT (not a mixed-case 'cTa'); the N-flanked site is skipped
+    assert all(t == t.upper() and set(t) <= set("ACGT") for t in spectra.types)
+    assert any(spectra[t].n_polymorphic > 0 for t in spectra.types)
