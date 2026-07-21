@@ -1367,7 +1367,7 @@ class ZarrVariantReader(VariantReader):
                     value = batch[i]
                     kind = batch.dtype.kind
 
-                    if kind in ('U', 'S', 'O'):
+                    if kind in ('U', 'S', 'O', 'T'):
                         decoded = self._decode(value)
                         if decoded != '':
                             info[key] = decoded
@@ -1513,7 +1513,6 @@ class ZarrVariantWriter(VariantWriter):
         """
         try:
             import zarr  # noqa: F401
-            import numcodecs  # noqa: F401
         except ImportError:
             raise ImportError(
                 "VCF-Zarr support in sfsutils requires the optional 'zarr' package. "
@@ -1566,25 +1565,38 @@ class ZarrVariantWriter(VariantWriter):
         Write the buffered variants to the store.
         """
         import zarr
-        import numcodecs
 
         root = zarr.open(self._output, mode='w')
-        codec = numcodecs.VLenUTF8()
 
-        def _str_array(name: str, values):
-            root.create_dataset(name, data=np.asarray([str(v) for v in values], dtype=object),
-                                object_codec=codec, overwrite=True)
+        # every array carries an _ARRAY_DIMENSIONS attribute naming its axes, and the root carries the
+        # vcf_zarr_version, so the store is a spec-compliant VCF-Zarr readable by vcztools / sgkit and
+        # not only by our own reader. Variable-length strings use the native zarr-3 ``str`` dtype.
+        def _array(name: str, data, dimensions):
+            data = np.asarray(data)
+            dtype = str if data.dtype == object else data.dtype
+            arr = root.create_array(name, shape=data.shape, dtype=dtype)
+            arr[...] = data
+            arr.attrs['_ARRAY_DIMENSIONS'] = list(dimensions)
 
-        _str_array('sample_id', self._samples)
-        _str_array('contig_id', self._contig_ids)
+        def _str_data(values):
+            return np.asarray([str(v) for v in values], dtype=object)
+
+        _array('sample_id', _str_data(self._samples), ['samples'])
+        _array('contig_id', _str_data(self._contig_ids), ['contigs'])
 
         n = len(self._positions)
         n_samples = len(self._samples)
         ploidy = max((len(call) for rows in self._genotypes for call in rows), default=2)
         max_alleles = max((len(a) for a in self._alleles), default=1)
 
-        root.create_dataset('variant_position', data=np.array(self._positions, dtype=np.int64), overwrite=True)
-        root.create_dataset('variant_contig', data=np.array(self._contigs, dtype=np.int64), overwrite=True)
+        # per-contig lengths (from the last position seen on each), so a ##contig header can be emitted
+        contig_length = np.ones(len(self._contig_ids), dtype=np.int64)
+        for cid, pos in zip(self._contigs, self._positions):
+            contig_length[cid] = max(int(contig_length[cid]), int(pos))
+        _array('contig_length', contig_length, ['contigs'])
+
+        _array('variant_position', np.array(self._positions, dtype=np.int64), ['variants'])
+        _array('variant_contig', np.array(self._contigs, dtype=np.int64), ['variants'])
 
         # size the allele-index dtype to the data so many-allele sites do not wrap
         gt_dtype = np.int8 if max_alleles <= np.iinfo(np.int8).max else np.int32
@@ -1595,13 +1607,13 @@ class ZarrVariantWriter(VariantWriter):
                 genotype[vi, si, :len(call)] = call
                 phased[vi, si] = ph[si]
 
-        root.create_dataset('call_genotype', data=genotype, overwrite=True)
-        root.create_dataset('call_genotype_phased', data=phased, overwrite=True)
+        _array('call_genotype', genotype, ['variants', 'samples', 'ploidy'])
+        _array('call_genotype_phased', phased, ['variants', 'samples'])
 
         allele = np.full((n, max_alleles), '', dtype=object)
         for vi, a in enumerate(self._alleles):
             allele[vi, :len(a)] = a
-        root.create_dataset('variant_allele', data=allele, object_codec=codec, overwrite=True)
+        _array('variant_allele', allele, ['variants', 'alleles'])
 
         # persist any INFO fields (e.g. an annotated ancestral allele or degeneracy) as variant_<tag>
         # arrays, typed to match the values so a numeric field round-trips as a number rather than a
@@ -1633,17 +1645,22 @@ class ZarrVariantWriter(VariantWriter):
 
             if present and all(_is_bool(v) for v in present):
                 data = np.array([bool(v) if v is not _missing and v != '' else False for v in raw], dtype=bool)
-                root.create_dataset(name, data=data, overwrite=True)
+                _array(name, data, ['variants'])
             elif present and all(_is_int(v) for v in present) and all(v is not _missing and v != '' for v in raw):
                 # every site carries an integer: store an integer array (no missing sentinel needed)
-                root.create_dataset(name, data=np.array([int(v) for v in raw], dtype=np.int64), overwrite=True)
+                _array(name, np.array([int(v) for v in raw], dtype=np.int64), ['variants'])
             elif present and all(_is_int(v) or _is_float(v) for v in present):
                 # numeric but possibly missing on some sites: a float array carries NaN for the gaps
                 data = np.array([float(v) if v is not _missing and v != '' else np.nan for v in raw], dtype=np.float64)
-                root.create_dataset(name, data=data, overwrite=True)
+                _array(name, data, ['variants'])
             else:
                 # strings (or mixed/empty): keep the string array, '' for a missing value
-                _str_array(name, [str(v) if v is not _missing else '' for v in raw])
+                _array(name, _str_data([str(v) if v is not _missing else '' for v in raw]), ['variants'])
+
+        # mark the store as a spec-compliant VCF-Zarr so external readers (vcztools/sgkit) accept it
+        from . import __version__
+        root.attrs['vcf_zarr_version'] = '0.4'
+        root.attrs['source'] = f'sfsutils-{__version__}'
 
 
 class TskitVariantWriter(VariantWriter):

@@ -19,8 +19,8 @@ dependencies:
   # --- simulation / ground-truth SFS for the parser-validation fixtures ---
   - msprime
   - tskit
-  # --- optional VCF-Zarr backend (zarr 3 is a breaking change; match pyproject's <3 pin) ---
-  - zarr>=2.17,<3
+  # --- optional VCF-Zarr backend (zarr 3; bio2zarr and vcztools both require it) ---
+  - zarr>=3.1
   # --- testing (>=9.1: caplog attaches to the named 'sfsutils' logger, which has propagate=False) ---
   - pytest>=9.1
   - pytest-xdist
@@ -35,10 +35,10 @@ dependencies:
   - sphinx-copybutton
   - sphinxcontrib-bibtex
   - autodocsumm
-  # --- PyPI-only deps: cyvcf2 (VCF backend), bio2zarr (VCF->VCZ), and the phasegen two-locus ground
-  #     truth. NOTE: vcztools cannot join this env - it requires zarr>=3 while bio2zarr and sfsutils
-  #     pin zarr<3, a hard conflict; the writer/VCZ interop check must run in a separate zarr-3 env. ---
+  # --- PyPI-only deps: cyvcf2 (VCF backend), bio2zarr (VCF->VCZ), vcztools (reads VCZ back, for the
+  #     writer interop test), and the phasegen two-locus ground truth. All are on zarr>=3.1. ---
   - pip:
     - cyvcf2
     - bio2zarr
+    - vcztools
     - phasegen
