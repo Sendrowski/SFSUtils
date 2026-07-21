@@ -49,6 +49,13 @@ os.makedirs(OUT, exist_ok=True)
 ts.dump(f"{OUT}/two_epoch.trees")
 with open(f"{OUT}/two_epoch.vcf", "w") as f:
     ts.write_vcf(f)
+
+# VCF-Zarr fixture for the zarr-backend tests, built from the same VCF via the bio2zarr Python API.
+# The API takes a plain (unindexed) VCF, so no bgzip/tabix is needed.
+import shutil
+from bio2zarr import vcf as _bio2zarr_vcf
+shutil.rmtree(f"{OUT}/two_epoch.vcz", ignore_errors=True)
+_bio2zarr_vcf.convert([f"{OUT}/two_epoch.vcf"], f"{OUT}/two_epoch.vcz")
 # a placeholder reference over the single contig ("1"), so the TargetSiteCounter has a FASTA to
 # satisfy its genome-length requirement; the bases are irrelevant to target-site accounting
 with gzip.open(f"{OUT}/two_epoch.ref.fasta.gz", "wt") as fa:
