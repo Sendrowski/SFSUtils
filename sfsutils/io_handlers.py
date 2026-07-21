@@ -1378,12 +1378,14 @@ class ZarrVariantReader(VariantReader):
                         if not np.isnan(value):
                             info[key] = float(value)
                     elif kind == 'b':
-                        info[key] = bool(value)
+                        # a bool array encodes a VCF Flag: surface it only when set, as cyvcf2 does
+                        # (an absent flag is stored False and must not read back as present-False)
+                        if bool(value):
+                            info[key] = True
                     else:
-                        # the VCF-Zarr integer missing (-1) and fill (-2) sentinels mean absent
-                        iv = int(value)
-                        if iv not in (-1, -2):
-                            info[key] = iv
+                        # integers round-trip verbatim; the VCF-Zarr -1/-2 missing/fill sentinels are not
+                        # filtered here because our own writer stores legitimate -1/-2 int values as data
+                        info[key] = int(value)
 
                 yield Variant(
                     ref=site_alleles[0] if site_alleles else '.',
@@ -1642,6 +1644,9 @@ class ZarrVariantWriter(VariantWriter):
             # annotations such as DegeneracyAnnotation write for sites the field does not apply to)
             return v is _missing or v == '' or v == '.'
 
+        def _fits_int64(v):
+            return -(2 ** 63) <= int(v) < 2 ** 63
+
         # the VCF-Zarr missing-float sentinel (a specific NaN bit pattern), which vcztools/sgkit emit as
         # a missing INFO value; a plain np.nan would be exported as the literal token 'nan'
         float_missing = np.array([0x7FF0000000000001], dtype=np.uint64).view(np.float64)[0]
@@ -1661,12 +1666,15 @@ class ZarrVariantWriter(VariantWriter):
             if present and all(_is_bool(v) for v in present):
                 data = np.array([bool(v) if not _absent(v) else False for v in raw], dtype=bool)
                 _array(name, data, ['variants'])
-            elif present and all(_is_int(v) for v in present) and not any(_absent(v) for v in raw):
-                # every site carries an integer: store an integer array (no missing sentinel needed)
+            elif (present and all(_is_int(v) for v in present) and not any(_absent(v) for v in raw)
+                  and all(_fits_int64(v) for v in present)):
+                # every site carries an int64-representable integer: store a plain integer array (an
+                # out-of-range integer falls through to the string branch so it is not silently truncated)
                 _array(name, np.array([int(v) for v in raw], dtype=np.int64), ['variants'])
-            elif present and all(_is_int(v) or _is_float(v) for v in present):
+            elif present and all(_is_float(v) or (_is_int(v) and _fits_int64(v)) for v in present):
                 # numeric but possibly missing on some sites: a float array carries the missing sentinel
-                # for the gaps (int values ride along as floats, e.g. a partly-annotated Degeneracy)
+                # for the gaps (int values ride along as floats, e.g. a partly-annotated Degeneracy).
+                # An out-of-int64 integer would lose precision as a float, so it falls to the string branch.
                 data = np.array([float(v) if not _absent(v) else float_missing for v in raw], dtype=np.float64)
                 _array(name, data, ['variants'])
             else:
