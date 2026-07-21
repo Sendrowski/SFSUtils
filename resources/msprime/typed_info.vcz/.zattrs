@@ -1,0 +1,10 @@
+{
+  "vcf_zarr_version": "0.5",
+  "source": "bio2zarr-0.2.1",
+  "vcf_meta_information": [
+    [
+      "fileformat",
+      "VCFv4.2"
+    ]
+  ]
+}

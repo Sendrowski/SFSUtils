@@ -1,21 +1,21 @@
 {
-    "chunks": [
-        608
-    ],
-    "compressor": {
-        "blocksize": 0,
-        "clevel": 7,
-        "cname": "zstd",
-        "id": "blosc",
-        "shuffle": 1
-    },
-    "dimension_separator": "/",
-    "dtype": "<i4",
-    "fill_value": null,
-    "filters": null,
-    "order": "C",
-    "shape": [
-        608
-    ],
-    "zarr_format": 2
+  "shape": [
+    608
+  ],
+  "chunks": [
+    608
+  ],
+  "dtype": "<i4",
+  "fill_value": null,
+  "order": "C",
+  "filters": null,
+  "dimension_separator": ".",
+  "compressor": {
+    "id": "blosc",
+    "cname": "zstd",
+    "clevel": 7,
+    "shuffle": 1,
+    "blocksize": 0
+  },
+  "zarr_format": 2
 }

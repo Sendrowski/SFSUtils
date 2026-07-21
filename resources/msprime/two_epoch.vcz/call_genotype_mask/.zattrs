@@ -1,8 +1,8 @@
 {
-    "_ARRAY_DIMENSIONS": [
-        "variants",
-        "samples",
-        "ploidy"
-    ],
-    "description": ""
+  "_ARRAY_DIMENSIONS": [
+    "variants",
+    "samples",
+    "ploidy"
+  ],
+  "description": ""
 }
