@@ -367,3 +367,34 @@ def test_base_context_stratification_uppercases_soft_masked(tmp_path):
     # the valid site's context is upper-case ACGT (not a mixed-case 'cTa'); the N-flanked site is skipped
     assert all(t == t.upper() and set(t) <= set("ACGT") for t in spectra.types)
     assert any(spectra[t].n_polymorphic > 0 for t in spectra.types)
+
+
+def test_absent_ancestral_allele_site_is_skipped(tmp_path):
+    """A segregating biallelic SNP whose AA names a base absent from the genotypes is effectively
+    multi-allelic and must be skipped, not polarised into the all-derived bin."""
+    Settings.disable_pbar = True
+    def sfs(aa):
+        vcf = tmp_path / f"v_{aa}.vcf"
+        vcf.write_text(
+            "##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n"
+            '##INFO=<ID=AA,Number=1,Type=String,Description="aa">\n'
+            '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+            "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
+                             "s1", "s2", "s3", "s4", "s5"]) + "\n"
+            + "\t".join(["1", "10", ".", "C", "G", ".", ".", f"AA={aa}", "GT",
+                         "0|0", "0|1", "1|1", "0|1", "0|0"]) + "\n")
+        return su.Parser(source=str(vcf), n=10, skip_non_polarized=True).parse()
+    assert list(sfs("A").types) == []              # AA absent from genotypes -> site skipped
+    assert sfs("C")["all"].to_list()[4] == 1        # AA=C valid -> 4 derived G at bin 4
+
+
+def test_gff_remove_overlaps_groups_by_contig():
+    """remove_overlaps must not compare CDS across contig boundaries and drop the last CDS of a contig."""
+    import pandas as pd
+    from sfsutils.io_handlers import GFFHandler
+    df = pd.DataFrame([
+        {"seqid": "chr1", "start": 100, "end": 200}, {"seqid": "chr1", "start": 3000, "end": 5000},
+        {"seqid": "chr2", "start": 100, "end": 200}, {"seqid": "chr2", "start": 3000, "end": 5000},
+    ])
+    out = GFFHandler.remove_overlaps(df.copy())
+    assert len(out) == 4  # no real overlaps; the last CDS of chr1 must survive
