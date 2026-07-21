@@ -35,7 +35,9 @@ dependencies:
   - sphinx-copybutton
   - sphinxcontrib-bibtex
   - autodocsumm
-  # --- PyPI-only deps: cyvcf2 (VCF backend), bio2zarr, and the phasegen two-locus ground truth ---
+  # --- PyPI-only deps: cyvcf2 (VCF backend), bio2zarr (VCF->VCZ), and the phasegen two-locus ground
+  #     truth. NOTE: vcztools cannot join this env - it requires zarr>=3 while bio2zarr and sfsutils
+  #     pin zarr<3, a hard conflict; the writer/VCZ interop check must run in a separate zarr-3 env. ---
   - pip:
     - cyvcf2
     - bio2zarr
