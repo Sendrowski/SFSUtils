@@ -435,3 +435,64 @@ def test_low_coverage_monomorphic_site_is_skipped(tmp_path):
 
     assert parse(["0|0", "0|0", "0|0"])["all"].n_monomorphic == 1   # 6 haplotypes >= 4 -> kept
     assert list(parse(["0|0", ".|.", ".|."]).types) == []           # 2 haplotypes < 4 -> skipped
+
+
+# --- round 6: target-site NaN, SNP filtration, subsample-mode consistency --------------------------
+
+def test_target_site_counter_no_nan_for_sampling_only_strata(tmp_path):
+    """Stratification types that first appear among the sampled monomorphic sites must not get NaN in
+    their monomorphic bins: the pre-sampling snapshot is aligned onto the post-sampling types with
+    zeros (as the joint path already does), so the whole target-site budget is allocated."""
+    Settings.disable_pbar = True
+    fasta = tmp_path / "g.fasta"
+    fasta.write_text(">1\n" + "ACGTACGTAC" * 10 + "\n")
+    vcf = tmp_path / "v.vcf"
+    header = ("##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n"
+              '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+              "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO",
+                               "FORMAT", "s1", "s2"]) + "\n")
+    rows = "".join("\t".join(["1", str(p), ".", "T", "A", ".", ".", ".", "GT", "0|1", "0|0"]) + "\n"
+                   for p in (4, 8, 12))
+    vcf.write_text(header + rows)
+
+    spectra = su.Parser(source=str(vcf), n=4, skip_non_polarized=False, fasta=str(fasta),
+                        stratifications=[su.BaseContextStratification(n_flanking=1, fasta=str(fasta))],
+                        filtrations=[su.SNPFiltration()],
+                        target_site_counter=su.TargetSiteCounter(n_samples=200, n_target_sites=10000)).parse()
+
+    assert not spectra.data.isna().any().any()          # no silent NaN in a returned spectrum
+    assert spectra.data.sum().sum() == pytest.approx(10000, rel=1e-6)   # full budget allocated
+
+
+def test_snp_filtration_drops_indels():
+    """SNPFiltration must reject an indel even when its genotype characters look polymorphic; the
+    samples-mask branch counts bases, so it needs the is_snp gate."""
+    import numpy as np
+    f = su.SNPFiltration()
+    f._samples_mask = np.array([True])
+
+    assert f.filter_site(Variant(ref="A", pos=1, chrom="1", alt=["AT"], gt_bases=["A/AT"], is_snp=False)) is False
+    assert f.filter_site(Variant(ref="A", pos=2, chrom="1", alt=["T"], gt_bases=["A/T"], is_snp=True)) is True
+    # an SNP that is monomorphic among the included samples is still dropped
+    assert f.filter_site(Variant(ref="A", pos=3, chrom="1", alt=["T"], gt_bases=["A/A"], is_snp=True)) is False
+
+
+def test_subsample_modes_agree_on_non_biallelic_site(tmp_path):
+    """The probabilistic-polarization flip applies only to bi-allelic sites, so both subsample modes
+    return the same spectrum for a site that is monomorphic among the included samples."""
+    Settings.disable_pbar = True
+    vcf = tmp_path / "v.vcf"
+    vcf.write_text(
+        "##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n"
+        '##INFO=<ID=AA,Number=1,Type=String,Description="aa">\n'
+        '##INFO=<ID=AA_prob,Number=1,Type=Float,Description="p">\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+        "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
+                         "s1", "s2"]) + "\n"
+        + "\t".join(["1", "10", ".", "A", "T", ".", ".", "AA=A;AA_prob=0.8", "GT", "0|0", "0|0"]) + "\n")
+
+    def sfs(mode):
+        return su.Parser(source=str(vcf), n=4, skip_non_polarized=True, polarize_probabilistically=True,
+                         subsample_mode=mode).parse()["all"].to_list()
+
+    assert sfs("random") == pytest.approx(sfs("probabilistic"))

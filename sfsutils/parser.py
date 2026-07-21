@@ -907,9 +907,16 @@ class TargetSiteCounter:
         # cast to float to avoid implicit type conversion later on
         spectra.data = spectra.data.astype(float)
 
+        # the sampling pass can introduce stratification types absent from the pre-sampling snapshot (a
+        # stratum with no polymorphic site in the input but present among the sampled monomorphic sites).
+        # Align the snapshot onto the post-sampling types with zeros, so the label-aligned subtractions
+        # below do not write NaN into those types, mirroring the joint path's ``_before`` default.
+        before = self._sfs_polymorphic.data.reindex(columns=spectra.data.columns, fill_value=0)
+        before_n_polymorphic = self._sfs_polymorphic.n_polymorphic.reindex(spectra.data.columns, fill_value=0)
+
         # subtract by monomorphic counts of original spectra
         # we only want to consider the monomorphic sites sampled from the FASTA file
-        spectra.data.iloc[[0, -1], :] -= self._sfs_polymorphic.data.iloc[[0, -1], :]
+        spectra.data.iloc[[0, -1], :] -= before.iloc[[0, -1], :]
 
         # get number of monomorphic and polymorphic sites sampled from the FASTA and VCF file
         n_monomorphic = spectra.data.iloc[0, :].sum()
@@ -938,7 +945,7 @@ class TargetSiteCounter:
             # we do this to correct for the fact that, for a type, we have relatively
             # fewer monomorphic sites if we have more polymorphic sites
             # TODO include monomorphic sites here from VCF?
-            spectra.data.iloc[0, :] -= self._sfs_polymorphic.n_polymorphic
+            spectra.data.iloc[0, :] -= before_n_polymorphic
 
         return spectra
 
@@ -1499,8 +1506,13 @@ class Parser(MultiHandler):
                 m = np.zeros(self.n + 1)
                 k = hypergeom.rvs(M=n_samples, n=n_samples - n_aa, N=self.n, random_state=self.rng)
 
-                m[k] += aa_prob
-                m[self.n - k] += 1 - aa_prob
+                # polarize probabilistically only for bi-allelic sites, as the probabilistic branch and
+                # both joint branches do; otherwise the two subsample modes disagree on the same input
+                if len(counter) == 2:
+                    m[k] += aa_prob
+                    m[self.n - k] += 1 - aa_prob
+                else:
+                    m[k] += 1.0
             else:
                 # subsample probabilistically drawing from the hypergeometric distribution (without replacement)
                 m = hypergeom.pmf(k=range(self.n + 1), M=n_samples, n=n_samples - n_aa, N=self.n)

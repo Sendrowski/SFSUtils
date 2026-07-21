@@ -182,11 +182,16 @@ class SNPFiltration(MaskedFiltration):
         :param variant: The variant to filter.
         :return: ``True`` if the variant is an SNP, ``False`` otherwise.
         """
-        # simply check whether the variant is an SNP if we don't have a samples mask
-        if self._samples_mask is None or isinstance(variant, DummyVariant):
-            return variant.is_snp
+        # an indel or MNP is never an SNP, whatever its called bases look like: the masked test below
+        # counts genotype characters, so without this an ``A -> AT`` indel would pass as polymorphic
+        if not variant.is_snp:
+            return False
 
-        # otherwise check whether the variant is an SNP among the included samples
+        # simply keep it if we don't have a samples mask
+        if self._samples_mask is None or isinstance(variant, DummyVariant):
+            return True
+
+        # otherwise check whether the variant is still polymorphic among the included samples
         return len(np.unique(get_called_bases(variant.gt_bases[self._samples_mask]))) > 1
 
 
