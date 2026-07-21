@@ -1659,7 +1659,7 @@ class ZarrVariantWriter(VariantWriter):
 
         # mark the store as a spec-compliant VCF-Zarr so external readers (vcztools/sgkit) accept it
         from . import __version__
-        root.attrs['vcf_zarr_version'] = '0.4'
+        root.attrs['vcf_zarr_version'] = '0.5'
         root.attrs['source'] = f'sfsutils-{__version__}'
 
 

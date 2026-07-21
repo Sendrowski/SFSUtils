@@ -74,7 +74,7 @@ def test_writer_output_is_spec_compliant_vcz(tmp_path):
 
     root = zarr.open(_write_store(str(tmp_path / "out.vcz")), mode="r")
 
-    assert root.attrs["vcf_zarr_version"] == "0.4"
+    assert root.attrs["vcf_zarr_version"] == "0.5"
     for name in root.array_keys():
         assert "_ARRAY_DIMENSIONS" in root[name].attrs, f"{name} is missing _ARRAY_DIMENSIONS"
     # a few of the axis names that matter for reconstructing the VCF
