@@ -25,7 +25,7 @@ from tqdm import tqdm
 from .annotation import Annotation, SynonymyAnnotation, DegeneracyAnnotation, AncestralAlleleAnnotation
 from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
 from .io_handlers import bases, get_called_bases, FASTAHandler, NoTypeException, \
-    DummyVariant, Site, MultiHandler, VCFHandler, VariantReader, is_monomorphic_snp
+    DummyVariant, Site, MultiHandler, VCFHandler, VariantReader, is_monomorphic_snp, SiteAlleles
 from .settings import Settings
 from .spectrum import Spectra, TwoSFS, TwoSpectra, JointSFS, JointSpectra
 
@@ -1644,11 +1644,18 @@ class Parser(MultiHandler):
         # check `is_snp` property for performance reasons but site may still be monomorphic
         if variant.is_snp:
 
-            # obtain called bases
-            genotypes = get_called_bases(variant.gt_bases[self._samples_mask])
+            # count the called alleles, from the numeric calls where the backend provides them and from the
+            # genotype strings otherwise. Multi-character alleles are left to the strings, which count a
+            # genotype character at a time and so read an ``AT`` call as two
+            site = SiteAlleles.from_site(variant)
+
+            if site is not None and site.single_character:
+                counter = site.counts(self._samples_mask)
+            else:
+                counter = Counter(get_called_bases(variant.gt_bases[self._samples_mask]))
 
             # number of samples
-            n_samples = len(genotypes)
+            n_samples = sum(counter.values())
 
             # skip if not enough samples
             if n_samples < self.n:
@@ -1665,11 +1672,8 @@ class Parser(MultiHandler):
             # determine ancestral allele probability
             aa_prob = self._get_ancestral_prob(variant)
 
-            # count called bases
-            counter = Counter(genotypes)
-
             # determine ancestral allele count
-            n_aa = counter[aa]
+            n_aa = counter.get(aa, 0)
 
             # count the ancestral allele among the site's alleles: if the AA tag names a base that is
             # absent from the observed genotypes the site is effectively multi-allelic (ancestral plus two
@@ -1705,7 +1709,14 @@ class Parser(MultiHandler):
             # apply the same coverage requirement as segregating sites, so a low-coverage monomorphic
             # site is not asymmetrically retained and does not inflate the monomorphic:polymorphic ratio
             # (TargetSiteCounter's DummyVariant sites are fully covered by construction and always pass)
-            if len(get_called_bases(variant.gt_bases[self._samples_mask])) < self.n:
+            site = SiteAlleles.from_site(variant)
+
+            if site is not None and site.single_character:
+                n_called = site.n_called(self._samples_mask)
+            else:
+                n_called = len(get_called_bases(variant.gt_bases[self._samples_mask]))
+
+            if n_called < self.n:
                 self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
                 return None
 
@@ -1733,11 +1744,18 @@ class Parser(MultiHandler):
         """
         if variant.is_snp:
 
-            # obtain called bases per population
-            pop_bases = [get_called_bases(variant.gt_bases[mask]) for mask in self._pop_masks]
+            # count the called alleles per population, from the numeric calls where the backend provides them
+            site = SiteAlleles.from_site(variant)
+
+            if site is not None and site.single_character:
+                pop_counters = [site.counts(mask) for mask in self._pop_masks]
+            else:
+                pop_counters = [Counter(get_called_bases(variant.gt_bases[mask])) for mask in self._pop_masks]
+
+            pop_sizes = [sum(c.values()) for c in pop_counters]
 
             # skip if any population has too few called genotypes
-            if any(len(b) < n for b, n in zip(pop_bases, self._n_per_pop)):
+            if any(size < n for size, n in zip(pop_sizes, self._n_per_pop)):
                 self._logger.debug(f'Skipping site due to too few samples at {variant.CHROM}:{variant.POS}.')
                 return None
 
@@ -1754,7 +1772,10 @@ class Parser(MultiHandler):
             # biallelic check across all populations combined; count the ancestral allele too, so a site
             # whose AA is a third base absent from the genotypes is skipped rather than polarised into the
             # all-derived joint corner
-            counter = Counter(np.concatenate(pop_bases))
+            counter: Dict[str, int] = {}
+            for c in pop_counters:
+                for allele, count in c.items():
+                    counter[allele] = counter.get(allele, 0) + count
 
             n_alleles = len(counter) + (0 if aa in counter else 1)
             if n_alleles > 2:
@@ -1763,9 +1784,8 @@ class Parser(MultiHandler):
 
             # down-project each population independently to a distribution over its derived-allele count
             projections = []
-            for b, n in zip(pop_bases, self._n_per_pop):
-                n_samples = len(b)
-                n_der = n_samples - int(np.sum(b == aa))
+            for c, n_samples, n in zip(pop_counters, pop_sizes, self._n_per_pop):
+                n_der = n_samples - c.get(aa, 0)
 
                 if self.subsample_mode == 'random':
                     vec = np.zeros(n + 1)
@@ -1788,7 +1808,14 @@ class Parser(MultiHandler):
         # if we have a mono-allelic SNP
         elif is_monomorphic_snp(variant):
             # apply the same per-population coverage requirement as segregating sites
-            if any(len(get_called_bases(variant.gt_bases[mask])) < n for mask, n in zip(self._pop_masks, self._n_per_pop)):
+            site = SiteAlleles.from_site(variant)
+
+            if site is not None and site.single_character:
+                pop_sizes = [site.n_called(mask) for mask in self._pop_masks]
+            else:
+                pop_sizes = [len(get_called_bases(variant.gt_bases[mask])) for mask in self._pop_masks]
+
+            if any(size < n for size, n in zip(pop_sizes, self._n_per_pop)):
                 self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
                 return None
 

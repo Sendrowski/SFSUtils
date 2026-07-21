@@ -66,6 +66,11 @@ class Site(Protocol):
     #: The per-sample genotype strings (e.g. ``"A/T"``), as for ``cyvcf2.Variant.gt_bases``.
     gt_bases: 'np.ndarray'
 
+    #: The per-haplotype allele indices into ``[REF] + ALT``, of shape ``(n_samples, ploidy)`` and integer
+    #: dtype, with ``-1`` for a missing call. Optional: it is ``None`` (or absent) on backends that carry
+    #: the genotypes as strings only, in which case consumers read :attr:`gt_bases` instead.
+    allele_indices: Optional['np.ndarray']
+
     #: Whether the site is an SNP.
     is_snp: bool
 
@@ -138,6 +143,128 @@ def get_called_alleles(genotypes: Sequence[str]) -> np.ndarray:
     :return: Array of distinct called alleles.
     """
     return np.array(sorted(get_distinct_called_alleles(genotypes)), dtype=object)
+
+
+class SiteAlleles:
+    """
+    Numeric view of a site's genotypes: the per-haplotype allele indices paired with the site's allele
+    strings. The backends hold the calls as indices already, so reading them here spares both the join into
+    genotype strings and the split back out of them, which dominates the per-site cost of the filtrations
+    and of the down-projection.
+
+    An allele is called only where its string consists of DNA bases alone, matching :func:`get_called_bases`
+    and :func:`get_distinct_called_alleles`: ``N``, ``*``, ``<NON_REF>`` and a missing call contribute
+    nothing. Counting haplotypes and counting genotype characters coincide only where every allele of the
+    site is a single character, which :attr:`single_character` reports.
+    """
+
+    def __init__(self, indices: np.ndarray, alleles: Sequence[str]):
+        """
+        Initialize the view.
+
+        :param indices: The per-haplotype allele indices, of shape ``(n_samples, ploidy)``, with ``-1``
+            for a missing call.
+        :param alleles: The site's allele strings, the reference first.
+        """
+        #: The site's allele strings, the reference first
+        self.alleles: List[str] = list(alleles)
+
+        #: The per-haplotype allele indices
+        self.indices: np.ndarray = indices
+
+        #: Whether every allele of the site is a single character
+        self.single_character: bool = all(len(a) == 1 for a in self.alleles)
+
+        #: Whether the allele at each index is called, with a trailing slot absorbing the missing and
+        #: out-of-range calls so that validity is a single lookup
+        self._called: np.ndarray = np.zeros(len(self.alleles) + 1, dtype=bool)
+
+        for i, allele in enumerate(self.alleles):
+            self._called[i] = allele != '' and set(allele) <= _base_set
+
+    @classmethod
+    def from_site(cls, variant: 'Site') -> Optional['SiteAlleles']:
+        """
+        Build the view for a site, where its backend provides the numeric calls.
+
+        :param variant: The site.
+        :return: The view, or ``None`` where the backend carries the genotypes as strings only.
+        """
+        indices = getattr(variant, 'allele_indices', None)
+
+        if indices is None:
+            # cyvcf2 holds the calls on its Genotypes object, whose last column carries the phase flag
+            genotype = getattr(variant, 'genotype', None)
+
+            if genotype is None:
+                return None
+
+            indices = np.asarray(genotype.array())
+
+            if indices.ndim != 2 or indices.shape[1] < 2:
+                return None
+
+            indices = indices[:, :-1]
+
+        return cls(indices, [variant.REF or ''] + list(variant.ALT))
+
+    def _codes(self, mask: Optional[np.ndarray]) -> np.ndarray:
+        """
+        The allele indices of the selected samples, flattened and with every missing or out-of-range call
+        mapped onto the trailing (never called) slot.
+
+        :param mask: The boolean samples mask, or ``None`` for every sample.
+        :return: The flat allele indices.
+        """
+        indices = self.indices if mask is None else self.indices[mask]
+        codes = np.asarray(indices).ravel()
+
+        n = len(self.alleles)
+
+        return np.where((codes >= 0) & (codes < n), codes, n)
+
+    def n_called(self, mask: Optional[np.ndarray] = None) -> int:
+        """
+        The number of called haplotypes among the selected samples.
+
+        :param mask: The boolean samples mask, or ``None`` for every sample.
+        :return: The number of called haplotypes.
+        """
+        codes = self._codes(mask)
+
+        return int(np.count_nonzero(self._called[codes]))
+
+    def counts(self, mask: Optional[np.ndarray] = None) -> Dict[str, int]:
+        """
+        The number of called haplotypes carrying each allele among the selected samples. Alleles that no
+        selected haplotype carries are absent from the mapping, and two indices sharing an allele string
+        are summed into one entry.
+
+        :param mask: The boolean samples mask, or ``None`` for every sample.
+        :return: The per-allele haplotype counts.
+        """
+        codes = self._codes(mask)
+        counts = np.bincount(codes[self._called[codes]], minlength=len(self.alleles))
+
+        observed: Dict[str, int] = {}
+        for i, allele in enumerate(self.alleles):
+            count = int(counts[i])
+
+            if count:
+                observed[allele] = observed.get(allele, 0) + count
+
+        return observed
+
+    def distinct(self, mask: Optional[np.ndarray] = None) -> Set[str]:
+        """
+        The distinct alleles called among the selected samples.
+
+        :param mask: The boolean samples mask, or ``None`` for every sample.
+        :return: The distinct called alleles.
+        """
+        codes = self._codes(mask)
+
+        return {self.alleles[i] for i in np.unique(codes[self._called[codes]])}
 
 
 def get_major_base(genotypes: Sequence[str]) -> str | None:
@@ -1062,7 +1189,8 @@ class Variant:
     Minimal concrete implementation of the :class:`~sfsutils.io_handlers.Site` interface: a duck-typed stand-in for a
     :class:`cyvcf2.Variant` exposing the subset of its interface that the parser, filtrations, annotations and
     stratifications rely on: ``CHROM``, ``POS``, ``REF``, ``ALT``, ``INFO``, the ``is_*`` type flags and the
-    per-sample ``gt_bases``. Non-VCF backends (tree sequences, VCF-Zarr stores) emit these objects.
+    per-sample ``gt_bases``, alongside the numeric ``allele_indices`` these backends hold natively.
+    Non-VCF backends (tree sequences, VCF-Zarr stores) emit these objects.
     """
 
     #: Whether the variant is an SNP
@@ -1080,6 +1208,9 @@ class Variant:
     #: Whether the variant is a structural variant
     is_sv: bool = False
 
+    #: The per-haplotype allele indices, absent unless the backend supplies them
+    allele_indices: Optional[np.ndarray] = None
+
     def __init__(
             self,
             ref: str,
@@ -1090,6 +1221,8 @@ class Variant:
             is_snp: bool = False,
             is_mnp: bool = False,
             info: Dict[str, object] | None = None,
+            allele_indices: np.ndarray | None = None,
+            phased: bool | Sequence[bool] | np.ndarray | None = None,
     ):
         """
         Initialize the variant.
@@ -1102,6 +1235,11 @@ class Variant:
         :param is_snp: Whether the site is a single-nucleotide polymorphism.
         :param is_mnp: Whether the site is a multi-nucleotide polymorphism.
         :param info: The INFO field.
+        :param allele_indices: The per-haplotype allele indices into ``[ref] + alt``, of shape
+            ``(n_samples, ploidy)``, with ``-1`` for a missing call. Where ``gt_bases`` is omitted the
+            genotype strings are assembled from these on demand.
+        :param phased: Whether each sample's genotype is phased, either per sample or for the site as a
+            whole, which decides the separator of the assembled genotype strings.
         """
         #: The reference allele
         self.REF: str = ref
@@ -1115,8 +1253,15 @@ class Variant:
         #: The alternate alleles
         self.ALT: List[str] = list(alt) if alt is not None else []
 
-        #: The per-sample genotype strings
-        self.gt_bases: np.ndarray = np.asarray(gt_bases) if gt_bases is not None else np.array([], dtype=object)
+        # supplied genotype strings shadow the cached property that would otherwise assemble them
+        if gt_bases is not None:
+            self.gt_bases = np.asarray(gt_bases)
+
+        if allele_indices is not None:
+            self.allele_indices = allele_indices
+
+        #: Whether each sample's genotype is phased
+        self._phased: bool | Sequence[bool] | np.ndarray | None = phased
 
         #: Whether the site is an SNP
         self.is_snp: bool = is_snp
@@ -1126,6 +1271,35 @@ class Variant:
 
         #: Info field
         self.INFO: Dict[str, object] = dict(info) if info else {}
+
+    @cached_property
+    def gt_bases(self) -> np.ndarray:
+        """
+        The per-sample genotype strings, assembled from the allele indices. Most consumers read the indices
+        instead, so a backend that holds the calls numerically supplies those alone and the strings are
+        built only where something actually asks for them.
+
+        :return: The genotype strings, one per sample.
+        """
+        indices = self.allele_indices
+
+        if indices is None:
+            return np.array([], dtype=object)
+
+        alleles = [self.REF] + list(self.ALT)
+        n_alleles = len(alleles)
+
+        if self._phased is None:
+            separators = ['/'] * len(indices)
+        elif np.ndim(self._phased) == 0:
+            separators = ['|' if self._phased else '/'] * len(indices)
+        else:
+            separators = ['|' if p else '/' for p in self._phased]
+
+        return np.array([
+            separators[i].join(alleles[a] if 0 <= a < n_alleles else '.' for a in row)
+            for i, row in enumerate(indices)
+        ], dtype=object)
 
 
 class DummyVariant(Variant):
@@ -1149,9 +1323,6 @@ class DummyVariant(Variant):
         """
         super().__init__(ref=ref, pos=pos, chrom=chrom)
 
-        # drop the empty gt_bases set by Variant.__init__ so the cached property below is used instead
-        del self.gt_bases
-
         self._n_samples: int = int(n_samples)
         self._ploidy: int = int(ploidy)
 
@@ -1163,6 +1334,15 @@ class DummyVariant(Variant):
         :return: The genotype strings, one per sample.
         """
         return np.array(['/'.join([self.REF] * self._ploidy)] * self._n_samples, dtype=object)
+
+    @cached_property
+    def allele_indices(self) -> np.ndarray:
+        """
+        The per-haplotype allele indices: every haplotype carries the reference allele.
+
+        :return: The allele indices, of shape ``(n_samples, ploidy)``.
+        """
+        return np.zeros((self._n_samples, self._ploidy), dtype=int)
 
 
 class VariantReader(Iterable, ABC):
@@ -1278,6 +1458,19 @@ class TskitVariantReader(VariantReader):
             self._sample_names = [f"tsk_{i}" for i in range(len(sample_nodes))]
             self._groups = [[node] for node in sample_nodes]
 
+        ploidy = max((len(group) for group in self._groups), default=0)
+
+        #: Genotype column of each sample's haplotypes, of shape ``(n_samples, ploidy)``. A sample of
+        #: lower ploidy than the site's widest is padded with ``-1``, which reads back as a missing call
+        #: and so contributes nothing, exactly as its shorter genotype string does
+        self._cols = np.full((len(self._groups), ploidy), -1, dtype=np.intp)
+
+        for i, group in enumerate(self._groups):
+            self._cols[i, :len(group)] = [self._node_col[node] for node in group]
+
+        #: Whether the samples differ in ploidy
+        self._ragged: bool = any(len(group) != ploidy for group in self._groups)
+
     @property
     def samples(self) -> List[str]:
         """
@@ -1333,8 +1526,25 @@ class TskitVariantReader(VariantReader):
             alleles = var.alleles
             genotypes = var.genotypes
 
+            observed = [a for a in alleles if a]
+            is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
+
+            # an empty allele is dropped from ALT, so the tskit allele numbering is re-indexed onto
+            # ``[REF] + ALT``; a dropped allele reads back as a missing call, as its genotype string does
+            remap = np.full(len(alleles) + 1, -1, dtype=np.intp)
+            remap[0] = 0
+            next_index = 1
+            for j, allele in enumerate(alleles[1:], start=1):
+                if allele:
+                    remap[j] = next_index
+                    next_index += 1
+
+            codes = np.where(self._cols >= 0, np.asarray(genotypes)[self._cols], -1)
+            allele_indices = remap[np.where((codes >= 0) & (codes < len(alleles)), codes, len(alleles))]
+
+            # a sample of lower ploidy than the widest carries a padding column, which would show up as an
+            # extra missing allele in the assembled genotype string, so those are written out here instead
             gt_bases = np.array([
-                # tree-sequence haplotypes within an individual are ordered, hence phased ('|'), as in write_vcf
                 "|".join(
                     alleles[genotypes[self._node_col[node]]]
                     if genotypes[self._node_col[node]] >= 0 and alleles[genotypes[self._node_col[node]]]
@@ -1342,10 +1552,7 @@ class TskitVariantReader(VariantReader):
                     for node in group
                 )
                 for group in self._groups
-            ], dtype=object)
-
-            observed = [a for a in alleles if a]
-            is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
+            ], dtype=object) if self._ragged else None
 
             variant = Variant(
                 ref=alleles[0],
@@ -1354,6 +1561,9 @@ class TskitVariantReader(VariantReader):
                 gt_bases=gt_bases,
                 alt=[a for a in alleles[1:] if a],
                 is_snp=is_snp,
+                allele_indices=allele_indices,
+                # tree-sequence haplotypes within an individual are ordered, hence phased, as in write_vcf
+                phased=True,
             )
 
             # carry the exact (possibly non-integer) tskit position so TskitVariantWriter can identify the
@@ -1481,13 +1691,6 @@ class ZarrVariantReader(VariantReader):
                 rows = gt_batch[i]
                 seps = phased_batch[i] if phased_batch is not None else None
 
-                gt_bases = np.array([
-                    ('|' if seps is not None and seps[s] else '/').join(
-                        site_alleles[a] if 0 <= a < len(site_alleles) else '.' for a in rows[s]
-                    )
-                    for s in range(rows.shape[0])
-                ], dtype=object)
-
                 observed = [a for a in site_alleles if a]
                 is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
 
@@ -1521,10 +1724,11 @@ class ZarrVariantReader(VariantReader):
                     ref=site_alleles[0] if site_alleles else '.',
                     pos=int(pos_batch[i]),  # vcf2zarr stores the 1-based VCF position
                     chrom=self._contig_ids[int(contig_batch[i])],
-                    gt_bases=gt_bases,
                     alt=site_alleles[1:],
                     is_snp=is_snp,
                     info=info,
+                    allele_indices=rows,
+                    phased=seps,
                 )
 
 

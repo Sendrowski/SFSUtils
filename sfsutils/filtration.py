@@ -16,7 +16,7 @@ import pandas as pd
 
 from .annotation import DegeneracyAnnotation
 from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_distinct_called_bases, \
-    get_distinct_called_alleles, DummyVariant, \
+    get_distinct_called_alleles, DummyVariant, SiteAlleles, \
     Site, VariantReader, \
     VariantWriter
 
@@ -209,9 +209,16 @@ class SNPFiltration(MaskedFiltration):
         if self._samples_mask is None or isinstance(variant, DummyVariant):
             return True
 
-        # otherwise check whether the variant is still polymorphic among the included samples. cyvcf2 rebuilds
-        # gt_bases on every access, which dominates this check, so settle it from the numeric genotype codes
-        # where they are available and unambiguous, and decode the bases only when they are not
+        # otherwise check whether the variant is still polymorphic among the included samples. Building and
+        # re-splitting the genotype strings dominates this check, so settle it from the numeric calls where
+        # the backend provides them, and decode the bases only when it does not. Multi-character alleles are
+        # left to the bases, which count a genotype character at a time and so read an ``AT`` call as two
+        site = SiteAlleles.from_site(variant)
+
+        if site is not None and site.single_character:
+            return len(site.distinct(self._samples_mask)) > 1
+
+        # the numeric genotype codes settle most samples on their own where they are available
         types = getattr(variant, 'gt_types', None)
 
         if types is not None:
@@ -275,9 +282,15 @@ class PolyAllelicFiltration(MaskedFiltration):
         if self._samples_mask is None or isinstance(variant, DummyVariant):
             return False
 
-        # otherwise check whether the variant is poly-allelic among the included samples. cyvcf2 rebuilds
-        # gt_bases on every access and splitting it into alleles dominates this check, so use the numeric
-        # genotype codes to skip the samples they already settle
+        # otherwise check whether the variant is poly-allelic among the included samples. Building and
+        # splitting the genotype strings dominates this check, so count the alleles from the numeric calls
+        # where the backend provides them
+        site = SiteAlleles.from_site(variant)
+
+        if site is not None:
+            return len(site.distinct(self._samples_mask)) < 3
+
+        # the numeric genotype codes still settle the homozygous reference samples without decoding them
         types = getattr(variant, 'gt_types', None)
 
         if types is None:
