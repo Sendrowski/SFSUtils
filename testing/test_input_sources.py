@@ -198,6 +198,37 @@ def test_tree_sequence_joint_matches_vcf():
     np.testing.assert_array_equal(from_trees, from_vcf)
 
 
+@requires_zarr
+def test_vcf_zarr_joint_matches_vcf():
+    """The joint SFS from the VCF-Zarr store matches the one from the VCF it was converted from."""
+    Settings.disable_pbar = True
+    pops = {"A": [f"tsk_{i}" for i in range(5)], "B": [f"tsk_{i}" for i in range(5, 10)]}
+    kw = dict(pops=pops, n={"A": 10, "B": 10}, skip_non_polarized=False, subsample_mode="random")
+    from_vcf = np.asarray(su.Parser(source=VCF, **kw).parse()["all"]).astype(int)
+    from_zarr = np.asarray(su.Parser(source=VCZ, **kw).parse()["all"]).astype(int)
+    np.testing.assert_array_equal(from_zarr, from_vcf)
+
+
+def _two_sfs(source):
+    Settings.disable_pbar = True
+    kw = dict(n=20, two_sfs=True, d=1000, skip_non_polarized=False, subsample_mode="random")
+    return np.asarray(su.Parser(source=source, **kw).parse()["all"]).astype(int)
+
+
+@requires_trees
+def test_tree_sequence_two_sfs_matches_vcf():
+    """The 2-SFS from the tree sequence matches the one from the VCF written from it. The 2-SFS pairs sites by
+    genomic distance, so this also checks the positions the tree backend reports."""
+    np.testing.assert_array_equal(_two_sfs(TREES), _two_sfs(VCF))
+    assert _two_sfs(VCF).sum() > 0
+
+
+@requires_zarr
+def test_vcf_zarr_two_sfs_matches_vcf():
+    """The 2-SFS from the VCF-Zarr store matches the one from the VCF it was converted from."""
+    np.testing.assert_array_equal(_two_sfs(VCZ), _two_sfs(VCF))
+
+
 @pytest.mark.skipif(not os.path.exists(REF), reason="the reference FASTA fixture is absent")
 @pytest.mark.parametrize("source", ["vcf", "trees", "vcz"])
 def test_target_site_counter_input_agnostic(source):
