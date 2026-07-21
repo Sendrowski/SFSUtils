@@ -461,7 +461,12 @@ def test_target_site_counter_no_nan_for_sampling_only_strata(tmp_path):
                         target_site_counter=su.TargetSiteCounter(n_samples=200, n_target_sites=10000)).parse()
 
     assert not spectra.data.isna().any().any()          # no silent NaN in a returned spectrum
-    assert spectra.data.sum().sum() == pytest.approx(10000, rel=1e-6)   # full budget allocated
+    assert (spectra.data >= 0).all().all()              # and no negative mutational opportunity
+
+    # the whole target-site budget is allocated, up to the types whose observed sites outnumber their share of
+    # it: those are clipped to zero monomorphic sites rather than left negative, which adds back the shortfall
+    assert spectra.data.sum().sum() == pytest.approx(10000, rel=1e-3)
+    assert spectra.data.sum().sum() >= 10000
 
 
 def test_snp_filtration_drops_indels():

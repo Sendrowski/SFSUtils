@@ -914,38 +914,47 @@ class TargetSiteCounter:
         before = self._sfs_polymorphic.data.reindex(columns=spectra.data.columns, fill_value=0)
         before_n_polymorphic = self._sfs_polymorphic.n_polymorphic.reindex(spectra.data.columns, fill_value=0)
 
-        # subtract by monomorphic counts of original spectra
-        # we only want to consider the monomorphic sites sampled from the FASTA file
-        spectra.data.iloc[[0, -1], :] -= before.iloc[[0, -1], :]
+        # the sampling pass only ever contributes all-ancestral sites, so bin 0 is the only bin it touches.
+        # Derive the sampled counts without mutating the spectra, so the bail-outs below can return the input
+        # untouched rather than a spectrum the subtraction has already mutilated.
+        sampled_monomorphic = spectra.data.iloc[0, :] - before.iloc[0, :]
 
         # get number of monomorphic and polymorphic sites sampled from the FASTA and VCF file
-        n_monomorphic = spectra.data.iloc[0, :].sum()
-        n_polymorphic = spectra.data.iloc[1:, :].sum().sum()
+        n_monomorphic = sampled_monomorphic.sum()
+        n_polymorphic = spectra.data.iloc[1:-1, :].sum().sum()
+
+        # every site seen in the input consumes target-site budget, the fixed-derived (divergence) ones included
+        n_observed = before.iloc[1:, :].sum()
 
         # check if we have enough target sites
         if self.n_target_sites < n_polymorphic:
             self._logger.warning(f"Number of polymorphic sites ({n_polymorphic}) exceeds the total "
                                  f"number of target sites ({self.n_target_sites}) which does not make sense. "
                                  f"The number of target sites unchanged is left unchanged.")
+            spectra.data = before.astype(float)
         elif n_monomorphic == 0:
             self._logger.warning(f"Number of monomorphic sites is zero which should only happen "
                                  f"if there are very few sites considered. Failed to adjust "
                                  f"the number of monomorphic sites.")
+            spectra.data = before.astype(float)
         else:
 
             # compute multiplicative factor to scale the total number of sites
             # to the number of target sites plus the number of polymorphic sites
-            x = (self.n_target_sites + self._sfs_polymorphic.n_polymorphic.sum() - n_polymorphic) / n_monomorphic
+            x = (self.n_target_sites + before_n_polymorphic.sum() - n_polymorphic) / n_monomorphic
 
-            # extrapolate monomorphic counts using scaling factor
-            spectra.data.iloc[0, :] *= x
+            # extrapolate the monomorphic counts and subtract the observed sites from them, so that the total
+            # number of sites per type is the type's share of the target sites. We do this to correct for the
+            # fact that, for a type, we have relatively fewer monomorphic sites if we have more polymorphic ones
+            spectra.data.iloc[0, :] = sampled_monomorphic * x - n_observed
 
-            # subtract polymorphic counts from original spectra,
-            # so that the total number of sites is equal to the number of target sites
-            # we do this to correct for the fact that, for a type, we have relatively
-            # fewer monomorphic sites if we have more polymorphic sites
-            # TODO include monomorphic sites here from VCF?
-            spectra.data.iloc[0, :] -= before_n_polymorphic
+            # a type whose observed sites outnumber its share of the target sites would otherwise be assigned a
+            # negative mutational opportunity, which is meaningless downstream
+            negative = spectra.data.columns[spectra.data.iloc[0, :] < 0].tolist()
+            if negative:
+                self._logger.warning(f"The number of target sites is too small to accommodate the observed sites "
+                                     f"of type(s) {negative}; their monomorphic counts were clipped to zero.")
+                spectra.data.iloc[0, :] = spectra.data.iloc[0, :].clip(lower=0)
 
         return spectra
 
@@ -998,11 +1007,12 @@ class TargetSiteCounter:
         """
         Add the monomorphic-involving pairs to a two-SFS by extrapolating from the target-site count.
 
-        The observed matrix holds mainly the polymorphic-polymorphic pairs. Under a uniform site density a window of
-        width ``distance`` holds on average ``rho_m * distance`` monomorphic sites, where ``rho_m = n_monomorphic /
-        region_length`` and ``n_monomorphic = n_target_sites - n_polymorphic``. Each polymorphic site of derived
-        count ``j`` therefore pairs with ``rho_m * distance`` monomorphic sites (the ``(0, j)`` and ``(j, 0)``
-        entries) and each monomorphic site pairs with ``rho_m * distance`` others (the ``(0, 0)`` entry). The window
+        The observed matrix holds mainly the polymorphic-polymorphic pairs. Under a uniform site density the
+        ``+/- distance`` window around a site holds on average ``2 * rho_m * distance`` monomorphic sites, where
+        ``rho_m = n_monomorphic / region_length`` and ``n_monomorphic = n_target_sites - n_polymorphic``. Each
+        polymorphic site of derived count ``j`` therefore pairs with that many monomorphic sites (the ``(0, j)``
+        and ``(j, 0)`` entries) and each monomorphic site pairs with that many others (the ``(0, 0)`` entry),
+        which the symmetric storage splits evenly between the two slots. The window
         offset drops out: a band of width ``distance`` holds the same expected number of sites regardless of where it
         starts. This anchors the marginal for :meth:`~sfsutils.spectrum.TwoSFS.cov` / ``corr`` only approximately;
         :meth:`~sfsutils.spectrum.TwoSFS.fpmi` needs no monomorphic sites and is preferred for SNP-only input.
@@ -1029,19 +1039,16 @@ class TargetSiteCounter:
 
         rho_m = n_monomorphic / region_length
 
-        # monomorphic-polymorphic pairs: a polymorphic site of derived count j has rho_m * distance monomorphic
-        # partners within the window; and monomorphic-monomorphic pairs for the (0, 0) entry.
-        # the polymorphic-polymorphic block is stored half-averaged (parse applies symmetrize = (A + A.T) / 2),
-        # so each unordered pair sits as count / 2 in both symmetric slots. To match that convention (downstream
-        # TwoSFS._branch_length_covariance folds the matrix back with data + data.T), we add half the extrapolated
-        # count to each symmetric slot rather than the full count, keeping the monomorphic entries on the same
-        # scale as the poly-poly ones after the fold.
+        # monomorphic-polymorphic pairs: the parse pairs each site with every site within +/- distance, so a
+        # polymorphic site of derived count j has 2 * rho_m * distance monomorphic partners; symmetrize()
+        # ((A + A.T) / 2) redistributes those between the two symmetric slots without changing their total, so
+        # each slot holds rho_m * distance. The (0, 0) entry follows the same accounting for monomorphic pairs.
         contribution = marginal * rho_m * distance
         contribution[0] = 0.0
         contribution[-1] = 0.0
-        two_sfs[0, :] += contribution / 2
-        two_sfs[:, 0] += contribution / 2
-        two_sfs[0, 0] += 0.5 * n_monomorphic * rho_m * distance
+        two_sfs[0, :] += contribution
+        two_sfs[:, 0] += contribution
+        two_sfs[0, 0] += n_monomorphic * rho_m * distance
 
         return two_sfs
 
@@ -1376,6 +1383,22 @@ class Parser(MultiHandler):
 
         #: The contig currently held in the two-SFS buffer
         self._two_sfs_contig: str | None = None
+
+    def _reset(self):
+        """
+        Reset the accumulating state, so that a second :meth:`parse` starts from a clean slate rather than adding
+        to the counts of the previous pass. The RNG is re-seeded as well, which keeps repeated parses reproducible.
+        """
+        self.n_skipped = 0
+        self.n_aa_prob = 0
+        self.n_no_ancestral = 0
+        self.sfs = defaultdict(lambda: np.zeros(self._joint_shape))
+        self._contig_bounds = defaultdict(lambda: (np.inf, -np.inf))
+        self._two_sfs_matrices = defaultdict(lambda: np.zeros((self.n + 1, self.n + 1)))
+        self._two_sfs_marginal = defaultdict(lambda: np.zeros(self.n + 1))
+        self._two_sfs_buffer = deque()
+        self._two_sfs_contig = None
+        self.rng = np.random.default_rng(seed=self.seed)
 
     def _get_ancestral(self, variant: Site) -> str:
         """
@@ -1749,6 +1772,9 @@ class Parser(MultiHandler):
         """
         Set up the parser.
         """
+        # restore the per-pass state of the components, which otherwise carries over into a second parse
+        self._rewind()
+
         # set up target site counter
         if self.target_site_counter is not None:
             self.target_site_counter._setup(self)
@@ -1785,12 +1811,19 @@ class Parser(MultiHandler):
             self._pop_masks = []
 
             for name in self._pop_names:
+                requested = set(self.pops[name])
                 mask = np.isin(samples, self.pops[name])
 
-                if not mask.any():
-                    raise ValueError(f"None of the samples for population '{name}' were found in the input.")
+                # a partial match would silently shrink the population, changing the projection without warning
+                missing = sorted(requested - set(samples))
+                if missing:
+                    raise ValueError(f"Samples for population '{name}' were not found in the input: {missing}.")
 
                 self._pop_masks.append(mask)
+
+            # masked filtrations copy this mask, so without it they would fall back to their unmasked branch and
+            # decide from ALT / is_snp rather than from the genotypes of the populations being parsed
+            self._samples_mask = np.logical_or.reduce(self._pop_masks)
 
             return
 
@@ -1838,7 +1871,8 @@ class Parser(MultiHandler):
         :return: A :class:`~sfsutils.spectrum.Spectra`, :class:`~sfsutils.spectrum.JointSpectra`, or
             :class:`~sfsutils.spectrum.TwoSpectra` as described above.
         """
-        # set up parser
+        # discard the state of any previous pass before setting up
+        self._reset()
         self._setup()
 
         pbar = self.get_pbar(
@@ -1931,12 +1965,13 @@ class Parser(MultiHandler):
         # in joint mode, return a collection of joint spectra keyed by (sorted) type
         if self.pops is not None:
             # extrapolate the monomorphic corner from the target-site count
+            sfs = dict(self.sfs)
             if self.target_site_counter is not None and self.n_skipped < self.n_sites:
                 self.target_site_counter.count()
-                self.sfs = self.target_site_counter._update_target_sites_joint(dict(self.sfs))
+                sfs = self.target_site_counter._update_target_sites_joint(sfs)
 
             return JointSpectra(
-                {t: JointSFS(self.sfs[t], self._pop_names) for t in sorted(self.sfs)}
+                {t: JointSFS(sfs[t], self._pop_names) for t in sorted(sfs)}
             )
 
         # count target sites
@@ -1944,7 +1979,9 @@ class Parser(MultiHandler):
             # count target sites
             self.target_site_counter.count()
 
-            # update target sites
-            self.sfs = self.target_site_counter._update_target_sites(Spectra(dict(self.sfs))).to_dict()
+            # update target sites (the sampled monomorphic sites have been added to self.sfs by now)
+            spectra = self.target_site_counter._update_target_sites(Spectra(dict(self.sfs)))
+        else:
+            spectra = Spectra(dict(self.sfs))
 
-        return Spectra(dict(self.sfs)).sort_types()
+        return spectra.sort_types()

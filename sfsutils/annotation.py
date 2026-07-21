@@ -522,7 +522,7 @@ class DegeneracyAnnotation(Annotation):
                 return
 
             degeneracy = '.'
-            if 'N' not in codon:
+            if set(codon) <= set(base_indices):
                 degeneracy = self._get_degeneracy(codon, pos_codon)
 
                 # increment counter of annotated sites
@@ -749,7 +749,7 @@ class SynonymyAnnotation(DegeneracyAnnotation):
                     alt_codon = self.mutate(codon, alt, pos_codon).upper()
 
                     # whether the alternative codon is synonymous
-                    if 'N' not in codon and 'N' not in alt_codon:
+                    if set(codon) <= set(base_indices) and set(alt_codon) <= set(base_indices):
                         synonymy = int(self.is_synonymous(codon, alt_codon))
 
                     # append alternative codon to info field

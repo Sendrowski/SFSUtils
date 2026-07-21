@@ -1976,7 +1976,7 @@ class JointSFS(AbstractSpectrum):
             raise ValueError(f'Expected {data.ndim} population names (one per axis), got {len(pop_names)}.')
 
         #: The joint SFS array.
-        self.data: np.ndarray = data
+        self.data: np.ndarray = np.array(data, dtype=float)
 
         #: Names of the populations (one per axis); falls back to ``pop_0, ..., pop_{P-1}`` if not provided.
         self.pop_names: List[str] = list(pop_names) if pop_names is not None else [f'pop_{i}' for i in range(data.ndim)]
@@ -2076,27 +2076,29 @@ class JointSFS(AbstractSpectrum):
 
     def fold(self) -> 'JointSFS':
         """
-        Fold the joint SFS by folding each population axis independently. Along every axis the entry with ``k``
-        derived alleles is combined with its reflection at ``n_p - k``, summing the two halves into the minor
-        (lower) half and zeroing the reflected upper half, generalising :meth:`Spectrum.fold` and
-        :meth:`TwoSFS.fold` to an arbitrary number of populations. Note that this only makes sense for counts or
-        frequencies. Folding an already folded joint SFS is a no-op.
+        Fold the joint SFS. Ancestral and derived are a single site-level property shared by all populations, so
+        the fold reflects every axis simultaneously and combines each entry with its reflection by the **total**
+        derived count across populations (the dadi/moments convention), rather than folding each axis against its
+        own midpoint. Entries whose total derived count exceeds half the total sample size are emptied into their
+        reflection; entries exactly on the boundary are shared evenly between the two. Note that this only makes
+        sense for counts or frequencies. Folding an already folded joint SFS is a no-op.
 
         :return: Folded joint SFS.
         """
-        data = self.data.copy()
+        data = np.asarray(self.data, dtype=float)
 
-        for axis in range(data.ndim):
-            mid = data.shape[axis] // 2
+        # total derived count of every entry, and the total number of haplotypes across populations
+        total = sum(np.indices(data.shape))
+        n_total = sum(size - 1 for size in data.shape)
 
-            lower = tuple(slice(0, mid) if i == axis else slice(None) for i in range(data.ndim))
-            upper = tuple(slice(data.shape[axis] - mid, None) if i == axis else slice(None) for i in range(data.ndim))
+        # reflect all axes at once: entry i pairs with the entry holding the complementary derived counts
+        folded = data + data[tuple(slice(None, None, -1) for _ in data.shape)]
 
-            # add the reflected upper half into the lower half and empty the upper half
-            data[lower] += np.flip(data[upper], axis=axis)
-            data[upper] = 0
+        # keep the minor half, empty the major half, and halve the boundary, which pairs with itself
+        folded = np.where(2 * total > n_total, 0.0, folded)
+        folded = np.where(2 * total == n_total, folded / 2, folded)
 
-        return JointSFS(data, self.pop_names)
+        return JointSFS(folded, self.pop_names)
 
     def is_folded(self) -> bool:
         """

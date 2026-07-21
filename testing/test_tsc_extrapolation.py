@@ -33,32 +33,53 @@ def test_two_sfs_target_site_counter_extrapolates_monomorphic_pairs():
     np.testing.assert_allclose(a[1:-1, 1:-1], poly[1:-1, 1:-1])  # polymorphic interior unchanged
 
 
-def test_two_sfs_extrapolation_follows_half_averaged_convention():
-    """The parse() two-SFS stores the polymorphic block half-averaged (symmetrize applies (A + A.T) / 2), and
-    TwoSFS._branch_length_covariance folds it back with data + data.T. The extrapolated monomorphic-involving pairs
-    must follow the same half-averaged convention so that after the fold they land on the poly-poly scale, not
-    twice it. Constructed so the folded pair matrix is exactly the independence outer product N * outer(q, q), for
-    which the branch-length covariance must vanish; a doubled monomorphic corner would break that."""
-    q = np.array([0.5, 0.2, 0.2, 0.1, 0.0])  # per-site class distribution; bin 0 monomorphic, bin -1 unused
-    T = 1000                                  # total (target) sites
-    N = 10_000                                # total folded site pairs
-    region_length, distance = 10_000.0, 100
+def test_two_sfs_extrapolation_matches_all_sites_ground_truth(tmp_path):
+    """Ground truth: parse an all-sites VCF directly (which counts the monomorphic-involving pairs for real) and
+    compare against the SNP-only projection of the SAME data parsed with a TargetSiteCounter. The extrapolated
+    monomorphic row/column and (0, 0) corner must reproduce the real ones.
 
-    marginal = T * q  # polymorphic SFS counts; marginal[0] = marginal[-1] = 0 since q is 0 there
-    poly = np.zeros((5, 5))
-    poly[1:-1, 1:-1] = 0.5 * N * np.outer(q[1:-1], q[1:-1])  # half-averaged poly-poly block
+    The previous version of this test hand-built the polymorphic block and asserted an algebraic convention, which
+    made it self-consistent with the very factor-of-2 it was meant to pin down."""
+    L, n_hap, d = 4000, 6, 50
+    rng = np.random.default_rng(0)
 
-    ext = su.TargetSiteCounter(n_target_sites=T)._extrapolate_two_sfs(
-        poly.copy(), marginal, region_length=region_length, distance=distance)
+    # a site at every position, so the site density is exactly 1/bp and the extrapolation has no sampling noise
+    derived = np.where(rng.random(L) < 0.03, rng.integers(1, n_hap, size=L), 0)
 
-    # after the covariance fold the monomorphic row/col recover the full independence counts, on the same scale as
-    # the poly-poly block, not twice it (the pre-fix full-count extrapolation would double the monomorphic entries)
-    folded = ext + ext.T
-    np.testing.assert_allclose(folded, N * np.outer(q, q))
+    header = ('##fileformat=VCFv4.2\n##contig=<ID=1,length=%d>\n'
+              '##INFO=<ID=AA,Number=1,Type=String,Description="Ancestral">\n'
+              '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+              '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t'
+              % L + '\t'.join(f's{i}' for i in range(n_hap // 2)) + '\n')
 
-    # the downstream branch-length covariance of a genuinely independent input is therefore ~0 (the 2x is gone)
-    np.testing.assert_allclose(su.TwoSFS(ext).cov().data, 0.0, atol=1e-9)
+    all_sites, snps = tmp_path / "all.vcf", tmp_path / "snp.vcf"
+    with open(all_sites, 'w') as fa, open(snps, 'w') as fs:
+        fa.write(header)
+        fs.write(header)
+        for pos, k in enumerate(derived, start=1):
+            hap = np.array([1] * int(k) + [0] * (n_hap - int(k)))
+            rng.shuffle(hap)
+            row = (f'1\t{pos}\t.\tA\t{"T" if k else "."}\t.\tPASS\tAA=A\tGT\t'
+                   + '\t'.join(f'{a}|{b}' for a, b in hap.reshape(-1, 2)) + '\n')
+            fa.write(row)
+            if k:
+                fs.write(row)
 
+    Settings.disable_pbar = True
+    kw = dict(n=n_hap, two_sfs=True, d=d, skip_non_polarized=False, subsample_mode="random")
+    truth = np.asarray(su.Parser(source=str(all_sites), **kw).parse()["all"].data)
+    extrapolated = np.asarray(su.Parser(source=str(snps), **kw,
+                                        target_site_counter=su.TargetSiteCounter(n_target_sites=L)).parse()["all"].data)
+
+    # the polymorphic-polymorphic block is observed directly and must match exactly, which also confirms the two
+    # parses are on the same scale, so any difference in the monomorphic entries is the extrapolation's own
+    np.testing.assert_allclose(extrapolated[1:-1, 1:-1], truth[1:-1, 1:-1])
+
+    # the extrapolated monomorphic entries reproduce the real ones (the sites near the contig edges have fewer
+    # partners than the uniform-density assumption predicts, hence the tolerance)
+    assert extrapolated[0, 0] == pytest.approx(truth[0, 0], rel=0.02)
+    assert extrapolated[0, 1:-1].sum() == pytest.approx(truth[0, 1:-1].sum(), rel=0.02)
+    assert extrapolated[1:-1, 0].sum() == pytest.approx(truth[1:-1, 0].sum(), rel=0.02)
 
 @pytest.mark.skipif(not (os.path.exists("resources/msprime/two_epoch.ref.fasta.gz")
                          and os.path.exists("resources/msprime/two_epoch.vcf")),

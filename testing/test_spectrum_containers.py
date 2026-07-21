@@ -200,46 +200,61 @@ def test_jointsfs_marginalize():
         j.marginalize([5])
 
 
-def test_jointsfs_fold():
-    # a genuinely different, loop-based reference fold to cross-check the flip-based implementation
-    def _fold_axis(data, axis):
-        data = np.moveaxis(data, axis, 0).astype(float)
-        L = data.shape[0]
-        mid = L // 2
-        out = data.copy()
-        for k in range(mid):
-            out[k] = data[k] + data[L - 1 - k]
-        out[L - mid:] = 0
-        return np.moveaxis(out, 0, axis)
-
-    # rectangular, higher-dimensional joint SFS with all-distinct entries
+def test_jointsfs_fold_matches_per_site_ground_truth():
+    """Ground truth: fold each simulated SITE into its minor configuration by the total derived count, bin the
+    result, and compare. This is the definition of folding, computed per site and so wholly independent of the
+    array manipulation in fold()."""
+    n = (4, 6)
     rng = np.random.default_rng(0)
-    data = rng.random((3, 4, 5))
-    j = su.JointSFS(data, pop_names=["A", "B", "C"])
+
+    # simulate sites, each with a derived count per population
+    sites = np.column_stack([rng.integers(0, n_p + 1, size=5000) for n_p in n])
+
+    unfolded = np.zeros([n_p + 1 for n_p in n])
+    ground_truth = np.zeros_like(unfolded)
+
+    for site in sites:
+        unfolded[tuple(site)] += 1
+
+        # the minor configuration: flip the polarization when the derived allele is the majority one
+        total, n_total = site.sum(), sum(n)
+        if 2 * total > n_total:
+            ground_truth[tuple(np.array(n) - site)] += 1
+        elif 2 * total == n_total:
+            # exactly on the boundary the two orientations are equally valid, so the site is shared
+            ground_truth[tuple(site)] += 0.5
+            ground_truth[tuple(np.array(n) - site)] += 0.5
+        else:
+            ground_truth[tuple(site)] += 1
+
+    np.testing.assert_allclose(su.JointSFS(unfolded, ["A", "B"]).fold().data, ground_truth)
+
+
+def test_jointsfs_fold_is_polarization_invariant():
+    """Folding must discard the polarization: flipping which allele is called derived at every site (reversing
+    all axes) has to leave the folded spectrum unchanged."""
+    rng = np.random.default_rng(1)
+    data = rng.random((5, 7))
+
+    np.testing.assert_allclose(
+        su.JointSFS(data, ["A", "B"]).fold().data,
+        su.JointSFS(data[::-1, ::-1], ["A", "B"]).fold().data,
+    )
+
+
+def test_jointsfs_fold_conserves_mass_and_is_idempotent():
+    rng = np.random.default_rng(2)
+    j = su.JointSFS(rng.random((3, 4, 5)), pop_names=["A", "B", "C"])
 
     folded = j.fold()
 
-    # matches the independent reference on every axis
-    expected = data.copy()
-    for axis in range(data.ndim):
-        expected = _fold_axis(expected, axis)
-    assert np.allclose(folded.data, expected)
+    assert folded.data.sum() == pytest.approx(j.data.sum())
+    np.testing.assert_allclose(folded.fold().data, folded.data)
+    assert folded.is_folded()
 
-    # folding preserves the total number of sites and reports as folded
-    assert folded.n_sites == pytest.approx(j.n_sites)
-    assert folded.is_folded() is True
-    assert j.is_folded() is False
-    assert type(folded) is su.JointSFS and folded.pop_names == ["A", "B", "C"]
-
-    # the reflected upper half of every axis is emptied into the lower half
-    for axis, L in enumerate(folded.shape):
-        mid = L // 2
-        upper = tuple(slice(L - mid, None) if i == axis else slice(None) for i in range(folded.data.ndim))
-        assert np.all(folded.data[upper] == 0)
-
-    # folding is idempotent (re-folding a folded spectrum is a no-op)
-    assert np.array_equal(folded.fold().data, folded.data)
-
+    # every entry whose derived count exceeds half the total sample size is empty
+    total = sum(np.indices(folded.data.shape))
+    assert np.all(folded.data[2 * total > sum(s - 1 for s in folded.data.shape)] == 0)
 
 def test_jointsfs_fold_symmetric_is_noop():
     # a joint SFS already symmetric about the fold boundary is unchanged and reports as folded
