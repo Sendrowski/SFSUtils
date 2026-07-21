@@ -40,6 +40,12 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
        --annotate degeneracy --stratify degeneracy \
        --filter snp --output sfs.csv
 
+   # synonymous vs non-synonymous SFS
+   sfsutils parse --vcf variants.vcf.gz --n 20 \
+       --fasta genome.fasta --gff genome.gff.gz \
+       --annotate synonymy --stratify synonymy \
+       --filter snp --output sfs.csv
+
    # joint SFS across two populations
    sfsutils parse --vcf variants.vcf.gz --n 10 \
        --pops "CEU=NA06984,NA06985;YRI=NA18486,NA18487" --output jsfs.json
@@ -66,7 +72,7 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
    * - ``--stratify``
      - Comma-separated stratifications (``degeneracy``, ``synonymy``, ``base-transition``, ``transition-transversion``, ``ancestral-base``, ``contig``).
    * - ``--annotate``
-     - Comma-separated on-the-fly annotations (``degeneracy``, ``maximum-likelihood-ancestral``).
+     - Comma-separated on-the-fly annotations (``degeneracy``, ``synonymy``, ``maximum-likelihood-ancestral``). A stratification by ``degeneracy`` or ``synonymy`` needs the matching annotation here, unless the input already carries the tag.
    * - ``--filter``
      - Comma-separated filtrations (``snp``, ``snv``, ``poly-allelic``, ``coding-sequence``, ``cpg``, ``contig``, ``no``, ``all``). Default ``poly-allelic``.
    * - ``--contigs``
@@ -124,7 +130,8 @@ input because the writer copies the header (contigs, INFO/FORMAT definitions) fr
 annotate
 --------
 
-Write the input back with added site-level information: site degeneracy from a reference (``degeneracy``), or the
+Write the input back with added site-level information: site degeneracy from a reference (``degeneracy``), the
+synonymous/non-synonymous status of a coding variant (``synonymy``), or the
 ancestral allele inferred from outgroups under a maximum-likelihood substitution model
 (``maximum-likelihood-ancestral``). As for ``filter``, the output format follows the ``--output`` extension: a VCF
 (``.vcf``/``.vcf.gz``), a VCF-Zarr store (``.vcz``/``.zarr``), or a tree sequence (``.trees``). A VCF-Zarr store can
@@ -157,7 +164,7 @@ tree-sequence input.
    * - ``--output``
      - Output path; its extension selects the format (``.vcf``/``.vcf.gz``, ``.vcz``/``.zarr``, ``.trees``). Required.
    * - ``--annotation``
-     - Comma-separated annotations (``degeneracy``, ``maximum-likelihood-ancestral``). Required.
+     - Comma-separated annotations (``degeneracy``, ``synonymy``, ``maximum-likelihood-ancestral``). Required.
    * - ``--fasta`` / ``--gff``
      - References required by the ``degeneracy`` annotation.
    * - ``--outgroups`` / ``--n-ingroups``

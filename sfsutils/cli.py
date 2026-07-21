@@ -13,6 +13,7 @@ __contact__ = "sendrowski.janek@gmail.com"
 
 import argparse
 import logging
+import os
 import sys
 from typing import Callable, Dict, List, Sequence
 
@@ -52,6 +53,27 @@ def _parse_pops(value: str) -> Dict[str, List[str]]:
         pops[name.strip()] = _split_csv(samples)
 
     return pops
+
+
+def _positive_int(value: str) -> int:
+    """
+    Parse an option value that has to be a positive integer.
+
+    :param value: The raw option string.
+    :return: The parsed integer.
+    :raises argparse.ArgumentTypeError: If the value is not an integer of at least one.
+    """
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid integer value '{value}'.")
+
+    # the library stop conditions compare for equality, so a limit below one never fires and is silently
+    # equivalent to no limit at all
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"Value must be at least 1, got {parsed}.")
+
+    return parsed
 
 
 def _configure_logging(verbose: int, quiet: bool) -> None:
@@ -137,7 +159,7 @@ def _build_annotations(names: List[str], outgroups: List[str] | None, n_ingroups
     :return: List of annotation instances.
     :raises SystemExit: On an unknown name or missing outgroups.
     """
-    from . import DegeneracyAnnotation, MaximumLikelihoodAncestralAnnotation
+    from . import DegeneracyAnnotation, SynonymyAnnotation, MaximumLikelihoodAncestralAnnotation
 
     def _mle():
         if not outgroups:
@@ -147,6 +169,7 @@ def _build_annotations(names: List[str], outgroups: List[str] | None, n_ingroups
 
     factories: Dict[str, Callable[[], object]] = {
         'degeneracy': DegeneracyAnnotation,
+        'synonymy': SynonymyAnnotation,
         'maximum-likelihood-ancestral': _mle,
     }
 
@@ -295,6 +318,26 @@ def _input_source(args: argparse.Namespace) -> str:
     return args.vcf or args.zarr or args.trees
 
 
+def _check_output_distinct_from_input(args: argparse.Namespace) -> None:
+    """
+    Reject an ``--output`` path that resolves to the input source.
+
+    :param args: Parsed arguments.
+    :raises SystemExit: If the output and the input source are the same path.
+    """
+    source, output = _input_source(args), args.output
+
+    # a remote source is never written to, and neither path can be resolved when either is absent
+    if not source or not output or '://' in source:
+        return
+
+    # the writers truncate the output before the reader is done with it, so an output resolving to the
+    # input destroys the input beyond recovery; the same holds for a zarr store, where both are directories
+    if os.path.realpath(source) == os.path.realpath(output):
+        raise SystemExit(f"--output '{output}' resolves to the input source '{source}'. Writing the output "
+                         f"over the input would destroy it; choose a different output path.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """
     Build the top-level argument parser.
@@ -344,7 +387,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--stratify", type=_split_csv, default=[],
                    help="Comma-separated stratifications (e.g. degeneracy,synonymy). Default: none.")
     p.add_argument("--annotate", type=_split_csv, default=[],
-                   help="Comma-separated on-the-fly annotations (e.g. degeneracy). Default: none.")
+                   help="Comma-separated on-the-fly annotations (e.g. degeneracy, synonymy). Default: none.")
     p.add_argument("--filter", type=_split_csv, default=["poly-allelic"],
                    help="Comma-separated filtrations. Default: poly-allelic.")
     p.add_argument("--info-ancestral", default="AA", help="INFO tag holding the ancestral allele. Default: AA.")
@@ -364,7 +407,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
                    help="Minimum ingroups for the maximum-likelihood-ancestral annotation. Default: 11.")
     p.add_argument("--contigs", type=_split_csv, default=None,
                    help="Contigs to keep (for the contig filtration and stratification).")
-    p.add_argument("--max-sites", type=int, default=None, help="Maximum number of sites to parse.")
+    p.add_argument("--max-sites", type=_positive_int, default=None, help="Maximum number of sites to parse.")
     p.add_argument("--seed", type=int, default=0, help="Random seed. Default: 0.")
     p.set_defaults(handler=_run_parse)
 
@@ -386,7 +429,7 @@ def _add_filter_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--fasta", default=None, help="FASTA reference (required by some filtrations, e.g. cpg).")
     p.add_argument("--gff", default=None, help="GFF annotation (required by the coding-sequence filtration).")
     p.add_argument("--contigs", type=_split_csv, default=None, help="Contigs to keep (for the contig filtration).")
-    p.add_argument("--max-sites", type=int, default=None, help="Maximum number of sites to filter.")
+    p.add_argument("--max-sites", type=_positive_int, default=None, help="Maximum number of sites to filter.")
     p.set_defaults(handler=_run_filter)
 
 
@@ -403,7 +446,7 @@ def _add_annotate_parser(sub: argparse._SubParsersAction) -> None:
     _add_common_io(p, "Output path; the format follows its extension (.vcf/.vcf.gz, .vcz/.zarr, or .trees).")
 
     p.add_argument("--annotation", type=_split_csv, required=True,
-                   help="Comma-separated annotations (degeneracy, maximum-likelihood-ancestral).")
+                   help="Comma-separated annotations (degeneracy, synonymy, maximum-likelihood-ancestral).")
     p.add_argument("--fasta", default=None, help="FASTA reference (required by the degeneracy annotation).")
     p.add_argument("--gff", default=None, help="GFF annotation (required by the degeneracy annotation).")
     p.add_argument("--outgroups", type=_split_csv, default=None,
@@ -411,7 +454,7 @@ def _add_annotate_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--n-ingroups", dest="n_ingroups", type=int, default=11,
                    help="Minimum ingroups for the maximum-likelihood-ancestral annotation. Default: 11.")
     p.add_argument("--info-ancestral", default="AA", help="INFO tag to write the ancestral allele to. Default: AA.")
-    p.add_argument("--max-sites", type=int, default=None, help="Maximum number of sites to annotate.")
+    p.add_argument("--max-sites", type=_positive_int, default=None, help="Maximum number of sites to annotate.")
     p.add_argument("--seed", type=int, default=0, help="Random seed. Default: 0.")
     p.set_defaults(handler=_run_annotate)
 
@@ -432,6 +475,8 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     if handler is None:
         parser.error("no subcommand selected")
+
+    _check_output_distinct_from_input(args)
 
     return int(handler(args) or 0)
 

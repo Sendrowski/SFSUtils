@@ -34,10 +34,53 @@ from .io_handlers import DummyVariant, Site, MultiHandler, FASTAHandler, Variant
 from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter
 from ._parallelization import parallelize as parallelize_func, check_bounds
 from .settings import Settings
-from .spectrum import Spectra
+from .spectrum import Spectra, Spectrum, _decode_json
 
 # get logger
 logger = logging.getLogger('sfsutils')
+
+
+def _serializable_types() -> List[type]:
+    """
+    The types an annotation payload may legitimately contain. Resolved on call, as the classes are defined
+    below this point.
+
+    :return: The allowed types.
+    """
+    return [MaximumLikelihoodAncestralAnnotation, _ESTSFSAncestralAnnotation, AdHocAncestralAnnotation,
+            JCSubstitutionModel, K2SubstitutionModel, KingmanPolarizationPrior, AdaptivePolarizationPrior,
+            SiteConfig, SiteInfo, Spectra, Spectrum, np.ndarray, np.dtype, pd.DataFrame, defaultdict]
+
+
+def _serializable_names() -> List[str]:
+    """
+    Further fully qualified names an annotation payload may construct: the numpy and scipy helpers the
+    encoder emits for scalars, random-number generators and optimizer results, and jsonpickle's own factory.
+    Both numpy multiarray paths are listed, as the module was renamed in numpy 2.
+
+    :return: The allowed names.
+    """
+    return [
+        'jsonpickle.handlers.CloneFactory',
+        'logging.getLogger',
+        'numpy._core.multiarray.scalar',
+        'numpy.core.multiarray.scalar',
+        'numpy._core.multiarray._reconstruct',
+        'numpy.core.multiarray._reconstruct',
+        'numpy.random._pickle.__bit_generator_ctor',
+        'numpy.random._pickle.__generator_ctor',
+        'numpy.random._pickle.__randomstate_ctor',
+        'numpy.random.bit_generator.__pyx_unpickle_SeedSequence',
+        'numpy.random.bit_generator.SeedSequence',
+        'numpy.random._pcg64.PCG64',
+        'numpy.random._pcg64.PCG64DXSM',
+        'numpy.random._mt19937.MT19937',
+        'numpy.random._philox.Philox',
+        'numpy.random._sfc64.SFC64',
+        'numpy.random.mtrand.RandomState',
+        'scipy.optimize._optimize.OptimizeResult',
+        'scipy.optimize._lbfgsb_py.LbfgsInvHessProduct',
+    ]
 
 # order of the bases important
 bases = np.array(['A', 'C', 'G', 'T'])
@@ -356,6 +399,12 @@ class DegeneracyAnnotation(Annotation):
         self._cd_next = None
         self._cd_prev = None
         self._contig = None
+
+        # the target site counter rewinds mid-parse, so these have to be reset alongside n_annotated,
+        # or the reported counts mix a sampling pass with the pass that produced the spectra
+        self.n_skipped = 0
+        self.mismatches = []
+        self.errors = []
 
     def _parse_codon_forward(self, variant: Site):
         """
@@ -714,6 +763,17 @@ class SynonymyAnnotation(DegeneracyAnnotation):
 
         #: The number of sites that were concordant with SnpEff.
         self.n_snpeff_comparisons: int = 0
+
+    def _rewind(self):
+        """
+        Rewind the annotation.
+        """
+        DegeneracyAnnotation._rewind(self)
+
+        self.vep_mismatches = []
+        self.snpeff_mismatches = []
+        self.n_vep_comparisons = 0
+        self.n_snpeff_comparisons = 0
 
     def _setup(self, handler: MultiHandler):
         """
@@ -2497,6 +2557,16 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         #: The monomorphic site counts sampled from the FASTA file.
         self._monomorphic_samples: Dict[str, int] = {'A': 0, 'C': 0, 'G': 0, 'T': 0}
 
+    def _rewind(self):
+        """
+        Rewind the annotation.
+        """
+        super()._rewind()
+
+        # the sites collected here belong to a single pass, and would otherwise grow without bound over
+        # repeated parses and over the target site counter's sampling pass
+        self.mismatches = []
+
     def _setup(self, handler: MultiHandler):
         """
         Parse the input and perform the optimization.
@@ -2908,8 +2978,11 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
         :param file: File path.
         """
+        # render before opening, so an encoding error leaves an existing file untouched instead of truncated
+        content = self.to_json()
+
         with open(file, 'w') as fh:
-            fh.write(self.to_json())
+            fh.write(content)
 
     @classmethod
     def from_file(cls, file: str) -> 'MaximumLikelihoodAncestralAnnotation':
@@ -2951,8 +3024,9 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
 
         :param json: JSON string.
         :return: The object.
+        :raises ValueError: If the payload does not decode to this class.
         """
-        anc = jsonpickle.decode(json)
+        anc = _decode_json(json, _serializable_types(), cls, _serializable_names())
 
         # jsonpickle restores dataframe tuple-cells as lists; the configs' outgroup_bases must be tuples
         # again so they stay hashable for the group-by in get_folded_spectra
@@ -4515,8 +4589,11 @@ class _ESTSFSAncestralAnnotation(AncestralAlleleAnnotation):  # pragma: no cover
         """
         self.anc = None
 
+        # render before opening, so an encoding error leaves an existing file untouched instead of truncated
+        content = self.to_json()
+
         with open(file, 'w') as fh:
-            fh.write(self.to_json())
+            fh.write(content)
 
     def to_json(self) -> str:
         """
@@ -4531,10 +4608,11 @@ class _ESTSFSAncestralAnnotation(AncestralAlleleAnnotation):  # pragma: no cover
         """
         Unserialize object.
 
-        :param classes: Classes to be used for unserialization
+        :param classes: Further classes to be used for unserialization
         :param json: JSON string
+        :raises ValueError: If the payload does not decode to this class.
         """
-        return jsonpickle.decode(json, classes=classes)
+        return _decode_json(json, _serializable_types() + list(classes or []), cls, _serializable_names())
 
     @classmethod
     def from_file(cls, file: str, classes=None) -> 'Self':
@@ -4628,7 +4706,7 @@ class Annotator(MultiHandler):
         self.output: str = output
 
         #: The annotations to apply.
-        self.annotations: List[Annotation] = annotations
+        self.annotations: List[Annotation] = list(annotations) if annotations is not None else []
 
         #: The variant writer (format chosen by the output extension).
         self._writer: VariantWriter | None = None
@@ -4664,11 +4742,12 @@ class Annotator(MultiHandler):
         """
         self._logger.info('Start annotating')
 
-        # set up the annotator
-        self._setup()
-
-        # tear down (closing the writer) even if iteration raises, so the output is not left unflushed
+        # tear down (closing the writer and the reader) even if setup or iteration raises, so a failure
+        # part-way through does not leak the open reader or leave the output unflushed
         try:
+            # set up the annotator
+            self._setup()
+
             # get progress bar
             with self.get_pbar(desc=f"{self.__class__.__name__}>Processing sites") as pbar:
 

@@ -208,20 +208,25 @@ class SiteAlleles:
 
         return cls(indices, [variant.REF or ''] + list(variant.ALT))
 
-    def _codes(self, mask: Optional[np.ndarray]) -> np.ndarray:
+    def _bins(self, mask: Optional[np.ndarray]) -> np.ndarray:
         """
-        The allele indices of the selected samples, flattened and with every missing or out-of-range call
-        mapped onto the trailing (never called) slot.
+        The number of haplotypes of the selected samples carrying each allele index, shifted by the two
+        negative sentinels so that a missing call (``-1``) and the fill of a shorter genotype (``-2``)
+        land in the two leading bins and an out-of-range call past the alleles. Binning the raw indices
+        spares the clamp and the intermediate arrays it needs, which matters because the parser runs this
+        on every site.
 
         :param mask: The boolean samples mask, or ``None`` for every sample.
-        :return: The flat allele indices.
+        :return: The per-index counts, allele ``i`` in bin ``i + 2``.
         """
         indices = self.indices if mask is None else self.indices[mask]
-        codes = np.asarray(indices).ravel()
+        codes = np.asarray(indices).ravel() + 2
 
-        n = len(self.alleles)
+        # a sentinel beyond the two the VCF-Zarr spec defines would index before the leading bin
+        if codes.size and codes.min() < 0:
+            codes = codes[codes >= 0]
 
-        return np.where((codes >= 0) & (codes < n), codes, n)
+        return np.bincount(codes, minlength=len(self.alleles) + 3)
 
     def n_called(self, mask: Optional[np.ndarray] = None) -> int:
         """
@@ -230,9 +235,10 @@ class SiteAlleles:
         :param mask: The boolean samples mask, or ``None`` for every sample.
         :return: The number of called haplotypes.
         """
-        codes = self._codes(mask)
+        n = len(self.alleles)
+        bins = self._bins(mask)
 
-        return int(np.count_nonzero(self._called[codes]))
+        return int(bins[2:n + 2] @ self._called[:n])
 
     def counts(self, mask: Optional[np.ndarray] = None) -> Dict[str, int]:
         """
@@ -243,12 +249,11 @@ class SiteAlleles:
         :param mask: The boolean samples mask, or ``None`` for every sample.
         :return: The per-allele haplotype counts.
         """
-        codes = self._codes(mask)
-        counts = np.bincount(codes[self._called[codes]], minlength=len(self.alleles))
+        bins = self._bins(mask)
 
         observed: Dict[str, int] = {}
         for i, allele in enumerate(self.alleles):
-            count = int(counts[i])
+            count = int(bins[i + 2]) if self._called[i] else 0
 
             if count:
                 observed[allele] = observed.get(allele, 0) + count
@@ -262,9 +267,9 @@ class SiteAlleles:
         :param mask: The boolean samples mask, or ``None`` for every sample.
         :return: The distinct called alleles.
         """
-        codes = self._codes(mask)
+        bins = self._bins(mask)
 
-        return {self.alleles[i] for i in np.unique(codes[self._called[codes]])}
+        return {allele for i, allele in enumerate(self.alleles) if bins[i + 2] and self._called[i]}
 
 
 def get_major_base(genotypes: Sequence[str]) -> str | None:
@@ -279,6 +284,21 @@ def get_major_base(genotypes: Sequence[str]) -> str | None:
 
     if len(bases) > 0:
         return Counter(bases).most_common()[0][0]
+
+
+def _is_snp(ref: str, alt: Sequence[str]) -> bool:
+    """
+    Whether a site is a single-nucleotide polymorphism, under the rule htslib applies and cyvcf2 surfaces
+    through ``is_snp``: a single-character reference, which may be ``N`` or another IUPAC code, together
+    with at least one alternate allele, each of them a single base. The spanning deletion ``*``, the
+    missing allele ``.`` and a symbolic ``<...>`` allele are thereby excluded, and the non-VCF backends
+    classify a site exactly as the same records read through cyvcf2 do.
+
+    :param ref: The reference allele.
+    :param alt: The alternate alleles.
+    :return: Whether the site is a single-nucleotide polymorphism.
+    """
+    return len(ref) == 1 and len(alt) > 0 and all(a in _base_set for a in alt)
 
 
 def is_monomorphic_snp(variant: Site) -> bool:
@@ -600,6 +620,63 @@ class FASTAHandler(FileHandler):
         #: The current contig.
         self._contig: SeqRecord | None = None
 
+        #: The alias sets the FASTA carries no contig for, so a site on an absent contig costs one
+        #: set lookup rather than a scan over the whole file
+        self._absent: Set[frozenset] = set()
+
+    @cached_property
+    def _local(self) -> str | None:
+        """
+        The path to the FASTA on the local filesystem, downloaded and decompressed where necessary, so
+        that it can be seeked into.
+
+        :return: The local path.
+        """
+        if self.fasta is None:
+            return None
+
+        return self.unzip_if_zipped(self.download_if_url(self.fasta))
+
+    @cached_property
+    def _offsets(self) -> Dict[str, int]:
+        """
+        The byte offset of every contig's header line, in file order. Only the header lines are looked at,
+        so building this costs one sequential pass and no sequence parsing, and it turns a lookup into a
+        seek rather than into a scan from wherever the previous one stopped.
+
+        :return: The offset of each contig.
+        """
+        offsets: Dict[str, int] = {}
+
+        if self._local is None:
+            return offsets
+
+        with open(self._local, 'rb') as f:
+            offset = 0
+
+            for line in f:
+                if line[:1] == b'>':
+                    # the record id is the header up to the first whitespace, as Biopython parses it
+                    parts = line[1:].split()
+                    name = parts[0].decode() if parts else ''
+
+                    # a duplicated name resolves to its first record, as a forward scan would
+                    offsets.setdefault(name, offset)
+
+                offset += len(line)
+
+        return offsets
+
+    @cached_property
+    def _handle(self) -> TextIO:
+        """
+        The handle the contigs are read through, held open across lookups so that seeking to a contig does
+        not reopen the file.
+
+        :return: The handle.
+        """
+        return open(self._local, 'r')
+
     @cached_property
     def _ref(self) -> FastaIterator | None:
         """
@@ -628,42 +705,38 @@ class FASTAHandler(FileHandler):
 
     def get_contig(self, aliases, rewind: bool = True, notify: bool = True) -> SeqRecord:
         """
-        Get the contig from the FASTA file.
+        Get the contig from the FASTA file. The contig is looked up in the header index and read by
+        seeking to it, so the sites may visit the contigs in any order at the same cost.
 
         Note that ``pyfaidx`` would be more efficient here, but there were problems when running it in parallel.
 
         :param aliases: The contig aliases.
-        :param rewind: Whether to allow for rewinding the iterator if the contig is not found.
-        :param notify: Whether to notify the user when rewinding the iterator.
+        :param rewind: Unused, the lookup does not depend on the position of a cursor.
+        :param notify: Unused, the lookup does not depend on the position of a cursor.
         :return: The contig.
+        :raises LookupError: Where the FASTA carries none of the aliases.
         """
         # if the contig is already loaded, we can just return it
         if self._contig is not None and self._contig.id in aliases:
             return self._contig
 
-        # if the contig is not loaded, we can try to load it
-        try:
-            self._contig = next(self._ref)
+        key = frozenset(aliases)
 
-            # iterate until we find the contig
-            while self._contig.id not in aliases:
-                self._contig = next(self._ref)
+        if key not in self._absent:
+            offsets = self._offsets
 
-        except StopIteration:
+            for alias in aliases:
+                offset = offsets.get(alias)
 
-            # if rewind is ``True``, we can rewind the iterator and try again
-            if rewind:
-                if notify:
-                    self._logger.info("Rewinding FASTA iterator.")
+                if offset is not None:
+                    self._handle.seek(offset)
+                    self._contig = next(SeqIO.parse(self._handle, 'fasta'))
 
-                # renew fasta iterator
-                FASTAHandler._rewind(self)
+                    return self._contig
 
-                return self.get_contig(aliases, rewind=False)
+            self._absent.add(key)
 
-            raise LookupError(f'None of the contig aliases {aliases} were found in the FASTA file.')
-
-        return self._contig
+        raise LookupError(f'None of the contig aliases {aliases} were found in the FASTA file.')
 
     def get_contig_names(self) -> List[str]:
         """
@@ -674,9 +747,7 @@ class FASTAHandler(FileHandler):
         if self.fasta is None:
             return []
 
-        # iterate a throwaway handle: consuming the cached one would leave its cursor at the end of the file,
-        # so a following get_contig would have to rewind and a second call here would return nothing
-        return [contig.id for contig in self.load_fasta(self.fasta)]
+        return list(self._offsets)
 
     def _rewind(self):
         """
@@ -1522,25 +1593,39 @@ class TskitVariantReader(VariantReader):
 
         :return: An iterator over variants.
         """
+        # the tskit Site is materialised afresh on every access, decoding the metadata of each of its
+        # mutations, so the positions are taken from the table column instead
+        positions = self._ts.sites_position
+
         for var in self._ts.variants():
             alleles = var.alleles
             genotypes = var.genotypes
 
-            observed = [a for a in alleles if a]
-            is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
+            is_snp = _is_snp(alleles[0], [a for a in alleles[1:] if a])
 
-            # an empty allele is dropped from ALT, so the tskit allele numbering is re-indexed onto
-            # ``[REF] + ALT``; a dropped allele reads back as a missing call, as its genotype string does
-            remap = np.full(len(alleles) + 1, -1, dtype=np.intp)
-            remap[0] = 0
-            next_index = 1
-            for j, allele in enumerate(alleles[1:], start=1):
-                if allele:
-                    remap[j] = next_index
-                    next_index += 1
+            codes = np.asarray(genotypes)[self._cols]
 
-            codes = np.where(self._cols >= 0, np.asarray(genotypes)[self._cols], -1)
-            allele_indices = remap[np.where((codes >= 0) & (codes < len(alleles)), codes, len(alleles))]
+            if all(alleles):
+                # the tskit numbering is already that of ``[REF] + ALT`` and its missing sentinel is the
+                # one the allele indices use, so the calls carry over as they are
+                allele_indices = codes
+            else:
+                # an empty allele is dropped from ALT, so the tskit allele numbering is re-indexed onto
+                # ``[REF] + ALT``; a dropped allele reads back as a missing call, as its genotype string does
+                remap = np.full(len(alleles) + 1, -1, dtype=np.intp)
+                remap[0] = 0
+                next_index = 1
+                for j, allele in enumerate(alleles[1:], start=1):
+                    if allele:
+                        remap[j] = next_index
+                        next_index += 1
+
+                allele_indices = remap[np.where((codes >= 0) & (codes < len(alleles)), codes, len(alleles))]
+
+            if self._ragged:
+                # a sample of lower ploidy than the widest has no call in its trailing columns, which the
+                # fill sentinel marks apart from a call that is genuinely missing
+                allele_indices = np.where(self._cols >= 0, allele_indices, -2)
 
             # a sample of lower ploidy than the widest carries a padding column, which would show up as an
             # extra missing allele in the assembled genotype string, so those are written out here instead
@@ -1554,9 +1639,11 @@ class TskitVariantReader(VariantReader):
                 for group in self._groups
             ], dtype=object) if self._ragged else None
 
+            position = float(positions[var.index])
+
             variant = Variant(
                 ref=alleles[0],
-                pos=int(var.site.position) + 1,  # tskit positions are 0-based, VCF POS is 1-based
+                pos=int(position) + 1,  # tskit positions are 0-based, VCF POS is 1-based
                 chrom=self._contig,
                 gt_bases=gt_bases,
                 alt=[a for a in alleles[1:] if a],
@@ -1568,7 +1655,7 @@ class TskitVariantReader(VariantReader):
 
             # carry the exact (possibly non-integer) tskit position so TskitVariantWriter can identify the
             # site without relying on the lossy integer POS, which collides on continuous-genome sequences
-            variant._tskit_position = var.site.position
+            variant._tskit_position = position
 
             yield variant
 
@@ -1658,8 +1745,11 @@ class ZarrVariantReader(VariantReader):
         position = root['variant_position']
         allele = root['variant_allele']
         contig = root['variant_contig']
-        genotype = root['call_genotype']
-        phased = root['call_genotype_phased'] if 'call_genotype_phased' in list(root.array_keys()) else None
+        arrays = list(root.array_keys())
+        # a store written from a sample-less VCF carries no call arrays at all, and streams as a series of
+        # sites without genotypes, exactly as the same VCF does
+        genotype = root['call_genotype'] if 'call_genotype' in arrays else None
+        phased = root['call_genotype_phased'] if 'call_genotype_phased' in arrays else None
         # surface every INFO field the writer persisted as a variant_<key> string array (the ancestral
         # tag, but also e.g. an annotated Degeneracy/Synonymy), skipping the VCF fixed columns that
         # vcf2zarr stores as reserved variant_* arrays (CHROM/POS/ID/REF+ALT/QUAL/FILTER and their
@@ -1681,18 +1771,23 @@ class ZarrVariantReader(VariantReader):
             pos_batch = position[start:end]
             allele_batch = allele[start:end]
             contig_batch = contig[start:end]
-            gt_batch = np.asarray(genotype[start:end])
+            gt_batch = np.asarray(genotype[start:end]) if genotype is not None else None
             phased_batch = np.asarray(phased[start:end]) if phased is not None else None
             info_batches = {key: arr[start:end] for key, arr in info_arrays.items()}
 
             for i in range(end - start):
-                site_alleles = [a for a in (self._decode(x) for x in allele_batch[i]) if a not in ('', '.')]
+                site_alleles = [self._decode(x) for x in allele_batch[i]]
 
-                rows = gt_batch[i]
+                # only the padding a site with fewer alleles than the widest carries is dropped: an allele
+                # is identified by its position, so dropping one in place would shift every genotype code
+                # past it onto the wrong allele
+                while site_alleles and site_alleles[-1] in ('', '.'):
+                    site_alleles.pop()
+
+                rows = gt_batch[i] if gt_batch is not None else np.zeros((0, 0), dtype=np.int8)
                 seps = phased_batch[i] if phased_batch is not None else None
 
-                observed = [a for a in site_alleles if a]
-                is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
+                is_snp = _is_snp(site_alleles[0] if site_alleles else '', site_alleles[1:])
 
                 # surface INFO with native types matching cyvcf2 (float/int/bool/str), so a numeric field
                 # stored typed (by vcf2zarr, or by our own writer) is not silently a string; a missing
@@ -1863,6 +1958,10 @@ class ZarrVariantWriter(VariantWriter):
     #: Marker for an INFO field a variant does not carry
     _missing = object()
 
+    #: The genotype sentinel of a haplotype a call does not reach, which the VCF-Zarr spec separates from
+    #: the ``-1`` of a call that is present but missing, so a shorter call exports at its own ploidy
+    _fill: int = -2
+
     def __init__(self, output: str, samples: List[str], seqnames: List[str], info_ancestral: str = 'AA'):
         """
         Open the writer.
@@ -1945,6 +2044,96 @@ class ZarrVariantWriter(VariantWriter):
         :param variant: The variant to write.
         """
         alleles = [variant.REF] + list(variant.ALT)
+
+        indices, phased = self._calls(variant, alleles)
+
+        chrom = variant.CHROM
+        contig = self._contig_index.get(chrom)
+        if contig is None:
+            contig = self._contig_index[chrom] = len(self._contig_ids)
+            self._contig_ids.append(chrom)
+            self._contig_length.append(1)
+
+        pos = int(variant.POS)
+        if pos > self._contig_length[contig]:
+            self._contig_length[contig] = pos
+
+        n_calls, width = indices.shape
+        self._reserve(width, len(alleles))
+
+        row = self._row
+
+        # the buffers are reused across chunks, so the row is cleared before it is filled
+        self._buf_position[row] = pos
+        self._buf_contig[row] = contig
+        self._buf_allele[row] = ''
+        self._buf_allele[row, :len(alleles)] = alleles
+        self._buf_genotype[row] = self._fill
+        self._buf_genotype[row, :n_calls, :width] = indices
+        self._buf_phased[row] = False
+        self._buf_phased[row, :n_calls] = phased
+
+        self._record_info(variant)
+
+        self._n += 1
+        self._row += 1
+
+        if self._row == self._variant_chunk:
+            self._flush()
+
+    def _calls(self, variant: Site, alleles: List[str]) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        The numeric calls of a variant: the per-haplotype allele indices of shape ``(n_samples, ploidy)``
+        alongside the per-sample phase. Every backend carries the calls numerically, so they are taken as
+        they are; assembling and splitting the genotype strings would both cost the bulk of the write and
+        lose the calls those strings cannot express, such as a haploid call of a third allele or any call
+        of ploidy above two.
+
+        :param variant: The variant.
+        :param alleles: The site's allele strings, the reference first.
+        :return: The allele indices and the per-sample phase.
+        """
+        indices = getattr(variant, 'allele_indices', None)
+
+        if indices is not None:
+            return np.atleast_2d(np.asarray(indices)), self._phases(getattr(variant, '_phased', None),
+                                                                    len(indices))
+
+        # cyvcf2 holds the calls on its Genotypes object, whose last column carries the phase flag
+        genotype = getattr(variant, 'genotype', None)
+        array = np.asarray(genotype.array()) if genotype is not None else None
+
+        if array is not None and array.ndim == 2 and array.shape[1] >= 2:
+            return array[:, :-1], array[:, -1].astype(bool)
+
+        return self._split(variant, alleles)
+
+    @staticmethod
+    def _phases(phased, n_samples: int) -> np.ndarray:
+        """
+        The per-sample phase of a variant that declares it either per sample or for the site as a whole.
+
+        :param phased: The phase declaration.
+        :param n_samples: The number of samples.
+        :return: The per-sample phase.
+        """
+        if phased is None:
+            return np.zeros(n_samples, dtype=bool)
+
+        if np.ndim(phased) == 0:
+            return np.full(n_samples, bool(phased), dtype=bool)
+
+        return np.asarray(phased, dtype=bool)
+
+    @staticmethod
+    def _split(variant: Site, alleles: List[str]) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        The numeric calls of a variant that carries its genotypes as strings alone.
+
+        :param variant: The variant.
+        :param alleles: The site's allele strings, the reference first.
+        :return: The allele indices and the per-sample phase.
+        """
         index = {a: i for i, a in enumerate(alleles)}
 
         # the same genotype string recurs across most samples, so each distinct one is split and looked
@@ -1964,42 +2153,13 @@ class ZarrVariantWriter(VariantWriter):
                 phased.append('|' in gt)
             rows[i] = code
 
-        chrom = variant.CHROM
-        contig = self._contig_index.get(chrom)
-        if contig is None:
-            contig = self._contig_index[chrom] = len(self._contig_ids)
-            self._contig_ids.append(chrom)
-            self._contig_length.append(1)
-
-        pos = int(variant.POS)
-        if pos > self._contig_length[contig]:
-            self._contig_length[contig] = pos
-
         width = max((len(call) for call in table), default=0)
-        self._reserve(width, len(alleles))
+        calls = np.full((len(table), width), ZarrVariantWriter._fill, dtype=np.intp)
 
-        row = self._row
-        calls = np.full((len(table), width), -1, dtype=self._buf_genotype.dtype)
         for i, call in enumerate(table):
             calls[i, :len(call)] = call
 
-        # the buffers are reused across chunks, so the row is cleared before it is filled
-        self._buf_position[row] = pos
-        self._buf_contig[row] = contig
-        self._buf_allele[row] = ''
-        self._buf_allele[row, :len(alleles)] = alleles
-        self._buf_genotype[row] = -1
-        self._buf_genotype[row, :len(rows), :width] = calls[rows]
-        self._buf_phased[row] = False
-        self._buf_phased[row, :len(rows)] = np.asarray(phased, dtype=bool)[rows]
-
-        self._record_info(variant)
-
-        self._n += 1
-        self._row += 1
-
-        if self._row == self._variant_chunk:
-            self._flush()
+        return calls[rows], np.asarray(phased, dtype=bool)[rows]
 
     def _record_info(self, variant: Site) -> None:
         """
@@ -2048,13 +2208,14 @@ class ZarrVariantWriter(VariantWriter):
             self._buf_position = np.empty(self._variant_chunk, dtype=np.int64)
             self._buf_contig = np.empty(self._variant_chunk, dtype=np.int64)
             self._buf_phased = np.zeros((self._variant_chunk, n_samples), dtype=bool)
-            self._buf_genotype = np.full((self._variant_chunk, n_samples, self._axis_ploidy), -1,
+            self._buf_genotype = np.full((self._variant_chunk, n_samples, self._axis_ploidy), self._fill,
                                          dtype=self._gt_dtype)
             self._buf_allele = np.full((self._variant_chunk, self._axis_alleles), '', dtype=object)
             return
 
         if self._buf_genotype.shape[2] != self._axis_ploidy or self._buf_genotype.dtype != self._gt_dtype:
-            widened = np.full((self._variant_chunk, n_samples, self._axis_ploidy), -1, dtype=self._gt_dtype)
+            widened = np.full((self._variant_chunk, n_samples, self._axis_ploidy), self._fill,
+                              dtype=self._gt_dtype)
 
             # the axis narrows where the variants so far carry no call at all and the default ploidy of
             # two gives way to the first call seen, whose columns beyond it hold nothing but the fill
@@ -2155,8 +2316,8 @@ class ZarrVariantWriter(VariantWriter):
         genotype = self._root['call_genotype']
 
         if genotype.shape[2] != self._axis_ploidy or genotype.dtype != self._gt_dtype:
-            self._rebuild('call_genotype', (len(self._samples), self._axis_ploidy), self._gt_dtype, -1,
-                          ['variants', 'samples', 'ploidy'])
+            self._rebuild('call_genotype', (len(self._samples), self._axis_ploidy), self._gt_dtype,
+                          self._fill, ['variants', 'samples', 'ploidy'])
 
         if self._root['variant_allele'].shape[1] != self._axis_alleles:
             self._rebuild('variant_allele', (self._axis_alleles,), str, '', ['variants', 'alleles'])

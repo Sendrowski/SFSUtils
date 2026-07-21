@@ -605,6 +605,9 @@ class ChunkedStratification(GenomePositionDependentStratification):
         #: List of chunk sizes
         self.chunk_sizes: Optional[List[int]] = None
 
+        #: Cumulative chunk sizes, i.e. the site counter at which each chunk ends
+        self._chunk_ends: List[int] = []
+
         #: Number of sites seen so far
         self.counter: int = 0
 
@@ -649,6 +652,10 @@ class ChunkedStratification(GenomePositionDependentStratification):
         # create list of chunk sizes
         self.chunk_sizes = [base_chunk_size + (i < remainder) for i in range(self.n_chunks)]
 
+        # the site counter is located among the chunk boundaries once per site, so the boundaries are
+        # accumulated here instead of being summed anew inside that lookup
+        self._chunk_ends = list(itertools.accumulate(self.chunk_sizes))
+
     def _rewind(self):
         """
         Rewind the stratification, also resetting the per-pass site counter so a second pass
@@ -691,12 +698,14 @@ class ChunkedStratification(GenomePositionDependentStratification):
             # the first and last chunk respectively
             return f'chunk{max(bisect.bisect_right(self._chunk_starts, key) - 1, 0)}'
 
+        # the boundaries are held in step with the chunk sizes here as well, so that they are also correct
+        # when the sizes are assigned directly rather than by _setup
+        if len(self._chunk_ends) != len(self.chunk_sizes):
+            self._chunk_ends = list(itertools.accumulate(self.chunk_sizes))
+
         # find the index of the chunk to which the current site belongs; a pass may process more sites than
         # the chunk sizes account for (e.g. when a previous pass saw fewer), so fall back to the last chunk
-        chunk_index = next(
-            (i for i, size in enumerate(self.chunk_sizes) if self.counter < sum(self.chunk_sizes[:i + 1])),
-            self.n_chunks - 1,
-        )
+        chunk_index = min(bisect.bisect_right(self._chunk_ends, self.counter), self.n_chunks - 1)
 
         # record where each chunk begins; chunks of size zero share the start of the chunk that follows them,
         # and the bisect above then resolves such a tie to the last of them, which is the non-empty one
@@ -734,6 +743,16 @@ class RandomStratification(Stratification):
 
         #: Random generator instance
         self.rng = random.Random(seed)
+
+    def _rewind(self):
+        """
+        Rewind the stratification, re-seeding the random generator so that every pass draws the same bins.
+        Without this a second parse, or the sampling pass of a :class:`TargetSiteCounter`, would continue the
+        stream of the previous pass and assign the same sites to different bins.
+        """
+        super()._rewind()
+
+        self.rng = random.Random(self.seed)
 
     @_count_valid_type
     def get_type(self, variant: Site) -> str:
@@ -808,6 +827,9 @@ class TargetSiteCounter:
         #: The spectra before inferring the number of target sites
         self._sfs_polymorphic: Spectra | None = None
 
+        #: The parser's filtrations while the SNP filtration is suspended
+        self._filtrations: List[Filtration] | None = None
+
     def _setup(self, parser: 'Parser'):
         """
         Set up the counter.
@@ -858,7 +880,9 @@ class TargetSiteCounter:
         Resume SNP filtration.
         """
         # restore original filtrations
-        self.parser.filtrations = self._filtrations
+        if self._filtrations is not None:
+            self.parser.filtrations = self._filtrations
+            self._filtrations = None
 
     def count(self):
         """
@@ -872,18 +896,40 @@ class TargetSiteCounter:
         # suspend SNP filtration
         self._suspend_snp_filtration()
 
-        # rewind fasta iterator
-        FASTAHandler._rewind(self.parser)
-
-        # initialize random number generator
-        rng = np.random.default_rng(self.parser.seed)
-
         # initialize progress bar
         pbar = tqdm(
             total=self.n_samples,
             desc=f'{self.__class__.__name__}>Sampling target sites',
             disable=Settings.disable_pbar
         )
+
+        try:
+            i = self._sample(pbar)
+        finally:
+            # the parser is handed back to the caller whatever happens here, so its filtrations are restored
+            # even when the sampling pass raises, which would otherwise leave it stripped of its SNP filtration
+            pbar.close()
+            self._resume_snp_filtration()
+
+        # tear down
+        self._teardown()
+
+        # notify on number of sites included in the SFS
+        self._logger.info(f"{i} out of {self.n_samples} sampled sites were valid.")
+
+    def _sample(self, pbar: tqdm) -> int:
+        """
+        Draw monomorphic sites from the FASTA file across the intervals spanned by the parsed variants and
+        feed them to the parser, which adds them to the SFS of their type.
+
+        :param pbar: The progress bar to advance once per sampled site.
+        :return: The number of sampled sites that were included in the SFS.
+        """
+        # rewind fasta iterator
+        FASTAHandler._rewind(self.parser)
+
+        # initialize random number generator
+        rng = np.random.default_rng(self.parser.seed)
 
         # get array of ranges per contig of parsed variants
         ranges = np.array(list(self.parser._contig_bounds.values()))
@@ -928,9 +974,27 @@ class TargetSiteCounter:
                 # fetch contig
                 record = self.parser.get_contig(aliases, notify=False)
 
+                # the bounds come from the parsed variants, which may reach beyond the end of the FASTA record
+                # if the two files disagree on the contig; sample only from the part backed by the reference
+                upper = min(int(bounds[1]), len(record.seq))
+
+                if upper < bounds[1]:
+                    self._logger.warning(
+                        f"The FASTA record for contig '{contig}' is {len(record.seq)} bp long but the parsed "
+                        f"variants reach position {int(bounds[1])}. Sampling target sites only up to "
+                        f"{len(record.seq)}."
+                    )
+
+                # nothing of the contig's variant span is backed by the reference, so it yields no sites
+                if upper <= bounds[0]:
+                    self._logger.warning(f"Skipping contig '{contig}' when sampling target sites: its FASTA "
+                                         f"record is {len(record.seq)} bp long, which does not reach the first "
+                                         f"parsed variant at position {int(bounds[0])}.")
+                    continue
+
                 # get positions
                 # we sort in ascending order as the parser expects the positions to be sorted
-                positions = np.sort(rng.integers(*bounds, size=n))
+                positions = np.sort(rng.integers(bounds[0], upper, size=n))
 
                 # sample sites
                 for pos in positions:
@@ -951,17 +1015,7 @@ class TargetSiteCounter:
                     # update progress bar
                     pbar.update()
 
-        # close progress bar
-        pbar.close()
-
-        # resume SNP filtration
-        self._resume_snp_filtration()
-
-        # tear down
-        self._teardown()
-
-        # notify on number of sites included in the SFS
-        self._logger.info(f"{i} out of {self.n_samples} sampled sites were valid.")
+        return i
 
     def _update_target_sites(self, spectra: Spectra) -> Spectra:
         """
@@ -1505,7 +1559,11 @@ class Parser(MultiHandler):
         """
         Reset the accumulating state, so that a second :meth:`parse` starts from a clean slate rather than adding
         to the counts of the previous pass. The RNG is re-seeded as well, which keeps repeated parses reproducible.
+        The cached reader is discarded too, so that a parse whose predecessor stopped part-way through the input,
+        because it raised, starts at the first record rather than wherever the previous pass left off.
         """
+        VCFHandler._rewind(self)
+
         self.n_skipped = 0
         self.n_aa_prob = 0
         self.n_no_ancestral = 0
@@ -1561,7 +1619,7 @@ class Parser(MultiHandler):
         :param variant: The site
         :return: The probability of the ancestral allele being the true ancestral allele
         """
-        if variant.is_snp and self.polarize_probabilistically:
+        if self.polarize_probabilistically:
             raw = variant.INFO.get(self.info_ancestral_prob)
 
             # INFO comes through typed from cyvcf2 but as a plain string from the VCF-Zarr backend, so
@@ -1580,6 +1638,21 @@ class Parser(MultiHandler):
                 return prob
 
         return 1.0
+
+    def _is_fixed_derived(self, variant: Site) -> bool:
+        """
+        Whether a site without an alternate allele is fixed for the derived allele, i.e. whether its ancestral
+        allele is a base other than the reference allele. Such a site is a fixed difference and its mass belongs
+        in the divergence bin, not in the monomorphic-ancestral one. An absent or invalid ancestral allele leaves
+        the reference allele as the ancestral one, so that monomorphic sites, which carry no polarization
+        information of their own, keep counting as mutational opportunities.
+
+        :param variant: The site.
+        :return: Whether the site is fixed for the derived allele.
+        """
+        aa = variant.INFO.get(self.info_ancestral)
+
+        return aa in bases and aa != variant.REF
 
     def _parse_site(self, variant: Site) -> bool:
         """
@@ -1720,10 +1793,20 @@ class Parser(MultiHandler):
                 self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
                 return None
 
-            # the reference allele is assumed ancestral, so the derived-allele count is 0 (the
-            # polarization of monomorphic sites does not matter)
+            # a site fixed for the derived allele carries all n derived alleles and belongs in the
+            # divergence bin, while an ancestral monomorphic site carries none
+            n_der = self.n if self._is_fixed_derived(variant) else 0
+
+            aa_prob = self._get_ancestral_prob(variant)
+
             m = np.zeros(self.n + 1)
-            m[0] = 1
+
+            # mispolarization turns one monomorphic bin into the other, so the mass is split between them
+            if aa_prob != 1.0:
+                m[n_der] = aa_prob
+                m[self.n - n_der] = 1 - aa_prob
+            else:
+                m[n_der] = 1
         else:
             # skip other types of sites
             self._logger.debug(f'Site is not a valid single nucleotide site at {variant.CHROM}:{variant.POS}.')
@@ -1819,9 +1902,22 @@ class Parser(MultiHandler):
                 self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
                 return None
 
-            # all-ancestral: place mass at the origin (zero derived alleles in every population)
+            # a site fixed for the derived allele has every population fixed for it, so its mass sits in the
+            # all-derived corner, while an ancestral monomorphic site sits at the origin
+            origin = (0,) * len(self._joint_shape)
+            corner = tuple(n - 1 for n in self._joint_shape)
+
+            fixed_derived = self._is_fixed_derived(variant)
+            aa_prob = self._get_ancestral_prob(variant)
+
             m = np.zeros(self._joint_shape)
-            m[(0,) * len(self._joint_shape)] = 1.0
+
+            # mispolarization turns one monomorphic corner into the other, so the mass is split between them
+            if aa_prob != 1.0:
+                m[corner if fixed_derived else origin] = aa_prob
+                m[origin if fixed_derived else corner] = 1 - aa_prob
+            else:
+                m[corner if fixed_derived else origin] = 1.0
         else:
             # skip other types of sites
             self._logger.debug(f'Site is not a valid single nucleotide site at {variant.CHROM}:{variant.POS}.')
@@ -2210,11 +2306,14 @@ class Parser(MultiHandler):
 
         # in joint mode, return a collection of joint spectra keyed by (sorted) type
         if self.pops is not None:
-            # extrapolate the monomorphic corner from the target-site count
-            sfs = dict(self.sfs)
+            # extrapolate the monomorphic corner from the target-site count. The dict is built after the
+            # sampling pass, which adds the sampled monomorphic sites to self.sfs and may introduce types
+            # that no polymorphic site of the input carried
             if self.target_site_counter is not None and self.n_skipped < self.n_sites:
                 self.target_site_counter.count()
-                sfs = self.target_site_counter._update_target_sites_joint(sfs)
+                sfs = self.target_site_counter._update_target_sites_joint(dict(self.sfs))
+            else:
+                sfs = dict(self.sfs)
 
             return JointSpectra(
                 {t: JointSFS(sfs[t], self._pop_names) for t in sorted(sfs)}

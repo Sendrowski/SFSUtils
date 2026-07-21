@@ -14,7 +14,7 @@ from typing import List, Optional, Callable, Dict
 import numpy as np
 import pandas as pd
 
-from .annotation import DegeneracyAnnotation
+from .annotation import DegeneracyAnnotation, _CDSIndex
 from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_distinct_called_bases, \
     get_distinct_called_alleles, DummyVariant, SiteAlleles, \
     Site, VariantReader, \
@@ -173,6 +173,12 @@ class MaskedFiltration(Filtration, ABC):
 
             self._samples_mask = mask
 
+        # a mask selecting every sample restricts nothing, so drop it: the parser installs one
+        # unconditionally, and keeping it would make the same filtration decide a site differently under a
+        # parser than under a filterer
+        if self._samples_mask is not None and bool(np.all(self._samples_mask)):
+            self._samples_mask = None
+
     def _setup(self, handler: MultiHandler):
         """
         Prepare the samples mask.
@@ -267,8 +273,10 @@ class PolyAllelicFiltration(MaskedFiltration):
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
         """
-        Filter site. Note that we don't check explicitly all alleles, but rather
-        rely on ``ALT`` field.
+        Filter site. Without a samples mask the ``ALT`` field alone decides, so a site declaring two or more
+        alternate alleles is poly-allelic whether or not any sample carries them. Where a mask restricts the
+        samples, the alleles are counted among the included samples instead, since the excluded samples may
+        well be the only carriers of the further alleles.
 
         :param variant: The variant to filter.
         :return: ``True`` if the variant is not poly-allelic, ``False`` otherwise.
@@ -353,6 +361,9 @@ class CodingSequenceFiltration(Filtration):
     :class:`~sfsutils.filtration.Filterer`).
     """
 
+    #: The coding sequence index per contig, rebuilt on setup so a restored instance has one.
+    _indexes: Dict[str, _CDSIndex] = {}
+
     def __init__(self):
         """
         Create a new filtration instance.
@@ -365,6 +376,9 @@ class CodingSequenceFiltration(Filtration):
         #: The number of processed sites.
         self.n_processed: int = 0
 
+        #: The coding sequence index per contig.
+        self._indexes: Dict[str, _CDSIndex] = {}
+
     def _setup(self, handler: MultiHandler):
         """
         Touch the GFF file to load it.
@@ -374,11 +388,29 @@ class CodingSequenceFiltration(Filtration):
         # require GFF file
         handler._require_gff(self.__class__.__name__)
 
+        # the indexes are tied to the handler's coding sequences
+        self._indexes = {}
+
         # setup GFF handler
         super()._setup(handler)
 
         # load coding sequences
         _ = handler._cds
+
+    def _get_index(self, chrom: str, aliases: List[str]) -> _CDSIndex:
+        """
+        Get the coding sequence index for the given contig.
+
+        :param chrom: The contig of the current variant.
+        :param aliases: The aliases of the contig.
+        :return: The index.
+        """
+        if chrom not in self._indexes:
+            cds = self._handler._cds
+
+            self._indexes[chrom] = _CDSIndex(cds[cds.seqid.isin(aliases)])
+
+        return self._indexes[chrom]
 
     def _rewind(self):
         """
@@ -409,12 +441,14 @@ class CodingSequenceFiltration(Filtration):
                 'end': DegeneracyAnnotation._pos_mock
             })
 
-            # find coding sequences downstream
-            cds = self._handler._cds[self._handler._cds['seqid'].isin(aliases) & (self._handler._cds['end'] >= v.POS)]
+            # find the first coding sequence reaching the variant, by binary search: scanning the whole
+            # frame here costs a pass over every coding sequence of the input for each advancing site
+            index = self._get_index(v.CHROM, aliases)
 
-            if not cds.empty:
-                # take the first coding sequence
-                self.cd = cds.iloc[0]
+            row = index.locate(v.POS)
+
+            if row is not None:
+                self.cd = index.get(row)
 
                 if self.cd.start == v.POS:
                     self._logger.debug(f'Found coding sequence for {v.CHROM}:{v.POS}.')
@@ -516,6 +550,32 @@ class DeviantOutgroupFiltration(Filtration):
             if self.ingroup_mask.sum() != len(self.ingroups):
                 raise ValueError(f'Not all ingroup samples are present in the input: {self.ingroups}')
 
+    @staticmethod
+    def _get_major_base(site: SiteAlleles, mask: np.ndarray) -> str | None:
+        """
+        Get the major base among the selected samples from the numeric calls.
+
+        :param site: The numeric view of the site's genotypes.
+        :param mask: The boolean samples mask.
+        :return: The major base, or ``None`` where no selected sample is called.
+        """
+        counts = site.counts(mask)
+
+        if not counts:
+            return None
+
+        n_max = max(counts.values())
+        tied = {allele for allele, count in counts.items() if count == n_max}
+
+        if len(tied) == 1:
+            return next(iter(tied))
+
+        # break the tie by the first haplotype carrying one of the tied alleles, which is the order in
+        # which the genotype strings would present the bases
+        for code in np.asarray(site.indices)[mask].ravel():
+            if 0 <= code < len(site.alleles) and site.alleles[code] in tied:
+                return site.alleles[code]
+
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
         """
@@ -534,11 +594,21 @@ class DeviantOutgroupFiltration(Filtration):
         if isinstance(variant, DummyVariant):
             return True
 
-        # get major base among ingroup samples
-        ingroup_base = get_major_base(variant.gt_bases[self.ingroup_mask])
+        # the genotype strings render a haploid call of the third or a later allele as missing wherever the
+        # site's maximum ploidy is two, which hides a present outgroup call, so read the numeric calls where
+        # the backend provides them. Multi-character alleles are left to the bases, which count a genotype
+        # character at a time and so read an ``AT`` call as two
+        site = SiteAlleles.from_site(variant)
 
-        # get major base among outgroup samples
-        outgroup_base = get_major_base(variant.gt_bases[self.outgroup_mask])
+        if site is not None and site.single_character:
+            ingroup_base = self._get_major_base(site, self.ingroup_mask)
+            outgroup_base = self._get_major_base(site, self.outgroup_mask)
+        else:
+            # get major base among ingroup samples
+            ingroup_base = get_major_base(variant.gt_bases[self.ingroup_mask])
+
+            # get major base among outgroup samples
+            outgroup_base = get_major_base(variant.gt_bases[self.outgroup_mask])
 
         # filter out if no outgroup base is present and strict mode is enabled
         if outgroup_base is None:
@@ -552,6 +622,9 @@ class ExistingOutgroupFiltration(Filtration):
     """
     Filter out sites for which at least ``n_missing`` of the specified outgroup samples have no called base.
     """
+
+    #: The row of each outgroup sample, rebuilt on setup so a restored instance has one.
+    _outgroup_rows: Optional[np.ndarray] = None
 
     def __init__(self, outgroups: List[str], n_missing: int = 1):
         """
@@ -573,6 +646,9 @@ class ExistingOutgroupFiltration(Filtration):
 
         #: The outgroup mask.
         self.outgroup_mask: Optional[np.ndarray] = None
+
+        #: The row of each outgroup sample.
+        self._outgroup_rows: Optional[np.ndarray] = None
 
     def _setup(self, handler: MultiHandler):
         """
@@ -598,6 +674,9 @@ class ExistingOutgroupFiltration(Filtration):
         if self.outgroup_mask.sum() != len(self.outgroups):
             raise ValueError(f'Not all outgroup samples are present in the input: {self.outgroups}')
 
+        # the outgroups are counted one sample at a time, so hold their rows to select them individually
+        self._outgroup_rows = np.flatnonzero(self.outgroup_mask)
+
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
         """
@@ -609,6 +688,19 @@ class ExistingOutgroupFiltration(Filtration):
         # keep dummy variants
         if isinstance(variant, DummyVariant):
             return True
+
+        # the genotype strings render a haploid call of the third or a later allele as missing wherever the
+        # site's maximum ploidy is two, which would count a called outgroup as absent, so read the numeric
+        # calls where the backend provides them
+        site = SiteAlleles.from_site(variant)
+
+        if site is not None:
+            rows = self._outgroup_rows if self._outgroup_rows is not None else np.flatnonzero(self.outgroup_mask)
+
+            # count how many outgroups have no called haplotype
+            missing_count = sum(site.n_called(rows[i:i + 1]) == 0 for i in range(len(rows)))
+
+            return missing_count < self.n_missing
 
         # get outgroup genotypes
         outgroups = variant.gt_bases[self.outgroup_mask]
