@@ -866,11 +866,13 @@ class TargetSiteCounter:
                 # sample sites
                 for pos in positions:
 
-                    # create dummy variant
+                    # create dummy variant (a monomorphic reference site); n_samples so its gt_bases
+                    # aligns with the parser's sample masks, as the Site interface promises
                     variant = DummyVariant(
                         ref=record.seq[pos - 1].upper(),  # fasta is 0-based; upper-case soft-masked bases
                         pos=pos,  # VCF is 1-based
-                        chrom=contig
+                        chrom=contig,
+                        n_samples=len(self.parser._reader.samples),
                     )
 
                     # check if site was included in the SFS

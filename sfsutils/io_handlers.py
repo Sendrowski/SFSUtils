@@ -1023,18 +1023,39 @@ class Variant:
 
 class DummyVariant(Variant):
     """
-    Dummy variant class to emulate a mono-allelic site.
+    Synthetic monomorphic reference site used by the :class:`~sfsutils.parser.TargetSiteCounter` to
+    represent a sampled target site. It exposes the full :class:`Site` interface; every sample is
+    homozygous for the reference allele. The per-sample ``gt_bases`` array is built lazily (there may be
+    many such sites and most consumers never read the genotypes) via a cached property.
     """
 
-    def __init__(self, ref: str, pos: int, chrom: str):
+    def __init__(self, ref: str, pos: int, chrom: str, n_samples: int = 0, ploidy: int = 2):
         """
         Initialize the dummy variant.
 
-        :param ref: The reference allele
-        :param pos: The position
-        :param chrom: The contig
+        :param ref: The reference allele.
+        :param pos: The position.
+        :param chrom: The contig.
+        :param n_samples: The number of samples, so ``gt_bases`` aligns with the parser's sample masks
+            (default ``0`` for a genotype-less placeholder used where the genotypes are not read).
+        :param ploidy: The ploidy of each sample's genotype.
         """
         super().__init__(ref=ref, pos=pos, chrom=chrom)
+
+        # drop the empty gt_bases set by Variant.__init__ so the cached property below is used instead
+        del self.gt_bases
+
+        self._n_samples: int = int(n_samples)
+        self._ploidy: int = int(ploidy)
+
+    @cached_property
+    def gt_bases(self) -> np.ndarray:
+        """
+        The per-sample genotypes: every sample homozygous for the reference allele.
+
+        :return: The genotype strings, one per sample.
+        """
+        return np.array(['/'.join([self.REF] * self._ploidy)] * self._n_samples, dtype=object)
 
 
 class VariantReader(Iterable, ABC):

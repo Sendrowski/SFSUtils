@@ -398,3 +398,22 @@ def test_gff_remove_overlaps_groups_by_contig():
     ])
     out = GFFHandler.remove_overlaps(df.copy())
     assert len(out) == 4  # no real overlaps; the last CDS of chr1 must survive
+
+
+def test_target_site_counter_with_gt_reading_filtration(tmp_path):
+    """A TargetSiteCounter's synthetic DummyVariant sites carry genotypes, so a gt_bases-reading
+    filtration that is not removed during counting (e.g. SNVFiltration) does not crash on them."""
+    Settings.disable_pbar = True
+    (tmp_path / "g.fasta").write_text(">1\n" + "ACGT" * 50 + "\n")
+    vcf = tmp_path / "v.vcf"
+    vcf.write_text(
+        "##fileformat=VCFv4.2\n##contig=<ID=1,length=200>\n"
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+        "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "s1", "s2"]) + "\n"
+        + "\t".join(["1", "10", ".", "A", "T", ".", ".", ".", "GT", "0|1", "0|0"]) + "\n"
+        + "\t".join(["1", "190", ".", "C", "G", ".", ".", ".", "GT", "0|1", "1|1"]) + "\n")
+
+    spectra = su.Parser(source=str(vcf), n=4, skip_non_polarized=False, fasta=str(tmp_path / "g.fasta"),
+                        filtrations=[su.SNVFiltration()],
+                        target_site_counter=su.TargetSiteCounter(n_samples=2000, n_target_sites=2000)).parse()
+    assert spectra["all"].n_polymorphic == 2  # did not crash on the dummy sites

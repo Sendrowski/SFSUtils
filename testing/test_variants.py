@@ -33,3 +33,16 @@ def test_monomorphic_classifier_false_for_insertion():
 def test_monomorphic_classifier_false_for_snp():
     snp = Variant(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True)
     assert is_monomorphic_snp(snp) is False
+
+
+def test_dummy_variant_satisfies_site_contract():
+    """DummyVariant must expose the full Site interface; with n_samples its gt_bases is a per-sample
+    array aligned with the sample masks (a monomorphic reference site), built lazily."""
+    import numpy as np
+    from sfsutils.io_handlers import DummyVariant, Site
+
+    v = DummyVariant(ref="A", pos=10, chrom="1", n_samples=3)
+    assert isinstance(v, Site)
+    assert list(v.gt_bases) == ["A/A", "A/A", "A/A"]
+    assert list(v.gt_bases[np.array([True, False, True])]) == ["A/A", "A/A"]  # indexable by a mask
+    assert v.ALT == [] and v.INFO == {} and v.is_snp is False
