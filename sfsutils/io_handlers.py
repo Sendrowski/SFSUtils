@@ -585,7 +585,9 @@ class GFFHandler(FileHandler):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=SettingWithCopyWarning)
 
-            df['overlap'] = df['start'].shift(-1) <= df['end']
+            # shift within each contig, so the last CDS of one contig is not compared against the first
+            # CDS of the next (whose start coordinate restarts low) and spuriously dropped as overlapping
+            df['overlap'] = df.groupby('seqid')['start'].shift(-1) <= df['end']
 
         df = df[~df['overlap']]
 

@@ -212,6 +212,13 @@ class BaseContextStratification(Stratification, FASTAHandler):
 
         context = f"{upstream_bases}{aa}{downstream_bases}"
 
+        # near a contig edge the flanking window is clamped, giving a context shorter than the full
+        # k-mer; such a truncated context is not among get_types() and would collide with others (a
+        # start-edge and an end-edge context of the same letters share a key), so skip the site
+        if len(context) != 2 * self.n_flanking + 1:
+            raise NoTypeException(f"Base context '{context}' is truncated at a contig edge at "
+                                  f"{variant.CHROM}:{variant.POS}")
+
         # a flanking base outside ACGT (e.g. an N at an assembly gap) has no valid context; skip the site
         # rather than letting it accrue into a spurious stratum
         if any(b not in bases for b in context):
@@ -1477,8 +1484,12 @@ class Parser(MultiHandler):
             # determine ancestral allele count
             n_aa = counter[aa]
 
-            if len(counter) > 2:
-                self._logger.debug(f'Site has more than two alleles at {variant.CHROM}:{variant.POS} ({dict(counter)})')
+            # count the ancestral allele among the site's alleles: if the AA tag names a base that is
+            # absent from the observed genotypes the site is effectively multi-allelic (ancestral plus two
+            # derived) and must be skipped, not silently polarised into the all-derived bin
+            n_alleles = len(counter) + (0 if aa in counter else 1)
+            if n_alleles > 2:
+                self._logger.debug(f'Site has more than two alleles at {variant.CHROM}:{variant.POS} ({dict(counter)}, AA={aa})')
                 return None
 
             # determine down-projected allele count.
@@ -1541,11 +1552,14 @@ class Parser(MultiHandler):
             # determine ancestral allele probability
             aa_prob = self._get_ancestral_prob(variant)
 
-            # biallelic check across all populations combined
+            # biallelic check across all populations combined; count the ancestral allele too, so a site
+            # whose AA is a third base absent from the genotypes is skipped rather than polarised into the
+            # all-derived joint corner
             counter = Counter(np.concatenate(pop_bases))
 
-            if len(counter) > 2:
-                self._logger.debug(f'Site has more than two alleles at {variant.CHROM}:{variant.POS} ({dict(counter)})')
+            n_alleles = len(counter) + (0 if aa in counter else 1)
+            if n_alleles > 2:
+                self._logger.debug(f'Site has more than two alleles at {variant.CHROM}:{variant.POS} ({dict(counter)}, AA={aa})')
                 return None
 
             # down-project each population independently to a distribution over its derived-allele count
