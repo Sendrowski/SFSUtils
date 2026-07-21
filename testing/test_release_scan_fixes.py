@@ -417,3 +417,21 @@ def test_target_site_counter_with_gt_reading_filtration(tmp_path):
                         filtrations=[su.SNVFiltration()],
                         target_site_counter=su.TargetSiteCounter(n_samples=2000, n_target_sites=2000)).parse()
     assert spectra["all"].n_polymorphic == 2  # did not crash on the dummy sites
+
+
+def test_low_coverage_monomorphic_site_is_skipped(tmp_path):
+    """A monomorphic site with fewer than n called genotypes is skipped like a low-coverage SNP, so the
+    monomorphic:polymorphic ratio is not inflated (a full-coverage monomorphic site is still kept)."""
+    Settings.disable_pbar = True
+    def parse(gt):
+        vcf = tmp_path / "v.vcf"
+        vcf.write_text(
+            "##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n"
+            '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+            "#" + "\t".join(["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
+                             "s1", "s2", "s3"]) + "\n"
+            + "\t".join(["1", "10", ".", "A", ".", ".", ".", ".", "GT"] + gt) + "\n")
+        return su.Parser(source=str(vcf), n=4, skip_non_polarized=False).parse()
+
+    assert parse(["0|0", "0|0", "0|0"])["all"].n_monomorphic == 1   # 6 haplotypes >= 4 -> kept
+    assert list(parse(["0|0", ".|.", ".|."]).types) == []           # 2 haplotypes < 4 -> skipped

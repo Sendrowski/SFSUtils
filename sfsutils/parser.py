@@ -1511,9 +1511,15 @@ class Parser(MultiHandler):
 
         # if we have a mono-allelic SNPs
         elif is_monomorphic_snp(variant):
-            # if we don't have an SNP, we assume the reference allele to be the ancestral allele,
-            # so the derived allele count is 0
-            # The polarization of monomorphic sites is not important in any case
+            # apply the same coverage requirement as segregating sites, so a low-coverage monomorphic
+            # site is not asymmetrically retained and does not inflate the monomorphic:polymorphic ratio
+            # (TargetSiteCounter's DummyVariant sites are fully covered by construction and always pass)
+            if len(get_called_bases(variant.gt_bases[self._samples_mask])) < self.n:
+                self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
+                return None
+
+            # the reference allele is assumed ancestral, so the derived-allele count is 0 (the
+            # polarization of monomorphic sites does not matter)
             m = np.zeros(self.n + 1)
             m[0] = 1
         else:
@@ -1589,6 +1595,11 @@ class Parser(MultiHandler):
 
         # if we have a mono-allelic SNP
         elif is_monomorphic_snp(variant):
+            # apply the same per-population coverage requirement as segregating sites
+            if any(len(get_called_bases(variant.gt_bases[mask])) < n for mask, n in zip(self._pop_masks, self._n_per_pop)):
+                self._logger.debug(f'Skipping monomorphic site due to too few samples at {variant.CHROM}:{variant.POS}.')
+                return None
+
             # all-ancestral: place mass at the origin (zero derived alleles in every population)
             m = np.zeros(self._joint_shape)
             m[(0,) * len(self._joint_shape)] = 1.0
