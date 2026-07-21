@@ -5,7 +5,6 @@ input (a genealogy cannot be reconstructed from genotypes), and the written stor
 the same spectrum as the equivalent VCF output. These need the optional ``tskit`` / ``zarr`` packages and the
 committed fixtures, and are skipped otherwise.
 """
-import importlib.util
 import os
 
 import numpy as np
@@ -19,16 +18,14 @@ VCF = "resources/msprime/two_epoch.vcf"
 TREES = "resources/msprime/two_epoch.trees"
 VCZ = "resources/msprime/two_epoch.vcz"
 
-_has_tskit = importlib.util.find_spec("tskit") is not None
-_has_zarr = importlib.util.find_spec("zarr") is not None
 
 requires_zarr = pytest.mark.skipif(
-    not (_has_zarr and os.path.exists(VCZ) and os.path.exists(VCF)),
-    reason="zarr or the VCF-Zarr fixture is absent",
+    not (os.path.exists(VCZ) and os.path.exists(VCF)),
+    reason="the VCF-Zarr fixture is absent",
 )
 requires_trees = pytest.mark.skipif(
-    not (_has_tskit and os.path.exists(TREES) and os.path.exists(VCF)),
-    reason="tskit or the tree-sequence fixture is absent",
+    not (os.path.exists(TREES) and os.path.exists(VCF)),
+    reason="the tree-sequence fixture is absent",
 )
 
 _KW = dict(n=20, skip_non_polarized=False, subsample_mode="random")

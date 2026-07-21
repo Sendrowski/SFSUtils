@@ -6,7 +6,6 @@ are only checked against each other (and, for degeneracy, against the hand-worke
 external tool or ground truth is involved. These need the optional ``tskit`` / ``zarr`` packages and
 are skipped otherwise; they are deliberately small so they run in the default (fast) suite.
 """
-import importlib.util
 import os
 
 import numpy as np
@@ -16,10 +15,6 @@ import sfsutils as su
 from sfsutils.settings import Settings
 from sfsutils.io_handlers import Variant
 
-_has_tskit = importlib.util.find_spec("tskit") is not None
-_has_zarr = importlib.util.find_spec("zarr") is not None
-requires_tskit = pytest.mark.skipif(not _has_tskit, reason="tskit is absent")
-requires_zarr = pytest.mark.skipif(not _has_zarr, reason="zarr is absent")
 
 # committed msprime fixtures: the same data as a VCF, a tree sequence and a VCF-Zarr store
 VCF_FIX = "resources/msprime/two_epoch.vcf"
@@ -117,8 +112,6 @@ def _annotate(source, output, fasta, gff):
 
 # --- Annotator: the input source must not change the annotation -------------------------------------
 
-@requires_zarr
-@requires_tskit
 def test_degeneracy_input_sources_agree(tmp_path):
     """Annotating the identical coding contig read as a VCF, a VCF-Zarr store and a tree sequence gives
     the same per-site degeneracy (and it matches the hand-worked genetic code)."""
@@ -135,7 +128,6 @@ def test_degeneracy_input_sources_agree(tmp_path):
 
 # --- Annotator: the output format must not change the annotation ------------------------------------
 
-@requires_zarr
 def test_degeneracy_vcf_and_zarr_output_agree(tmp_path):
     """Annotating a VCF to a VCF output and to a VCF-Zarr output records the same degeneracy values."""
     fasta, gff = _fasta_gff(tmp_path)
@@ -147,7 +139,6 @@ def test_degeneracy_vcf_and_zarr_output_agree(tmp_path):
     assert from_vcf == EXPECTED_DEGENERACY == from_vcz
 
 
-@requires_tskit
 def test_degeneracy_trees_output(tmp_path):
     """Annotating a tree sequence to a ``.trees`` output stores the degeneracy as site metadata."""
     import tskit
@@ -163,8 +154,6 @@ def test_degeneracy_trees_output(tmp_path):
 
 # --- MaximumLikelihoodAncestralAnnotation: the input source must not change the inference -----------
 
-@requires_zarr
-@requires_tskit
 @requires_fixtures
 def test_ml_aaa_input_sources_agree():
     """Running maximum-likelihood ancestral annotation over the same data read as a VCF, a VCF-Zarr store

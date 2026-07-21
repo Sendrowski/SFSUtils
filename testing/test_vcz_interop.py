@@ -10,7 +10,6 @@ VCF-Zarr interoperability, both directions:
 runs in this environment; it is skipped only where the binary is absent (a bare install). The
 structural compliance assertions run everywhere and cover the metadata vcztools needs.
 """
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -20,8 +19,6 @@ import pytest
 
 from sfsutils.io_handlers import Variant
 
-_has_zarr = importlib.util.find_spec("zarr") is not None
-requires_zarr = pytest.mark.skipif(not _has_zarr, reason="zarr is absent")
 
 BIO2ZARR_FIXTURE = "resources/msprime/typed_info.vcz"
 
@@ -38,7 +35,6 @@ def _vcztools_bin():
 
 # --- direction 1: we read bio2zarr output, with INFO typed from the VCF header ----------------------
 
-@requires_zarr
 @pytest.mark.skipif(not os.path.exists(BIO2ZARR_FIXTURE), reason="the bio2zarr fixture is absent")
 def test_reads_bio2zarr_typed_info():
     """A store written by bio2zarr is read with the INFO types the VCF header declared: String -> str,
@@ -66,7 +62,6 @@ def _write_store(path):
     return path
 
 
-@requires_zarr
 def test_writer_output_is_spec_compliant_vcz(tmp_path):
     """The written store carries the vcf_zarr_version and an _ARRAY_DIMENSIONS on every array, the
     metadata a VCF-Zarr reader (vcztools/sgkit) requires."""
@@ -83,7 +78,6 @@ def test_writer_output_is_spec_compliant_vcz(tmp_path):
     assert list(root["variant_allele"].attrs["_ARRAY_DIMENSIONS"]) == ["variants", "alleles"]
 
 
-@requires_zarr
 @pytest.mark.skipif(_vcztools_bin() is None,
                     reason="no vcztools binary reachable (needs a zarr-3 env; set VCZTOOLS_BIN)")
 def test_vcztools_reads_writer_output(tmp_path):

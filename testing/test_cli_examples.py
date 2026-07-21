@@ -10,7 +10,6 @@ size cannot be met by a handful of samples, their exact ``--n`` values; the comm
 otherwise reproduced verbatim. Optional-backend examples (``--zarr``/``--trees`` inputs, ``.vcz``/``.trees``
 outputs) skip when ``tskit``/``zarr`` are absent.
 """
-import importlib.util
 import os
 
 import numpy as np
@@ -23,13 +22,7 @@ from sfsutils.settings import Settings
 
 Settings.disable_pbar = True
 
-_has_tskit = importlib.util.find_spec("tskit") is not None
-_has_zarr = importlib.util.find_spec("zarr") is not None
-_has_msprime = importlib.util.find_spec("msprime") is not None
 
-requires_tskit = pytest.mark.skipif(not _has_tskit, reason="tskit is absent")
-requires_zarr = pytest.mark.skipif(not _has_zarr, reason="zarr is absent")
-requires_msprime = pytest.mark.skipif(not _has_msprime, reason="msprime is absent")
 
 N_DIP = 10  # -> 20 haplotypes, enough to project a one-population SFS to n = 20
 
@@ -138,8 +131,6 @@ def outgroup_vcf(tmp_path_factory):
 @pytest.fixture(scope="module")
 def trees_path(tmp_path_factory):
     """A small msprime tree sequence over the single contig '1' (for the --trees examples)."""
-    if not (_has_msprime and _has_tskit):
-        pytest.skip("msprime/tskit absent")
     import msprime
 
     ts = msprime.sim_ancestry(samples=N_DIP, sequence_length=1_000, recombination_rate=1e-6,
@@ -157,8 +148,6 @@ def trees_path(tmp_path_factory):
 @pytest.fixture(scope="module")
 def zarr_store(tmp_path_factory, snp_vcf):
     """A VCF-Zarr store converted from ``snp_vcf`` (keeping all sites), for the --zarr example."""
-    if not _has_zarr:
-        pytest.skip("zarr absent")
     vcf, _ = snp_vcf
     out = str(tmp_path_factory.mktemp("zarr") / "variants.vcz")
     su.Filterer(source=vcf, output=out, filtrations=[su.NoFiltration()]).filter()
@@ -196,7 +185,6 @@ def test_parse_one_dimensional(snp_vcf, tmp_path):
     assert sfs[1:20].sum() > 0  # polarized via the AA tag
 
 
-@requires_zarr
 def test_parse_from_zarr(zarr_store, tmp_path):
     # sfsutils parse --zarr variants.vcz --n 20 --out sfs.csv
     out = tmp_path / "sfs.csv"
@@ -207,7 +195,6 @@ def test_parse_from_zarr(zarr_store, tmp_path):
     assert sfs[1:20].sum() > 0  # AA tag persisted through the VCF-Zarr store
 
 
-@requires_tskit
 def test_parse_from_trees(trees_path, tmp_path):
     # sfsutils parse --trees ancestry.trees --n 20 --out sfs.csv
     # The literal command omits --no-skip-non-polarized, and a tree sequence carries no AA tag (tskit stores the
@@ -277,7 +264,6 @@ def test_filter_snp_coding_to_vcf(coding_fixture, tmp_path):
     assert 0 < n_out <= n_in  # all synthetic SNPs lie inside the CDS, so all are kept
 
 
-@requires_zarr
 def test_filter_snp_coding_to_zarr(coding_fixture, tmp_path):
     # sfsutils filter --vcf ... --filter snp,coding-sequence --gff ... --out coding.vcz
     import zarr
@@ -289,7 +275,6 @@ def test_filter_snp_coding_to_zarr(coding_fixture, tmp_path):
     assert "call_genotype" in list(root.array_keys())
 
 
-@requires_tskit
 def test_filter_trees_to_trees(trees_path, tmp_path):
     # sfsutils filter --trees ancestry.trees --filter snp --out coding.trees
     import tskit
@@ -316,7 +301,6 @@ def test_annotate_degeneracy_to_vcf(coding_fixture, tmp_path):
     assert any(d in (0, 4) for d in degeneracies)  # coding sites got a real degeneracy value
 
 
-@requires_zarr
 def test_annotate_degeneracy_to_zarr(coding_fixture, tmp_path):
     # sfsutils annotate --vcf ... --annotation degeneracy --fasta ... --gff ... --out degeneracy.vcz
     import zarr

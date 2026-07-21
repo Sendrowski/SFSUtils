@@ -10,10 +10,7 @@ coalescent share the same ``rho = Ne * r * d`` calibration (verified numerically
 equals the naive Kingman value to within the grid for both alpha = 1.5 and 1.7). The multiple-merger signal
 survives recombination: the low-frequency correlation of two linked sites is negative under Kingman and rises to
 positive under strong multiple mergers.
-
-Requires the optional ``phasegen`` and ``msprime`` packages; skipped otherwise.
 """
-import importlib.util
 import logging
 
 import numpy as np
@@ -23,11 +20,6 @@ import sfsutils as su
 
 # the pooling loop parses thousands of trees; keep its per-parse INFO logging out of the test output
 logging.getLogger('sfsutils').setLevel(logging.WARNING)
-
-_has_phasegen = importlib.util.find_spec("phasegen") is not None
-_has_msprime = importlib.util.find_spec("msprime") is not None
-
-pytestmark = pytest.mark.skipif(not (_has_phasegen and _has_msprime), reason="phasegen or msprime is absent")
 
 N = 6            # haploid sample size (PhaseGen's two-locus state space grows quickly, so keep n small)
 

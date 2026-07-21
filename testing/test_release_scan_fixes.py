@@ -3,7 +3,6 @@ Regression tests for the defects found by the release-readiness scan: the est-sf
 the Zarr INFO read-back asymmetry, the DataFrame-index serialization, the divide-by-zero in
 normalize, and ContigFiltration alias handling. Kept fast and unmarked so they run in the default suite.
 """
-import importlib.util
 
 import numpy as np
 import pandas as pd
@@ -14,8 +13,6 @@ from sfsutils.settings import Settings
 from sfsutils.io_handlers import Variant
 from sfsutils.json_handlers import DataframeHandler
 
-_has_zarr = importlib.util.find_spec("zarr") is not None
-requires_zarr = pytest.mark.skipif(not _has_zarr, reason="zarr is absent")
 
 
 def test_from_est_sfs_ingroup_count_uses_sum_not_max(tmp_path):
@@ -31,7 +28,6 @@ def test_from_est_sfs_ingroup_count_uses_sum_not_max(tmp_path):
     assert anc.n_ingroups == 20
 
 
-@requires_zarr
 def test_zarr_reader_surfaces_all_info_fields(tmp_path):
     """Every INFO field the writer persisted must be readable back, not just the ancestral tag, so an
     annotated store re-parsed by a stratification sees its field."""
@@ -110,7 +106,6 @@ def test_contig_filtration_matches_through_aliases():
 _FIXTURE = "resources/msprime/two_epoch.vcz"
 
 
-@requires_zarr
 @pytest.mark.skipif(not __import__("os").path.exists(_FIXTURE), reason="the VCF-Zarr fixture is absent")
 def test_zarr_reader_does_not_surface_reserved_metadata():
     """A plain vcf2zarr store must not have its reserved variant_* metadata (quality/filter/id/length)
@@ -180,7 +175,6 @@ def _prob_vcz(tmp_path):
     return out
 
 
-@requires_zarr
 def test_probabilistic_polarization_agrees_across_vcf_and_zarr(tmp_path):
     """AA_prob is typed by cyvcf2 but a string from the Zarr backend; probabilistic polarization must
     cast it and give the same spectrum from either source (previously the Zarr path raised on '0.9'*array)."""
@@ -215,7 +209,6 @@ def test_ancestral_prob_sentinels_treated_as_unpolarized():
     assert parser._get_ancestral_prob(v) == 0.75
 
 
-@requires_zarr
 def test_zarr_info_round_trips_with_native_types(tmp_path):
     """INFO written through our own Zarr writer round-trips with native types (str/float/int), so a
     numeric field is a number on read, matching cyvcf2 rather than becoming a string."""
@@ -233,7 +226,6 @@ def test_zarr_info_round_trips_with_native_types(tmp_path):
     assert info["DP"] == 30 and isinstance(info["DP"], int)
 
 
-@requires_zarr
 def test_zarr_info_missing_value_is_absent(tmp_path):
     """A numeric INFO field present on some sites but not others reads back as absent (NaN omitted), the
     way cyvcf2 reports a missing INFO field, rather than as a NaN or empty string."""

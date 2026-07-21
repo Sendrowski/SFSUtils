@@ -4,7 +4,6 @@ the VCF-Zarr store converted from that VCF all encode the same genotypes, so par
 same site-frequency spectrum. These tests need the optional ``tskit`` / ``zarr`` packages (and the committed
 ``.trees`` / ``.vcz`` fixtures) and are skipped otherwise.
 """
-import importlib.util
 import os
 
 import numpy as np
@@ -18,16 +17,14 @@ TREES = "resources/msprime/two_epoch.trees"
 VCZ = "resources/msprime/two_epoch.vcz"
 REF = "resources/msprime/two_epoch.ref.fasta.gz"
 
-_has_tskit = importlib.util.find_spec("tskit") is not None
-_has_zarr = importlib.util.find_spec("zarr") is not None
 
 requires_trees = pytest.mark.skipif(
-    not (_has_tskit and os.path.exists(TREES) and os.path.exists(VCF)),
-    reason="tskit or the tree-sequence fixture is absent",
+    not (os.path.exists(TREES) and os.path.exists(VCF)),
+    reason="the tree-sequence fixture is absent",
 )
 requires_zarr = pytest.mark.skipif(
-    not (_has_zarr and os.path.exists(VCZ) and os.path.exists(VCF)),
-    reason="zarr or the VCF-Zarr fixture is absent",
+    not (os.path.exists(VCZ) and os.path.exists(VCF)),
+    reason="the VCF-Zarr fixture is absent",
 )
 
 _KW = dict(n=20, skip_non_polarized=False, subsample_mode="random")
@@ -208,10 +205,6 @@ def test_target_site_counter_input_agnostic(source):
     variant bounds (populated by the source-agnostic parse loop) and the FASTA, not on the input format. The
     tree/zarr fixtures share the VCF's synthetic contig '1', matching the reference FASTA."""
     paths = {"vcf": VCF, "trees": TREES, "vcz": VCZ}
-    if source == "trees" and not _has_tskit:
-        pytest.skip("tskit is absent")
-    if source == "vcz" and not _has_zarr:
-        pytest.skip("zarr is absent")
 
     Settings.disable_pbar = True
     spectra = su.Parser(
