@@ -213,3 +213,38 @@ def test_ancestral_prob_sentinels_treated_as_unpolarized():
     # a real string value is cast to float
     v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True, info={"AA_prob": "0.75"})
     assert parser._get_ancestral_prob(v) == 0.75
+
+
+@requires_zarr
+def test_zarr_info_round_trips_with_native_types(tmp_path):
+    """INFO written through our own Zarr writer round-trips with native types (str/float/int), so a
+    numeric field is a number on read, matching cyvcf2 rather than becoming a string."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "typed.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True,
+                    info={"AA": "A", "AA_prob": 0.9, "DP": 30}))
+    w.close()
+
+    info = next(iter(ZarrVariantReader(out))).INFO
+    assert info["AA"] == "A" and isinstance(info["AA"], str)
+    assert info["AA_prob"] == 0.9 and isinstance(info["AA_prob"], float)
+    assert info["DP"] == 30 and isinstance(info["DP"], int)
+
+
+@requires_zarr
+def test_zarr_info_missing_value_is_absent(tmp_path):
+    """A numeric INFO field present on some sites but not others reads back as absent (NaN omitted), the
+    way cyvcf2 reports a missing INFO field, rather than as a NaN or empty string."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "miss.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"AA_prob": 0.9}))
+    w.write(Variant(ref="C", pos=20, chrom="1", gt_bases=["C|G"], alt=["G"], is_snp=True, info={}))
+    w.close()
+
+    variants = list(ZarrVariantReader(out))
+    assert variants[0].INFO["AA_prob"] == 0.9
+    assert "AA_prob" not in variants[1].INFO

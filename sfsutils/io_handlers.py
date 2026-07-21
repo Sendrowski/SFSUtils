@@ -1359,9 +1359,25 @@ class ZarrVariantReader(VariantReader):
                 observed = [a for a in site_alleles if a]
                 is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
 
-                # every INFO value is decoded to a string (unlike cyvcf2, which types them from the VCF
-                # header); a consumer that needs a number must cast explicitly (see _get_ancestral_prob)
-                info = {key: self._decode(batch[i]) for key, batch in info_batches.items()}
+                # surface INFO with native types matching cyvcf2 (float/int/bool/str), so a numeric field
+                # stored typed (by vcf2zarr, or by our own writer) is not silently a string; a missing
+                # value (NaN in a float array, '' in a string array) is treated as absent, as cyvcf2 does
+                info = {}
+                for key, batch in info_batches.items():
+                    value = batch[i]
+                    kind = batch.dtype.kind
+
+                    if kind in ('U', 'S', 'O'):
+                        decoded = self._decode(value)
+                        if decoded != '':
+                            info[key] = decoded
+                    elif kind == 'f':
+                        if not np.isnan(value):
+                            info[key] = float(value)
+                    elif kind == 'b':
+                        info[key] = bool(value)
+                    else:
+                        info[key] = int(value)
 
                 yield Variant(
                     ref=site_alleles[0] if site_alleles else '.',
@@ -1587,10 +1603,22 @@ class ZarrVariantWriter(VariantWriter):
             allele[vi, :len(a)] = a
         root.create_dataset('variant_allele', data=allele, object_codec=codec, overwrite=True)
 
-        # persist any INFO fields (e.g. an annotated ancestral allele) as variant_<tag> string arrays,
-        # skipping any whose name would collide with a reserved coordinate/allele/genotype dataset
+        # persist any INFO fields (e.g. an annotated ancestral allele or degeneracy) as variant_<tag>
+        # arrays, typed to match the values so a numeric field round-trips as a number rather than a
+        # string; skip any whose name would collide with a reserved coordinate/allele/genotype dataset
         reserved = {'variant_position', 'variant_contig', 'variant_allele',
                     'call_genotype', 'call_genotype_phased', 'sample_id', 'contig_id'}
+        _missing = object()
+
+        def _is_bool(v):
+            return isinstance(v, (bool, np.bool_))
+
+        def _is_int(v):
+            return isinstance(v, (int, np.integer)) and not _is_bool(v)
+
+        def _is_float(v):
+            return isinstance(v, (float, np.floating))
+
         info_keys = sorted({k for info in self._infos for k in info})
         for key in info_keys:
             name = f'variant_{key}'
@@ -1600,7 +1628,22 @@ class ZarrVariantWriter(VariantWriter):
                                      f"dataset '{name}'.")
                 continue
 
-            _str_array(name, [str(info.get(key, '')) for info in self._infos])
+            raw = [info.get(key, _missing) for info in self._infos]
+            present = [v for v in raw if v is not _missing and v != '']
+
+            if present and all(_is_bool(v) for v in present):
+                data = np.array([bool(v) if v is not _missing and v != '' else False for v in raw], dtype=bool)
+                root.create_dataset(name, data=data, overwrite=True)
+            elif present and all(_is_int(v) for v in present) and all(v is not _missing and v != '' for v in raw):
+                # every site carries an integer: store an integer array (no missing sentinel needed)
+                root.create_dataset(name, data=np.array([int(v) for v in raw], dtype=np.int64), overwrite=True)
+            elif present and all(_is_int(v) or _is_float(v) for v in present):
+                # numeric but possibly missing on some sites: a float array carries NaN for the gaps
+                data = np.array([float(v) if v is not _missing and v != '' else np.nan for v in raw], dtype=np.float64)
+                root.create_dataset(name, data=data, overwrite=True)
+            else:
+                # strings (or mixed/empty): keep the string array, '' for a missing value
+                _str_array(name, [str(v) if v is not _missing else '' for v in raw])
 
 
 class TskitVariantWriter(VariantWriter):
