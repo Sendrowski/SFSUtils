@@ -202,15 +202,23 @@ class BaseContextStratification(Stratification, FASTAHandler):
         if pos < 0 or pos >= len(self.contig):
             raise NoTypeException("Invalid position: Position must be within the bounds of the sequence.")
 
-        # get upstream bases
+        # get upstream and downstream bases, upper-casing soft-masked (lowercase) reference bases so
+        # they match the upper-case contexts in get_types()
         upstream_start = max(0, pos - self.n_flanking)
-        upstream_bases = str(self.contig.seq[upstream_start:pos])
+        upstream_bases = str(self.contig.seq[upstream_start:pos]).upper()
 
-        # get downstream bases
         downstream_end = min(len(self.contig), pos + self.n_flanking + 1)
-        downstream_bases = str(self.contig.seq[pos + 1:downstream_end])
+        downstream_bases = str(self.contig.seq[pos + 1:downstream_end]).upper()
 
-        return f"{upstream_bases}{aa}{downstream_bases}"
+        context = f"{upstream_bases}{aa}{downstream_bases}"
+
+        # a flanking base outside ACGT (e.g. an N at an assembly gap) has no valid context; skip the site
+        # rather than letting it accrue into a spurious stratum
+        if any(b not in bases for b in context):
+            raise NoTypeException(f"Base context '{context}' contains a non-ACGT base at "
+                                  f"{variant.CHROM}:{variant.POS}")
+
+        return context
 
     def get_types(self) -> List[str]:
         """
