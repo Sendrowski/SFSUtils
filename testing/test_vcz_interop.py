@@ -116,3 +116,20 @@ def test_vcztools_reads_filterer_vcf_to_vcz_output(tmp_path):
     body = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith("#")]
     assert len(body) == 608  # every SNP survived and round-tripped
     assert any("##contig" in ln for ln in result.stdout.splitlines())
+
+
+@pytest.mark.skipif(_vcztools_bin() is None, reason="no vcztools binary reachable")
+def test_vcztools_exports_missing_float_as_missing(tmp_path):
+    """A float INFO field absent on some sites must export as a missing token ('.'), not the literal
+    'nan': the writer uses the VCF-Zarr float-missing sentinel, which vcztools recognises."""
+    from sfsutils.io_handlers import ZarrVariantWriter
+    out = str(tmp_path / "f.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"AAP": 0.9}))
+    w.write(Variant(ref="C", pos=20, chrom="1", gt_bases=["C|G"], alt=["G"], is_snp=True, info={}))
+    w.close()
+
+    result = subprocess.run([_vcztools_bin(), "view", out], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    body = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith("#")]
+    assert "nan" not in body[1].lower()  # site 2's INFO must not contain the literal 'nan'

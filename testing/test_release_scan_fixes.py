@@ -240,3 +240,65 @@ def test_zarr_info_missing_value_is_absent(tmp_path):
     variants = list(ZarrVariantReader(out))
     assert variants[0].INFO["AA_prob"] == 0.9
     assert "AA_prob" not in variants[1].INFO
+
+
+# --- round 3: zarr-3 INFO type-inference regressions -----------------------------------------------
+
+def test_zarr_degeneracy_dot_sentinel_round_trips_numeric(tmp_path):
+    """A Degeneracy field mixing ints (coding) with the VCF '.' marker (non-coding) must round-trip as a
+    number, not a string: '.' is a missing sentinel, so the field stays numeric and the '4' == 4 test in
+    DegeneracyStratification still works (the round-1..3 regression stored it as a string, emptying the
+    stratified SFS silently)."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "deg.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"Degeneracy": 4}))
+    w.write(Variant(ref="C", pos=20, chrom="1", gt_bases=["C|G"], alt=["G"], is_snp=True, info={"Degeneracy": "."}))
+    w.close()
+
+    variants = list(ZarrVariantReader(out))
+    assert variants[0].INFO["Degeneracy"] == 4          # numeric, so `== 4` holds (float 4.0 == 4)
+    assert not isinstance(variants[0].INFO["Degeneracy"], str)
+    assert "Degeneracy" not in variants[1].INFO          # '.' is absent, not the string "."
+
+
+def test_zarr_reader_skips_multivalued_info(tmp_path):
+    """A multi-valued INFO field (Number != 1, stored as a 2-D variant_<key> array by vcf2zarr) must not
+    crash the reader; it is simply not surfaced on the scalar Site interface."""
+    import zarr
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "mv.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"AA": "A"}))
+    w.close()
+    root = zarr.open(out, mode="r+")
+    ac = root.create_array("variant_AC", shape=(1, 2), dtype="float64")
+    ac[:] = [[3.0, 5.0]]
+    ac.attrs["_ARRAY_DIMENSIONS"] = ["variants", "alt_alleles"]
+
+    variant = next(iter(ZarrVariantReader(out)))  # must not raise
+    assert "AC" not in variant.INFO
+    assert variant.INFO["AA"] == "A"
+
+
+
+def test_zarr_degeneracy_stratification_end_to_end(tmp_path):
+    """The headline workflow the '.' regression broke: a VCF-Zarr store carrying Degeneracy (ints for
+    coding sites, '.' for non-coding) parses stratified into a non-empty neutral/selected SFS."""
+    from sfsutils.io_handlers import ZarrVariantWriter
+    Settings.disable_pbar = True
+
+    out = str(tmp_path / "s.vcz")
+    w = ZarrVariantWriter(out, samples=["a", "b"], seqnames=["1"], info_ancestral="AA")
+    sites = [(10, 4), (20, 4), (30, 4), (40, 0), (50, 0), (60, ".")]  # 3 neutral, 2 selected, 1 non-coding
+    for pos, deg in sites:
+        w.write(Variant(ref="A", pos=pos, chrom="1", gt_bases=["A|T", "T|T"], alt=["T"], is_snp=True,
+                        info={"AA": "A", "Degeneracy": deg}))
+    w.close()
+
+    spectra = su.Parser(source=out, n=4, skip_non_polarized=True,
+                        stratifications=[su.DegeneracyStratification()]).parse()
+    assert spectra["neutral"].n_polymorphic == 3
+    assert spectra["selected"].n_polymorphic == 2
