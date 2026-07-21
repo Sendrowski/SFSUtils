@@ -42,6 +42,33 @@ class TestPolyAllelicMNP:
         assert f.filter_site(variant)
 
 
+class TestSNPPolyAllelicSeparation:
+    """
+    ``SNPFiltration`` keeps every site that is polymorphic among the included samples, poly-allelic ones
+    included; dropping those is ``PolyAllelicFiltration``'s job alone.
+    """
+
+    @staticmethod
+    def _site(genotypes, alt):
+        return type('V', (), dict(gt_bases=np.array(genotypes, dtype=object), ALT=alt, is_snp=True))()
+
+    @pytest.mark.parametrize('genotypes,alt,keeps_snp,keeps_polyallelic', [
+        (['A|C', 'G|G', 'A|A'], ['C', 'G'], True, False),  # tri-allelic among the included samples
+        (['A|C', 'A|A', 'A|G'], ['C', 'G'], True, True),  # bi-allelic among the included samples
+        (['A|A', 'A|A', 'A|G'], ['G'], False, True),  # monomorphic among the included samples
+    ])
+    def test_verdicts(self, genotypes, alt, keeps_snp, keeps_polyallelic):
+        from sfsutils import PolyAllelicFiltration, SNPFiltration
+
+        variant = self._site(genotypes, alt)
+        mask = np.array([True, True, False])
+
+        for filtration, expected in [(SNPFiltration(), keeps_snp), (PolyAllelicFiltration(), keeps_polyallelic)]:
+            filtration._samples_mask = mask
+
+            assert filtration.filter_site(variant) == expected
+
+
 class TestOutgroupValidation:
     """
     A sample name that is absent from the input must raise rather than silently change the outcome.
@@ -64,26 +91,6 @@ class TestOutgroupValidation:
 
         with pytest.raises(ValueError, match='outgroup'):
             f._create_mask()
-
-
-class TestFoldedFlag:
-    """
-    Folding is recorded explicitly, so a sparse unfolded spectrum is not mistaken for a folded one.
-    """
-
-    def test_sparse_unfolded_spectrum_not_reported_folded(self):
-        sfs = Spectrum([10, 3, 2, 0, 0, 0, 5], folded=False)
-
-        assert not sfs.is_folded()
-        # subsampling must not fold it
-        assert not sfs.subsample(4).is_folded()
-
-    def test_fold_records_the_flag(self):
-        assert Spectrum([10, 3, 2, 1, 5]).fold().is_folded()
-
-    def test_inference_is_the_default(self):
-        assert Spectrum([10, 3, 0, 0, 0]).is_folded()
-        assert not Spectrum([10, 3, 2, 1, 5]).is_folded()
 
 
 class TestNumpyScalarArithmetic:

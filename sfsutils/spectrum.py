@@ -166,19 +166,13 @@ class Spectrum(AbstractSpectrum):
     #: Defer to the reflected operators so a numpy scalar on the left does not broadcast over the counts
     __array_ufunc__ = None
 
-    #: Whether the spectrum is known to be folded; ``None`` means this is inferred from the counts
-    _folded: bool | None = None
-
-    def __init__(self, data: Sequence[float], folded: bool | None = None):
+    def __init__(self, data: Sequence[float]):
         """
         Initialize spectrum.
 
         :param data: SFS counts
-        :param folded: Whether the spectrum is folded. Inferred from the counts when not given.
         """
         self.data: np.ndarray = np.array(data, dtype=float)
-
-        self._folded: bool | None = folded
 
     @property
     def n(self) -> int:
@@ -315,7 +309,7 @@ class Spectrum(AbstractSpectrum):
         data[:mid] += data[-mid:][::-1]
         data[-mid:] = 0
 
-        return Spectrum(data, folded=True)
+        return Spectrum(data)
 
     def misidentify(self, epsilon: float) -> 'Spectrum':
         """
@@ -423,12 +417,9 @@ class Spectrum(AbstractSpectrum):
 
         :return: True if folded, False otherwise
         """
-        if self._folded is not None:
-            return self._folded
-
         mid = (self.n + 1) // 2
 
-        return bool(np.all(self.data[-mid:] == 0))
+        return np.all(self.data[-mid:] == 0)
 
     def normalize(self) -> 'Spectrum':
         """

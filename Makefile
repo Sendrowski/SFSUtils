@@ -8,7 +8,10 @@
 # est-sfs binary comparisons; many of its tests also skip when their large fixtures are
 # absent. Tests are meant to run in the `sfsutils-dev` conda env (see envs/dev.yaml).
 
-PYTEST ?= pytest
+# Run in the `sfsutils-dev` env by default: the caplog tests need its pytest >= 9.1, and a
+# base-env `pytest` on PATH reports them as spurious failures. Override with e.g. `make test
+# PYTEST=pytest` to use whatever is active.
+PYTEST ?= $(shell conda run -n sfsutils-dev which pytest 2>/dev/null || echo pytest)
 
 # Always run tests in parallel via pytest-xdist. Override e.g. `make test XDIST="-n 4"`
 # or disable with `make test XDIST=""` for a serial run (useful when debugging).
@@ -38,7 +41,7 @@ coverage:
 
 # R wrapper tests via reticulate. Point RETICULATE_PYTHON at a Python with sfsutils installed
 # (e.g. the sfsutils-dev env) and install the R package first (`R CMD INSTALL .`); see envs/r.yaml.
-RETICULATE_PYTHON ?= $(shell which python)
+RETICULATE_PYTHON ?= $(shell conda run -n sfsutils-dev which python 2>/dev/null || which python)
 test-r:
 	RETICULATE_PYTHON=$(RETICULATE_PYTHON) Rscript -e 'testthat::test_dir("tests/testthat")'
 

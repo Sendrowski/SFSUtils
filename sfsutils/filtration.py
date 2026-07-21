@@ -181,7 +181,9 @@ class SNPFiltration(MaskedFiltration):
         Filter site.
 
         :param variant: The variant to filter.
-        :return: ``True`` if the variant is an SNP, ``False`` otherwise.
+        :return: ``True`` if the variant is an SNP that is polymorphic among the included samples,
+            ``False`` otherwise. Poly-allelic SNPs are retained; use :class:`PolyAllelicFiltration` to
+            drop those.
         """
         # an indel or MNP is never an SNP, whatever its called bases look like: the masked test below
         # counts genotype characters, so without this an ``A -> AT`` indel would pass as polymorphic
