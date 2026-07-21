@@ -425,15 +425,22 @@ class DegeneracyAnnotation(Annotation):
                                    f'phase: {int(self._cd.phase)}, orientation: {self._cd.strand}, '
                                    f'current position: {v.CHROM}:{v.POS}')
 
+                # only splice codons together within one transcript: the nearest coding sequence by coordinate
+                # may belong to an unrelated gene, whose bases (and strand) have nothing to do with this codon
+                if 'parent' in on_contig.columns and pd.notna(self._cd.get('parent')):
+                    neighbours = on_contig[on_contig.parent == self._cd.parent]
+                else:
+                    neighbours = on_contig
+
                 # filter for positions ending after the current coding sequence
-                cds = on_contig[(on_contig.start > self._cd.end)]
+                cds = neighbours[(neighbours.start > self._cd.end)]
 
                 if not cds.empty:
                     # take the first coding sequence
                     self._cd_next = cds.iloc[0]
 
                 # filter for positions starting before the current coding sequence
-                cds = on_contig[(on_contig.end < self._cd.start)]
+                cds = neighbours[(neighbours.end < self._cd.start)]
 
                 if not cds.empty:
                     # take the last coding sequence

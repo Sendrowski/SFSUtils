@@ -100,6 +100,36 @@ def get_called_bases(genotypes: Sequence[str]) -> np.ndarray:
     return char_array[np.isin(char_array, bases)]
 
 
+#: The bases as a set, for fast membership tests in the per-site filtration hot path
+_base_set = frozenset(bases)
+
+
+def get_distinct_called_bases(genotypes: Sequence[str]) -> set:
+    """
+    Get the set of distinct called bases. Equivalent to ``set(get_called_bases(genotypes))`` but avoids building
+    the intermediate arrays, which matters because the filtrations run this on every site.
+
+    :param genotypes: Array of genotypes in the form of strings.
+    :return: The distinct called bases.
+    """
+    return set(''.join(genotypes)) & _base_set
+
+
+def get_distinct_called_alleles(genotypes: Sequence[str]) -> set:
+    """
+    Get the set of distinct called alleles, keeping multi-character alleles intact.
+
+    :param genotypes: Array of genotypes in the form of strings.
+    :return: The distinct called alleles.
+    """
+    return {
+        allele
+        for genotype in genotypes
+        for allele in genotype.replace('|', '/').split('/')
+        if allele != '' and set(allele) <= _base_set
+    }
+
+
 def get_called_alleles(genotypes: Sequence[str]) -> np.ndarray:
     """
     Get the distinct called alleles from a list of calls. Multi-character alleles stay intact, so an MNP
@@ -108,14 +138,7 @@ def get_called_alleles(genotypes: Sequence[str]) -> np.ndarray:
     :param genotypes: Array of genotypes in the form of strings.
     :return: Array of distinct called alleles.
     """
-    called = [
-        allele
-        for genotype in genotypes
-        for allele in genotype.replace('|', '/').split('/')
-        if allele != '' and set(allele) <= set(bases)
-    ]
-
-    return np.unique(called)
+    return np.array(sorted(get_distinct_called_alleles(genotypes)), dtype=object)
 
 
 def get_major_base(genotypes: Sequence[str]) -> str | None:
@@ -559,7 +582,7 @@ class GFFHandler(FileHandler):
             comment='#',
             names=col_labels,
             dtype=dtypes,
-            usecols=['seqid', 'type', 'start', 'end', 'strand', 'phase']
+            usecols=['seqid', 'type', 'start', 'end', 'strand', 'phase', 'attributes']
         )
 
         # filter for coding sequences
@@ -572,8 +595,14 @@ class GFFHandler(FileHandler):
         df['start'] = df['start'].astype(int)
         df['end'] = df['end'].astype(int)
 
-        # drop type column
-        df.drop(columns=['type'], inplace=True)
+        # the transcript each coding sequence belongs to. Codons that span a CDS boundary are completed from the
+        # adjacent CDS, which is only meaningful within one transcript: the nearest CDS by coordinate may belong
+        # to an unrelated gene, possibly on the opposite strand. GFF3 spells this Parent=, GTF transcript_id "..".
+        df['parent'] = df['attributes'].str.extract(
+            r'(?:^|;)\s*(?:Parent|transcript_id)[=\s]"?([^;"]+)', expand=False)
+
+        # drop type and attributes columns
+        df.drop(columns=['type', 'attributes'], inplace=True)
 
         # remove duplicates
         df = df.drop_duplicates(subset=['seqid', 'start', 'end'])
@@ -1273,7 +1302,7 @@ class TskitVariantReader(VariantReader):
             ], dtype=object)
 
             observed = [a for a in alleles if a]
-            is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
+            is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
 
             variant = Variant(
                 ref=alleles[0],
@@ -1417,7 +1446,7 @@ class ZarrVariantReader(VariantReader):
                 ], dtype=object)
 
                 observed = [a for a in site_alleles if a]
-                is_snp = len(observed) >= 2 and all(len(a) == 1 for a in observed)
+                is_snp = len(observed) >= 2 and all(a.upper() in bases for a in observed)
 
                 # surface INFO with native types matching cyvcf2 (float/int/bool/str), so a numeric field
                 # stored typed (by vcf2zarr, or by our own writer) is not silently a string; a missing
@@ -1699,8 +1728,15 @@ class ZarrVariantWriter(VariantWriter):
 
         def _absent(v):
             # a value is absent if unset, the empty string, or the VCF '.' missing marker (which
-            # annotations such as DegeneracyAnnotation write for sites the field does not apply to)
-            return v is _missing or v == '' or v == '.'
+            # annotations such as DegeneracyAnnotation write for sites the field does not apply to).
+            # cyvcf2 hands back None for a Number=1 numeric field whose value is '.'
+            if v is _missing or v is None:
+                return True
+
+            if isinstance(v, float) and np.isnan(v):
+                return True
+
+            return isinstance(v, str) and v in ('', '.')
 
         def _fits_int64(v):
             return -(2 ** 63) <= int(v) < 2 ** 63
@@ -1719,6 +1755,11 @@ class ZarrVariantWriter(VariantWriter):
                 continue
 
             raw = [info.get(key, _missing) for info in self._infos]
+
+            # cyvcf2 returns a tuple for a Number=A/R/G/. field; write the comma-separated form the VCF uses,
+            # so the value stays parseable instead of becoming a Python repr such as "(12, 3)"
+            raw = [','.join(str(x) for x in v) if isinstance(v, (tuple, list, np.ndarray)) else v for v in raw]
+
             present = [v for v in raw if not _absent(v)]
 
             if present and all(_is_bool(v) for v in present):

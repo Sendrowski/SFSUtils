@@ -159,3 +159,64 @@ class TestCLIWiring:
         with pytest.raises(SystemExit):
             build_parser().parse_args(['parse', '--source', 'x.vcf', '--n', '10', '--out', 'o.csv',
                                        '--pops', 'nonsense'])
+
+
+class TestSNPFiltrationFastPath:
+    """
+    The numeric gt_types shortcut in SNPFiltration must agree with decoding the bases on every site, including
+    the multi-allelic ones it deliberately falls through on.
+    """
+
+    @staticmethod
+    def _reference(variant, mask):
+        """Decide from the called bases, the implementation the shortcut replaces."""
+        from sfsutils.io_handlers import get_distinct_called_bases
+
+        if not variant.is_snp:
+            return False
+
+        return len(get_distinct_called_bases(variant.gt_bases[mask])) > 1
+
+    @pytest.mark.parametrize('keep', [None, 'half', 'one'])
+    def test_agrees_with_the_base_comparison(self, keep):
+        import os
+
+        from cyvcf2 import VCF
+
+        from sfsutils import SNPFiltration
+
+        vcf = "resources/msprime/two_epoch.vcf"
+        if not os.path.exists(vcf):
+            pytest.skip("the VCF fixture is absent")
+
+        reader = VCF(vcf)
+        n = len(reader.samples)
+        mask = {None: np.ones(n, bool),
+                'half': np.array([i % 2 == 0 for i in range(n)]),
+                'one': np.array([i == 0 for i in range(n)])}[keep]
+
+        f = SNPFiltration()
+        f._samples_mask = mask
+
+        compared = 0
+        for variant in reader:
+            assert f.filter_site(variant) == self._reference(variant, mask), f"disagreement at {variant.POS}"
+            compared += 1
+
+        assert compared > 100
+
+    def test_multiallelic_homozygous_alt_falls_through(self):
+        """Two samples homozygous for *different* ALT alleles are polymorphic, but their gt_types are identical,
+        so the shortcut must defer to the bases rather than call the site monomorphic."""
+        from sfsutils import SNPFiltration
+
+        variant = type('V', (), dict(
+            is_snp=True,
+            gt_types=np.array([3, 3]),
+            gt_bases=np.array(['C|C', 'G|G'], dtype=object),
+        ))()
+
+        f = SNPFiltration()
+        f._samples_mask = np.array([True, True])
+
+        assert f.filter_site(variant)

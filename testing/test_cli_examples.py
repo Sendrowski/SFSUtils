@@ -196,14 +196,18 @@ def test_parse_from_zarr(zarr_store, tmp_path):
 
 
 def test_parse_from_trees(trees_path, tmp_path):
-    # sfsutils parse --trees ancestry.trees --n 20 --out sfs.csv
-    # The literal command omits --no-skip-non-polarized, and a tree sequence carries no AA tag (tskit stores the
-    # ancestral state as REF, recovered only with skip_non_polarized=False), so the projected SFS is empty here.
-    # The command must still succeed and write the output file. That the tree input itself is valid and yields a
-    # populated SFS once polarized is asserted separately via the API, so the check is not vacuous.
+    # sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --out sfs.csv
+    # A tree sequence carries no AA tag (tskit stores the ancestral state as REF, recovered only with
+    # skip_non_polarized=False), so the documented command passes --no-skip-non-polarized and the SFS is
+    # populated. Without it every site is skipped and the command now fails rather than writing an empty file.
     trees, _ = trees_path
     out = tmp_path / "sfs.csv"
-    assert _run("parse", "--trees", trees, "--n", "20", "--out", str(out)) == 0
+    assert _run("parse", "--trees", trees, "--n", "20", "--no-skip-non-polarized", "--out", str(out)) == 0
+
+    # the unpolarized form includes no sites, so it must fail loudly instead of writing an unreadable stub
+    empty = tmp_path / "empty.csv"
+    assert _run("parse", "--trees", trees, "--n", "20", "--out", str(empty)) == 1
+    assert not empty.exists()
     assert out.exists()
     polarized = np.array(su.Parser(source=trees, n=20, skip_non_polarized=False,
                                    subsample_mode="random").parse().all.to_list())

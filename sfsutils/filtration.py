@@ -15,12 +15,16 @@ import numpy as np
 import pandas as pd
 
 from .annotation import DegeneracyAnnotation
-from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_called_alleles, DummyVariant, \
+from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_distinct_called_bases, \
+    get_distinct_called_alleles, DummyVariant, \
     Site, VariantReader, \
     VariantWriter
 
 # get logger
 logger = logging.getLogger('sfsutils')
+
+# cyvcf2 genotype codes as returned by ``Variant.gt_types`` for a VCF opened with the default ``gts012=False``
+HOM_REF, HET, UNKNOWN, HOM_ALT = 0, 1, 2, 3
 
 
 def _count_filtered(func: Callable) -> Callable:
@@ -194,8 +198,31 @@ class SNPFiltration(MaskedFiltration):
         if self._samples_mask is None or isinstance(variant, DummyVariant):
             return True
 
-        # otherwise check whether the variant is still polymorphic among the included samples
-        return len(np.unique(get_called_bases(variant.gt_bases[self._samples_mask]))) > 1
+        # otherwise check whether the variant is still polymorphic among the included samples. cyvcf2 rebuilds
+        # gt_bases on every access, which dominates this check, so settle it from the numeric genotype codes
+        # where they are available and unambiguous, and decode the bases only when they are not
+        types = getattr(variant, 'gt_types', None)
+
+        if types is not None:
+            types = np.asarray(types)[self._samples_mask]
+
+            # a heterozygote makes the site polymorphic on its own
+            if (types == HET).any():
+                return True
+
+            called = types[types != UNKNOWN]
+
+            if called.size == 0:
+                return False
+
+            # a mixture of reference and non-reference homozygotes is polymorphic, all-reference is not
+            if (called == HOM_REF).any():
+                return bool((called != HOM_REF).any())
+
+            # every call is a homozygous alternate, which may still cover two different alternate alleles,
+            # so fall through to comparing the actual bases
+
+        return len(get_distinct_called_bases(variant.gt_bases[self._samples_mask])) > 1
 
 
 class SNVFiltration(Filtration):
@@ -233,7 +260,7 @@ class PolyAllelicFiltration(MaskedFiltration):
             return len(variant.ALT) < 2
 
         # otherwise check whether the variant is poly-allelic among the included samples
-        return len(get_called_alleles(variant.gt_bases[self._samples_mask])) < 3
+        return len(get_distinct_called_alleles(variant.gt_bases[self._samples_mask])) < 3
 
 
 class AllFiltration(Filtration):

@@ -199,6 +199,12 @@ def _run_parse(args: argparse.Namespace) -> int:
         two_sfs_offset=args.two_sfs_offset,
     ).parse()
 
+    if len(spectra.types) == 0:
+        logger.error("parse: no sites were included in the spectra, so nothing was written to %s. Check that the "
+                     "sample size does not exceed the input, and that the ancestral allele information the "
+                     "polarization needs is present (or pass --no-skip-non-polarized).", args.out)
+        return 1
+
     spectra.to_file(args.out)
     logger.info("parse: wrote spectrum to %s", args.out)
 
