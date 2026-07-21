@@ -1,0 +1,20 @@
+# GitHub builds its source tarballs with `git archive`, which honours export-ignore, so installing
+# straight from GitHub (remotes::install_github, pip install git+...) no longer downloads the test
+# fixtures, documentation sources and workflow outputs it has no use for. A clone is unaffected.
+#
+# `sfsutils/`, `R/`, `man/`, `tests/`, DESCRIPTION and NAMESPACE stay in, since those installs need
+# them. `.Rbuildignore` separately governs what `R CMD build` keeps in the built R package.
+
+resources/ export-ignore
+testing/ export-ignore
+docs/ export-ignore
+snakemake/ export-ignore
+workflow/ export-ignore
+scratch/ export-ignore
+results/ export-ignore
+out/ export-ignore
+Literature/ export-ignore
+.github/ export-ignore
+coverage.xml export-ignore
+codecov.yml export-ignore
+.coveragerc export-ignore
