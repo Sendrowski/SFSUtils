@@ -884,12 +884,39 @@ class TargetSiteCounter:
             self.parser.filtrations = self._filtrations
             self._filtrations = None
 
+    #: The per-pass counters of the annotations, which the sampling pass would otherwise overwrite
+    _counter_names = ('n_annotated', 'n_skipped', 'n_mismatches', 'n_comparisons')
+
+    def _snapshot_counters(self) -> List[Dict[str, int]]:
+        """
+        Record the per-pass counters of every annotation, so the sampling pass can report its own counts
+        without discarding those of the pass that produced the spectra.
+
+        :return: One mapping of counter name to value per annotation.
+        """
+        return [{name: getattr(a, name) for name in self._counter_names if hasattr(a, name)}
+                for a in self.parser.annotations]
+
+    def _restore_counters(self, counters: List[Dict[str, int]]):
+        """
+        Put the counters of the pass that produced the spectra back on the annotations.
+
+        :param counters: The mappings returned by :meth:`_snapshot_counters`.
+        """
+        for annotation, snapshot in zip(self.parser.annotations, counters):
+            for name, value in snapshot.items():
+                setattr(annotation, name, value)
+
     def count(self):
         """
         Count the number of target sites.
 
         :return: The number of target sites
         """
+        # the sampling pass rewinds and then re-runs the components, which would leave their per-pass
+        # counters describing the sampled sites rather than the sites that produced the spectra
+        counters = self._snapshot_counters()
+
         # rewind parser components
         self.parser._rewind()
 
@@ -910,6 +937,7 @@ class TargetSiteCounter:
             # even when the sampling pass raises, which would otherwise leave it stripped of its SNP filtration
             pbar.close()
             self._resume_snp_filtration()
+            self._restore_counters(counters)
 
         # tear down
         self._teardown()
