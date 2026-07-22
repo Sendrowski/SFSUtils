@@ -54,6 +54,8 @@ sfsutils_is_installed <- function() {
 #'        even if it's already available. Default is `FALSE`.
 #' @param silent Logical, if `TRUE` it will suppress the message about `sfsutils` being
 #'        already installed. Default is `FALSE`.
+#' @param python_version A character string specifying the Python version reticulate
+#'        should provision the environment with. Default is `'3.11'`.
 #'
 #' @return Invisible `NULL`.
 #'

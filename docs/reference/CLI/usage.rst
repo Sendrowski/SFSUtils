@@ -87,6 +87,10 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
      - Outgroup samples and minimum ingroup count for the maximum-likelihood ancestral annotation.
    * - ``--info-ancestral``
      - INFO tag holding the ancestral allele (default ``AA``).
+   * - ``--max-sites``
+     - Stop after this many input sites (default: all).
+   * - ``--seed``
+     - Random seed for the ``random`` subsample mode (default 0).
 
 filter
 ------
@@ -126,6 +130,8 @@ input because the writer copies the header (contigs, INFO/FORMAT definitions) fr
      - References required by the ``cpg`` and ``coding-sequence`` filtrations.
    * - ``--contigs``
      - Contigs to keep (for the ``contig`` filtration).
+   * - ``--max-sites``
+     - Stop after this many input sites (default: all).
 
 annotate
 --------
@@ -169,6 +175,12 @@ tree-sequence input.
      - References required by the ``degeneracy`` annotation.
    * - ``--outgroups`` / ``--n-ingroups``
      - Outgroup samples and minimum ingroup count for the maximum-likelihood ancestral annotation.
+   * - ``--info-ancestral``
+     - INFO tag holding the ancestral allele (default ``AA``).
+   * - ``--max-sites``
+     - Stop after this many input sites (default: all).
+   * - ``--seed``
+     - Random seed for the maximum-likelihood ancestral annotation (default 0).
 
 See also
 --------

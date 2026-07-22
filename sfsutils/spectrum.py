@@ -1423,6 +1423,7 @@ class Spectra(AbstractSpectra):
         """
         Remove types whose spectra have fewer than equal ``n_polymorphic`` polymorphic sites.
 
+        :param n_polymorphic: Minimum number of polymorphic sites a type must exceed to be kept.
         :return: Spectra
         """
         return Spectra.from_dataframe(self.data.loc[:, self.data[1:-1].sum() > int(n_polymorphic)])

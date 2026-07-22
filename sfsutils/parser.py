@@ -779,6 +779,7 @@ class RandomStratification(Stratification):
         Initialize random stratification.
 
         :param n_bins: Number of bins to randomly assign sites to.
+        :param seed: Random seed, for reproducible bin assignment.
         """
         super().__init__()
 
@@ -1476,6 +1477,8 @@ class Parser(MultiHandler):
             to the all-ancestral origin of the joint SFS, which is scaled to the target-site count.
         :param info_ancestral: The tag in the INFO field that contains ancestral allele information. Consider using
             an ancestral allele annotation if this information is not available yet.
+        :param info_ancestral_prob: The tag in the INFO field that holds the per-site probability that
+            ``info_ancestral`` names the true ancestral allele, used when ``polarize_probabilistically`` is set.
         :param skip_non_polarized: Whether to skip poly-morphic sites that are not polarized, i.e., without a valid
             info tag providing the ancestral allele. If ``False``, we use the reference allele as ancestral allele
             (only recommended if working with folded spectra).

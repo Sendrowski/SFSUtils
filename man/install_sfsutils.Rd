@@ -15,6 +15,9 @@ even if it's already available. Default is \code{FALSE}.}
 
 \item{silent}{Logical, if \code{TRUE} it will suppress the message about \code{sfsutils} being
 already installed. Default is \code{FALSE}.}
+
+\item{python_version}{A character string specifying the Python version reticulate
+should provision the environment with. Default is \code{'3.11'}.}
 }
 \value{
 Invisible \code{NULL}.

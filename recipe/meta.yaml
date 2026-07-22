@@ -39,8 +39,8 @@ requirements:
     - requests >=2.28
     - scipy >=1.13,<2
     # Optional backends, bundled so `conda install sfsutils` can read VCF, VCF-Zarr, and tree sequences out of the box.
-    - cyvcf2 >=0.31.0
-    - zarr >=2.17,<3
+    - cyvcf2 >=0.31,<1
+    - zarr >=3.1,<4
     - tskit >=0.5
 
 test:

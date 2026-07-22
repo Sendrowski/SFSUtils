@@ -18,6 +18,10 @@ The :class:`~sfsutils.parser.Parser`, :class:`~sfsutils.filtration.Filterer` and
    ~sfsutils.io_handlers.VCFVariantWriter
    ~sfsutils.io_handlers.ZarrVariantWriter
    ~sfsutils.io_handlers.TskitVariantWriter
+   ~sfsutils.io_handlers.FileHandler
+   ~sfsutils.io_handlers.VCFHandler
+   ~sfsutils.io_handlers.FASTAHandler
+   ~sfsutils.io_handlers.GFFHandler
 
 Site
 ~~~~
@@ -77,4 +81,28 @@ NoTypeException
 ~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.NoTypeException
+   :members:
+
+FileHandler
+~~~~~~~~~~~
+
+.. autoclass:: sfsutils.io_handlers.FileHandler
+   :members:
+
+VCFHandler
+~~~~~~~~~~
+
+.. autoclass:: sfsutils.io_handlers.VCFHandler
+   :members:
+
+FASTAHandler
+~~~~~~~~~~~~
+
+.. autoclass:: sfsutils.io_handlers.FASTAHandler
+   :members:
+
+GFFHandler
+~~~~~~~~~~
+
+.. autoclass:: sfsutils.io_handlers.GFFHandler
    :members:
