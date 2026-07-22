@@ -5,7 +5,12 @@ Changelog
 
 [1.0.0] - 2026-07-20
 ^^^^^^^^^^^^^^^^^^^^
-- First stable release, adding correctness and robustness fixes and documentation polish to the beta.
+First stable release, consolidating extensive correctness, performance and robustness work on the beta.
+
+- **Performance.** The parse hot path is several times faster, and coding-sequence and FASTA lookups are indexed so annotation no longer scales with the annotation file.
+- **Memory.** The VCF-Zarr writer streams to the store in chunks, keeping its footprint flat regardless of the number of sites.
+- **Correctness.** Numerous fixes to the numbers produced, including the two-site SFS extrapolation, joint SFS folding, and consistency across the VCF, VCF-Zarr and tree-sequence backends.
+- **Compatibility.** Requires Python 3.11 or newer, and the R wrapper installs the correct distribution (``sfsutils-popgen``).
 
 [0.1.0b2] - 2026-07-19
 ^^^^^^^^^^^^^^^^^^^^^^

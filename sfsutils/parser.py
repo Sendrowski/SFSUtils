@@ -1451,11 +1451,11 @@ class Parser(MultiHandler):
 
         :param source: The variant source: a path to a VCF file (gzipped or a URL), a path to a VCF-Zarr store
             (a ``.vcz`` or ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
-            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader`. A non-path,
+            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader`. A non-path,
             non-tree-sequence source must be a ``VariantReader`` (it exposes the sample names, contig names and
             site count the parser needs, and supports a fresh iteration pass); a bare iterable of sites or a
-            raw ``cyvcf2.VCF`` object is not accepted and raises a ``TypeError``. VCF-Zarr requires the optional
-            ``zarr`` package and tree sequences the optional ``tskit`` package.
+            raw :class:`cyvcf2.VCF <cyvcf2.cyvcf2.VCF>` object is not accepted and raises a ``TypeError``. VCF-Zarr requires the optional
+            :mod:`zarr` package and tree sequences the optional :mod:`tskit` package.
         :param gff: The path to the GFF file, possibly gzipped or a URL. This file is optional and depends on
             the stratifications, annotations and filtrations that are used.
         :param fasta: The path to the FASTA file, possibly gzipped or a URL. This file is optional and depends on

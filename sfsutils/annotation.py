@@ -4729,7 +4729,7 @@ class Annotator(MultiHandler):
 
         :param source: The variant source: a VCF file (gzipped or a URL), a VCF-Zarr store (a ``.vcz`` or
             ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
-            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
+            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
             sites. Read through the same streamed site interface as all handlers.
         :param output: The path to the output file
         :param annotations: The annotations to apply.

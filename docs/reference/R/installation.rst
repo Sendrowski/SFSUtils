@@ -25,8 +25,8 @@ The ``sfsutils`` R package serves as a wrapper around the Python library but re-
 
 .. note::
 
-   The backends for the different input sources are optional extras: ``vcf`` (the ``cyvcf2`` dependency, for VCF
-   files), ``zarr`` (the ``zarr`` dependency, for VCF-Zarr stores) and ``arg`` (the ``tskit`` dependency, for
+   The backends for the different input sources are optional extras: ``vcf`` (the :mod:`cyvcf2 <cyvcf2.cyvcf2>` dependency, for VCF
+   files), ``zarr`` (the :mod:`zarr` dependency, for VCF-Zarr stores) and ``arg`` (the :mod:`tskit` dependency, for
    tree sequences / ARGs). To enable the ones you need, run the following command in R **before** calling
    ``install_sfsutils()``, for example for all of them:
 

@@ -48,6 +48,9 @@ intersphinx_mapping = {
     'pandas': ('https://pandas.pydata.org/docs', None),
     'scipy': ('https://docs.scipy.org/doc/scipy', None),
     'matplotlib': ('https://matplotlib.org/stable', None),
+    'tskit': ('https://tskit.dev/tskit/docs/stable', None),
+    'zarr': ('https://zarr.readthedocs.io/en/stable', None),
+    'cyvcf2': ('https://brentp.github.io/cyvcf2', None),
 }
 
 bibtex_bibfiles = ['refs.bib']

@@ -15,8 +15,8 @@ PyPI
 
 .. note::
 
-   The backends for the different input sources are optional extras: ``vcf`` (the ``cyvcf2`` dependency, for VCF
-   files), ``zarr`` (the ``zarr`` dependency, for VCF-Zarr stores) and ``arg`` (the ``tskit`` dependency, for
+   The backends for the different input sources are optional extras: ``vcf`` (the :mod:`cyvcf2 <cyvcf2.cyvcf2>` dependency, for VCF
+   files), ``zarr`` (the :mod:`zarr` dependency, for VCF-Zarr stores) and ``arg`` (the :mod:`tskit` dependency, for
    tree sequences / ARGs). Install the ones you need, for example all of them:
 
    .. code-block:: bash
@@ -34,7 +34,7 @@ Conda
 
 .. note::
 
-   The optional input backends are not pulled in automatically via conda. ``zarr`` and ``tskit`` are on
+   The optional input backends are not pulled in automatically via conda. :mod:`zarr` and :mod:`tskit` are on
    **conda-forge**, while ``cyvcf2`` (for VCF handling) is on **bioconda**, so add both channels:
 
    .. code-block:: bash

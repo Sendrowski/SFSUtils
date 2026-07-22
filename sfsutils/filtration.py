@@ -991,7 +991,7 @@ class Filterer(MultiHandler):
 
         :param source: The variant source: a VCF file (gzipped or a URL), a VCF-Zarr store (a ``.vcz`` or
             ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
-            ``tskit.TreeSequence``), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
+            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
             sites. Read through the same streamed site interface as all handlers.
         :param output: The output file.
         :param gff: The GFF file, possibly gzipped or a URL. This argument is required for some filtrations.
