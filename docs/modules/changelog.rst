@@ -7,6 +7,8 @@ Changelog
 ^^^^^^^^^^^^^^^^^^^^
 First stable release, consolidating extensive correctness, performance and robustness work on the beta.
 
+- **Input sources.** Parse from VCF files, VCF-Zarr stores and tskit tree sequences (ARGs) interchangeably through a single ``source`` argument.
+- **Spectra.** Derive the one-dimensional SFS, the joint (multi-population) SFS, and the two-site SFS (2-SFS), each with its own folding, covariance and plotting support.
 - **Performance.** Significant speedup across parsing and annotation, with indexed coding-sequence and FASTA lookups so annotation no longer scales with the annotation file.
 - **Memory.** The VCF-Zarr writer streams to the store in chunks, keeping its footprint flat regardless of the number of sites.
 - **Correctness.** Numerous fixes to the numbers produced, including the two-site SFS extrapolation, joint SFS folding, and consistency across the VCF, VCF-Zarr and tree-sequence backends.

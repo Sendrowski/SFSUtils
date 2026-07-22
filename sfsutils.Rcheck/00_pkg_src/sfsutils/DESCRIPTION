@@ -1,0 +1,17 @@
+Package: sfsutils
+Title: Parsing of site-frequency spectra (SFS) from VCF files
+Version: 1.0.0
+Authors@R: 
+    person("Janek", "Sendrowski", , "sendrowski.janek@gmail.com", role = c("aut", "cre"))
+Description: An R wrapper for the 'sfsutils' Python package which provides fast and flexible parsing of site-frequency spectra (SFS) from VCF files, including annotation, filtration, and stratification of sites.
+License: file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports: cowplot, ggplot2, RColorBrewer, reticulate, scales
+Suggests: testthat
+URL: https://sfsutils.readthedocs.io
+NeedsCompilation: no
+Packaged: 2026-07-22 14:31:12 UTC; janek
+Author: Janek Sendrowski [aut, cre]
+Maintainer: Janek Sendrowski <sendrowski.janek@gmail.com>
