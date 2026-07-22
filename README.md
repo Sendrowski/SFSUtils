@@ -9,27 +9,4 @@
 
 ``sfsutils`` is a package for parsing site frequency spectra (SFS), with support for versatile stratification, ancestral allele and site-degeneracy annotation, and filtering. Beyond the one-dimensional spectrum it also derives the joint SFS across several populations and the two-site SFS of linked pairs of sites, and reads from VCF files, VCF-Zarr stores, and tskit tree sequences (ARGs).
 
-## Installation
-
-```bash
-pip install "sfsutils-popgen[vcf,zarr,arg]"
-```
-
-```bash
-conda install -c conda-forge sfsutils
-```
-
-The distribution is `sfsutils-popgen` on PyPI, but the import name is `sfsutils`. The `vcf`, `zarr`, and `arg` extras pull in the optional backends for VCF, VCF-Zarr, and tskit tree-sequence input.
-
-## Usage
-
-Parse a spectrum from a polarised VCF and plot it:
-
-```python
-import sfsutils as su
-
-sfs = su.Parser(n=10, source="biallelic.polarized.subset.vcf.gz").parse()
-sfs.plot()
-```
-
 Please see the [documentation](https://sfsutils.readthedocs.io/en/latest/) for all the details.
