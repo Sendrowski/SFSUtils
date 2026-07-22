@@ -101,12 +101,10 @@ class Filtration(ABC):
 
 class MaskedFiltration(Filtration, ABC):
     """
-    Filter sites based on a samples mask. A mask of ``None`` selects every sample rather than turning the
-    filtration into a test on the ``ALT`` field, so that naming every sample and naming none of them reach
-    the same verdict, and a sample belonging to no requested population cannot change one.
+    Filter sites based on a samples mask, where ``None`` selects every sample.
 
-    Where the input carries no samples at all, as a sites-only VCF or store does, the genotypes cannot
-    settle anything and the verdict is taken from the declared alleles instead, with one warning on setup.
+    Where the input carries no samples at all, as a sites-only VCF or store does, the verdict is taken from
+    the declared alleles, with one warning on setup.
     """
 
     #: Whether the declared alleles stand in for the genotypes, held at class level so a restored instance

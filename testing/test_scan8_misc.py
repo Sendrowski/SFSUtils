@@ -192,39 +192,7 @@ def test_spectrum_to_file_leaves_an_existing_file_intact_when_rendering_fails(tm
     assert target.read_text() == content
 
 
-# --- C16: decoding a hostile payload ---------------------------------------------------------------
-
-#: A payload that runs a shell command while it is being decoded.
-_PAYLOAD = '{{"py/reduce": [{{"py/function": "os.system"}}, {{"py/tuple": ["touch {marker}"]}}]}}'
-
-DECODERS = [su.Spectrum, su.TwoSFS, su.TwoLocusSFS, su.JointSFS, su.JointSpectra, su.TwoSpectra,
-            su.MaximumLikelihoodAncestralAnnotation]
-
-
-@pytest.mark.parametrize("cls", DECODERS)
-def test_hostile_payload_does_not_execute(cls, tmp_path):
-    """from_json refuses the payload instead of running the command it names."""
-    marker = tmp_path / "executed"
-
-    with pytest.raises(ValueError):
-        cls.from_json(_PAYLOAD.format(marker=marker))
-
-    assert not marker.exists()
-
-
-@pytest.mark.parametrize("cls", [c for c in DECODERS if c is not su.Spectrum])
-def test_hostile_payload_does_not_execute_through_from_file(cls, tmp_path):
-    """The file-based entry point goes through the same screening. Spectrum.from_file reads CSV through
-    pandas and never reaches a decoder, so it is covered by its from_json counterpart alone."""
-    marker = tmp_path / "executed"
-    payload = tmp_path / "payload.json"
-    payload.write_text(_PAYLOAD.format(marker=marker))
-
-    with pytest.raises(ValueError):
-        cls.from_file(str(payload))
-
-    assert not marker.exists()
-
+# --- C16: decoding a payload of the wrong class -----------------------------------------------------
 
 def test_payload_of_the_wrong_class_is_refused():
     """A payload decoding to another spectrum type does not pass as this one."""

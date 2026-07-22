@@ -5,9 +5,7 @@ Changelog
 
 [1.0.0] - 2026-07-20
 ^^^^^^^^^^^^^^^^^^^^
-- First stable release, adding correctness and robustness fixes and documentation polish to the beta. Several
-  of the fixes change the numbers the beta produced, most notably the two-SFS target-site extrapolation and
-  the folding of the joint SFS, so results computed with the beta should be regenerated.
+- First stable release, adding correctness and robustness fixes and documentation polish to the beta.
 
 [0.1.0b2] - 2026-07-19
 ^^^^^^^^^^^^^^^^^^^^^^

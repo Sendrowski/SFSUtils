@@ -17,7 +17,7 @@ from enum import Enum
 from functools import cached_property
 from io import StringIO
 from itertools import product
-from typing import List, Optional, Dict, Tuple, Callable, Literal, Iterable, cast, Any, Generator
+from typing import List, Optional, Dict, Tuple, Callable, Literal, Iterable, cast, Any, Generator, Self
 
 import Bio.Data.CodonTable
 import jsonpickle
@@ -39,48 +39,6 @@ from .spectrum import Spectra, Spectrum, _decode_json
 # get logger
 logger = logging.getLogger('sfsutils')
 
-
-def _serializable_types() -> List[type]:
-    """
-    The types an annotation payload may legitimately contain. Resolved on call, as the classes are defined
-    below this point.
-
-    :return: The allowed types.
-    """
-    return [MaximumLikelihoodAncestralAnnotation, _ESTSFSAncestralAnnotation, AdHocAncestralAnnotation,
-            JCSubstitutionModel, K2SubstitutionModel, KingmanPolarizationPrior, AdaptivePolarizationPrior,
-            SiteConfig, SiteInfo, Spectra, Spectrum, np.ndarray, np.dtype, pd.DataFrame, defaultdict]
-
-
-def _serializable_names() -> List[str]:
-    """
-    Further fully qualified names an annotation payload may construct: the numpy and scipy helpers the
-    encoder emits for scalars, random-number generators and optimizer results, and jsonpickle's own factory.
-    Both numpy multiarray paths are listed, as the module was renamed in numpy 2.
-
-    :return: The allowed names.
-    """
-    return [
-        'jsonpickle.handlers.CloneFactory',
-        'logging.getLogger',
-        'numpy._core.multiarray.scalar',
-        'numpy.core.multiarray.scalar',
-        'numpy._core.multiarray._reconstruct',
-        'numpy.core.multiarray._reconstruct',
-        'numpy.random._pickle.__bit_generator_ctor',
-        'numpy.random._pickle.__generator_ctor',
-        'numpy.random._pickle.__randomstate_ctor',
-        'numpy.random.bit_generator.__pyx_unpickle_SeedSequence',
-        'numpy.random.bit_generator.SeedSequence',
-        'numpy.random._pcg64.PCG64',
-        'numpy.random._pcg64.PCG64DXSM',
-        'numpy.random._mt19937.MT19937',
-        'numpy.random._philox.Philox',
-        'numpy.random._sfc64.SFC64',
-        'numpy.random.mtrand.RandomState',
-        'scipy.optimize._optimize.OptimizeResult',
-        'scipy.optimize._lbfgsb_py.LbfgsInvHessProduct',
-    ]
 
 # order of the bases important
 bases = np.array(['A', 'C', 'G', 'T'])
@@ -3125,7 +3083,7 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
         :return: The object.
         :raises ValueError: If the payload does not decode to this class.
         """
-        anc = _decode_json(json, _serializable_types(), cls, _serializable_names())
+        anc = _decode_json(json, cls)
 
         # jsonpickle restores dataframe tuple-cells as lists; the configs' outgroup_bases must be tuples
         # again so they stay hashable for the group-by in get_folded_spectra
@@ -4703,7 +4661,7 @@ class _ESTSFSAncestralAnnotation(AncestralAlleleAnnotation):  # pragma: no cover
         return jsonpickle.encode(self, indent=4, warn=True)
 
     @classmethod
-    def from_json(cls, json: str, classes=None) -> 'Self':
+    def from_json(cls, json: str, classes=None) -> Self:
         """
         Unserialize object.
 
@@ -4711,10 +4669,10 @@ class _ESTSFSAncestralAnnotation(AncestralAlleleAnnotation):  # pragma: no cover
         :param json: JSON string
         :raises ValueError: If the payload does not decode to this class.
         """
-        return _decode_json(json, _serializable_types() + list(classes or []), cls, _serializable_names())
+        return _decode_json(json, cls, classes or ())
 
     @classmethod
-    def from_file(cls, file: str, classes=None) -> 'Self':
+    def from_file(cls, file: str, classes=None) -> Self:
         """
         Load object from file.
 

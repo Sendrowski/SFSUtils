@@ -3044,10 +3044,9 @@ class ZarrVariantWriter(VariantWriter):
 
     def _flush_info(self, start: int, stop: int) -> None:
         """
-        Write the INFO values of the buffered chunk as ``variant_<tag>`` arrays, typed to match the
-        values so a numeric field round-trips as a number rather than a string. A field first appearing
-        in this chunk is created here, with the variants before it marked as carrying no value, and a
-        field whose values no longer fit its encoding is rewritten in a wider one.
+        Write the INFO values of the buffered chunk as ``variant_<tag>`` arrays, typed to match the values.
+        A field first appearing in this chunk is created here, with the variants before it marked as carrying
+        no value, and a field whose values outgrow their encoding is rewritten in a wider one.
 
         :param start: The first row of the chunk.
         :param stop: The row past the chunk.

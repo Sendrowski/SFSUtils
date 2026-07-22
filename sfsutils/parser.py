@@ -41,13 +41,11 @@ _TWO_SFS_RESYNC_INTERVAL = 4096
 
 def _snapshot_state(component: object) -> Dict[str, Any]:
     """
-    Record the per-pass state of a parser component (a filtration, annotation or stratification): its counters
-    and its list-valued diagnostics, such as the mismatches an annotation collects. These are the attributes a
-    second pass over the input overwrites, and they are discovered by type rather than by name so that a
-    component gaining a counter does not silently fall out of the snapshot.
+    Record the per-pass state of a parser component: its integer counters and its list-valued diagnostics,
+    found by type.
 
-    :param component: The component.
-    :return: The per-pass state, with the lists copied rather than aliased.
+    :param component: The filtration, annotation or stratification.
+    :return: The per-pass state, with the lists copied.
     """
     state = {}
 
@@ -1719,10 +1717,8 @@ class Parser(MultiHandler):
 
     def _reset(self):
         """
-        Reset the accumulating state, so that a second :meth:`parse` starts from a clean slate rather than adding
-        to the counts of the previous pass. The RNG is re-seeded as well, which keeps repeated parses reproducible.
-        The cached reader is discarded too, so that a parse whose predecessor stopped part-way through the input,
-        because it raised, starts at the first record rather than wherever the previous pass left off.
+        Discard the state of the previous pass: the accumulating spectra and counters, the two-SFS window, the
+        cached reader, and the seed of the RNG.
         """
         VCFHandler._rewind(self)
 

@@ -10,7 +10,7 @@ import copy
 import json as _json
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union, Iterable, Iterator, Any, Literal, Sequence, Tuple, TypeVar
+from typing import Dict, List, Union, Iterable, Iterator, Any, Literal, Self, Sequence, Tuple
 from numpy.random import Generator
 
 import jsonpickle
@@ -44,112 +44,22 @@ def pad(counts: Sequence) -> np.ndarray:
     return np.array([0] + list(counts) + [0])
 
 
-#: Type variable bound to :class:`AbstractSpectrum`, so that inherited self-returning methods (``copy``,
-#: ``from_file``, ``from_json``) are typed as the concrete subclass rather than the base.
-_S = TypeVar("_S", bound="AbstractSpectrum")
-
-
-#: Directives that only describe the shape of the payload and cannot construct anything by themselves.
-#: ``py/reduce`` belongs here because the callable it invokes is named by a ``py/function`` or ``py/type``
-#: directive, which is screened against the allow list.
-_STRUCTURAL_DIRECTIVES = frozenset({'py/state', 'py/id', 'py/tuple', 'py/set', 'py/seq', 'py/b64', 'py/reduce'})
-
-#: Directives whose value names the class, type or callable to be constructed.
-_NAMING_DIRECTIVES = frozenset({'py/object', 'py/type', 'py/function', 'py/newobj', 'py/newobjex'})
-
-
-def _screen_payload(payload: Any, names: Sequence[str]) -> None:
+def _decode_json(json_str: str, expected: type, classes: Sequence[type] = ()) -> Any:
     """
-    Reject a jsonpickle payload that names a class or callable the serialization never emits, or that uses
-    a directive outside the two known groups (``py/repr``, for instance, evaluates a string expression).
-
-    Spectrum and annotation files circulate as supplements and email attachments, so a payload is screened
-    before it is handed to jsonpickle: a ``py/reduce`` naming ``os.system`` otherwise runs the command
-    during decoding, before the caller ever sees the result.
-
-    :param payload: The parsed JSON payload.
-    :param names: Fully qualified names that may be constructed.
-    :raises ValueError: If a disallowed directive or name is present.
-    """
-    allowed = set(names)
-
-    stack = [payload]
-
-    while stack:
-        node = stack.pop()
-
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if isinstance(key, str) and key.startswith('py/'):
-                    if key in _NAMING_DIRECTIVES:
-                        if value not in allowed:
-                            raise ValueError(f"Refusing to decode a payload naming '{value}'.")
-                    elif key not in _STRUCTURAL_DIRECTIVES:
-                        raise ValueError(f"Refusing to decode a payload using the '{key}' directive.")
-
-                stack.append(value)
-
-        elif isinstance(node, list):
-            stack.extend(node)
-
-
-def _qualified_names(types: Sequence[type]) -> List[str]:
-    """
-    The fully qualified names under which the given types are serialized.
-
-    :param types: The types.
-    :return: Their fully qualified names.
-    """
-    return [f'{t.__module__}.{t.__qualname__}' for t in types]
-
-
-def _decode_json(json_str: str, allowed: Sequence[type], expected: type, extra_names: Sequence[str] = ()) -> Any:
-    """
-    Decode a jsonpickle payload restricted to the types the serialization actually produces.
+    Decode a jsonpickle payload and check it carries the expected type.
 
     :param json_str: JSON string.
-    :param allowed: The types that may appear in the payload.
     :param expected: The type the payload has to decode to.
-    :param extra_names: Further fully qualified names that may be constructed, for the helper callables
-        and private types the encoder emits alongside the classes themselves.
+    :param classes: Further classes to resolve while decoding.
     :return: The decoded object.
-    :raises ValueError: If the payload is unsafe or does not decode to ``expected``.
+    :raises ValueError: If the payload does not decode to ``expected``.
     """
-    _screen_payload(_json.loads(json_str), _qualified_names(allowed) + list(extra_names))
-
-    obj = jsonpickle.decode(json_str, safe=True, classes=list(allowed))
+    obj = jsonpickle.decode(json_str, classes=list(classes) or None)
 
     if not isinstance(obj, expected):
         raise ValueError(f"Expected a {expected.__name__} payload, got {type(obj).__name__}.")
 
     return obj
-
-
-def _serializable_types() -> List[type]:
-    """
-    The types a spectrum payload may legitimately contain. Resolved on call, as the classes are defined
-    below this point.
-
-    :return: The allowed types.
-    """
-    return [Spectrum, Spectra, TwoSFS, TwoLocusSFS, JointSFS, JointSpectra, TwoSpectra,
-            np.ndarray, np.dtype, pd.DataFrame]
-
-
-def _serializable_names() -> List[str]:
-    """
-    Further fully qualified names a spectrum payload may construct: the numpy helpers the encoder emits for
-    array scalars that reached the object through user-supplied metadata. Both multiarray paths are listed,
-    as the module was renamed in numpy 2.
-
-    :return: The allowed names.
-    """
-    return [
-        'numpy._core.multiarray.scalar',
-        'numpy.core.multiarray.scalar',
-        'numpy._core.multiarray._reconstruct',
-        'numpy.core.multiarray._reconstruct',
-    ]
 
 
 class AbstractSpectrum(ABC):
@@ -199,7 +109,7 @@ class AbstractSpectrum(ABC):
         """
         return self.data.__iter__()
 
-    def copy(self: _S) -> _S:
+    def copy(self) -> Self:
         """
         Create a deep copy.
 
@@ -233,7 +143,7 @@ class AbstractSpectrum(ABC):
         return jsonpickle.encode(obj)
 
     @classmethod
-    def from_file(cls: type[_S], file: str) -> _S:
+    def from_file(cls, file: str) -> Self:
         """
         Load from file.
 
@@ -244,7 +154,7 @@ class AbstractSpectrum(ABC):
             return cls.from_json(f.read())
 
     @classmethod
-    def from_json(cls: type[_S], json: str) -> _S:
+    def from_json(cls, json: str) -> Self:
         """
         Load from a JSON string.
 
@@ -252,7 +162,7 @@ class AbstractSpectrum(ABC):
         :return: Spectrum
         :raises ValueError: If the payload does not decode to this class.
         """
-        obj = _decode_json(json, _serializable_types(), cls, _serializable_names())
+        obj = _decode_json(json, cls)
 
         # convert list back to numpy array
         obj.data = np.array(obj.data)
@@ -2380,12 +2290,10 @@ class JointSFS(AbstractSpectrum):
 
     def fold(self) -> 'JointSFS':
         """
-        Fold the joint SFS. Ancestral and derived are a single site-level property shared by all populations, so
-        the fold reflects every axis simultaneously and combines each entry with its reflection by the **total**
-        derived count across populations (the dadi/moments convention), rather than folding each axis against its
-        own midpoint. Entries whose total derived count exceeds half the total sample size are emptied into their
-        reflection; entries exactly on the boundary are shared evenly between the two. Note that this only makes
-        sense for counts or frequencies. Folding an already folded joint SFS is a no-op.
+        Fold the joint SFS by the **total** derived count across populations, the dadi/moments convention:
+        ancestral and derived is one site-level property, so every axis is reflected at once. Entries above half
+        the total sample size are emptied into their reflection, and entries on the boundary are shared between
+        the two. This only makes sense for counts or frequencies, and folding a folded joint SFS is a no-op.
 
         :return: Folded joint SFS.
         """
@@ -2555,9 +2463,6 @@ class JointSFS(AbstractSpectrum):
         return ax
 
 
-_D = TypeVar("_D", bound="_DictSpectraSerialization")
-
-
 class _DictSpectraSerialization:
     """
     JSON serialization shared by the dict-backed spectra collections (:class:`JointSpectra` and :class:`TwoSpectra`),
@@ -2596,7 +2501,7 @@ class _DictSpectraSerialization:
         return jsonpickle.encode(obj)
 
     @classmethod
-    def from_file(cls: type[_D], file: str) -> _D:
+    def from_file(cls, file: str) -> Self:
         """
         Load from file.
 
@@ -2607,7 +2512,7 @@ class _DictSpectraSerialization:
             return cls.from_json(f.read())
 
     @classmethod
-    def from_json(cls: type[_D], json: str) -> _D:
+    def from_json(cls, json: str) -> Self:
         """
         Load from a JSON string.
 
@@ -2615,7 +2520,7 @@ class _DictSpectraSerialization:
         :return: Spectra.
         :raises ValueError: If the payload does not decode to this class.
         """
-        obj = _decode_json(json, _serializable_types(), cls, _serializable_names())
+        obj = _decode_json(json, cls)
 
         # convert each spectrum's list back to a numpy array
         for s in {id(s): s for s in obj.data.values()}.values():

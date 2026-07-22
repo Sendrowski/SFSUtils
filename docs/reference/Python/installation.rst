@@ -11,7 +11,7 @@ PyPI
 
    pip install sfsutils-popgen
 
-``sfsutils`` is compatible with Python 3.10 through 3.13.
+``sfsutils`` is compatible with Python 3.11 through 3.13.
 
 .. note::
 

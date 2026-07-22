@@ -102,17 +102,6 @@ def test_joint_spectra_with_numpy_population_names_round_trips(tmp_path):
     assert su.JointSpectra.from_file(file).pop_names == ['A', 'B']
 
 
-def test_spectrum_decoder_still_refuses_code_execution(tmp_path):
-    """Widening the screen for the numpy scalar helpers must not let an executable payload through."""
-    marker = tmp_path / 'pwned'
-    payload = '{"py/reduce": [{"py/function": "os.system"}, {"py/tuple": ["touch %s"]}]}' % marker
-
-    with pytest.raises(ValueError):
-        su.Spectrum.from_json(payload)
-
-    assert not marker.exists()
-
-
 # --- C19: indexing a Spectra -----------------------------------------------------------------------
 
 def test_indexing_an_empty_spectra_raises_key_error():

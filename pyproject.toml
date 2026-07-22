@@ -14,7 +14,7 @@ Documentation = "https://sfsutils.readthedocs.io"
 "Issue Tracker" = "https://github.com/Sendrowski/SFSUtils/issues"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.14"
+python = ">=3.11,<3.14"
 matplotlib = ">=3.9,<4"
 seaborn = ">=0.13.2,<1"
 numpy = ">=1.24,<3"
