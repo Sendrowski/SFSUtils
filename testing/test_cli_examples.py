@@ -129,20 +129,12 @@ def outgroup_vcf(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def trees_path(tmp_path_factory):
-    """A small msprime tree sequence over the single contig '1' (for the --trees examples)."""
-    import msprime
+def trees_path():
+    """The committed tree sequence over the single contig '1' (20 samples, for the --trees examples)."""
+    import tskit
 
-    ts = msprime.sim_ancestry(samples=N_DIP, sequence_length=1_000, recombination_rate=1e-6,
-                              population_size=10_000, random_seed=42)
-    ts = msprime.sim_mutations(ts, rate=1e-6, random_seed=43)
-    # keep only strictly biallelic sites so every site is a clean SNP
-    non_biallelic = [s.id for s in ts.sites()
-                     if len({s.ancestral_state} | {m.derived_state for m in s.mutations}) != 2]
-    ts = ts.delete_sites(non_biallelic)
-    out = tmp_path_factory.mktemp("trees") / "ancestry.trees"
-    ts.dump(str(out))
-    return str(out), ts.num_sites
+    path = "resources/msprime/two_epoch.trees"
+    return path, tskit.load(path).num_sites
 
 
 @pytest.fixture(scope="module")

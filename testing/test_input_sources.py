@@ -40,7 +40,8 @@ def test_source_and_vcf_alias_agree():
     """The preferred ``source=`` and the deprecated ``source=`` alias yield the same SFS."""
     Settings.disable_pbar = True
     from_source = np.array(su.Parser(source=VCF, **_KW).parse().all.to_list()).astype(int)
-    from_vcf = np.array(su.Parser(vcf=VCF, **_KW).parse().all.to_list()).astype(int)
+    with pytest.warns(DeprecationWarning):
+        from_vcf = np.array(su.Parser(vcf=VCF, **_KW).parse().all.to_list()).astype(int)
     np.testing.assert_array_equal(from_source, from_vcf)
 
 

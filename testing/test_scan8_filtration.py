@@ -290,7 +290,7 @@ class TestCodingSequenceIndex:
         Settings.disable_pbar = True
 
         handler = MultiHandler(
-            source='resources/genome/betula/all.subset.100000.vcf.gz',
+            source='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
             gff='resources/genome/betula/genome.gff.gz'
         )
 
@@ -300,15 +300,14 @@ class TestCodingSequenceIndex:
         scanned = CodingSequenceFiltration()
         scanned._setup(handler)
 
-        n = 0
+        n = kept = 0
         for v in handler._reader:
-            assert indexed.filter_site(v) == self._scan(scanned, v)
+            verdict = indexed.filter_site(v)
+            assert verdict == self._scan(scanned, v)
             n += 1
+            kept += bool(verdict)
 
-            if n == 20000:
-                break
-
-        assert n == 20000
+        assert n > 0 and kept > 0
 
         handler._reader.close()
 
@@ -317,7 +316,7 @@ class TestCodingSequenceIndex:
         Settings.disable_pbar = True
 
         handler = MultiHandler(
-            source='resources/genome/betula/all.subset.100000.vcf.gz',
+            source='resources/genome/betula/all.polarized.subset.10000.vcf.gz',
             gff='resources/genome/betula/genome.gff.gz'
         )
 

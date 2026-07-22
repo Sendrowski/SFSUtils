@@ -2746,8 +2746,14 @@ class ZarrVariantWriter(VariantWriter):
         :param extent: The final shape the chunk grid is clamped to, where it differs from ``shape``.
         :return: The created array.
         """
-        array = self._root.create_array(name, shape=shape, dtype=dtype,
-                                        chunks=self._chunks(shape if extent is None else extent, dimensions))
+        from zarr.errors import UnstableSpecificationWarning
+
+        with warnings.catch_warnings():
+            # VCF-Zarr requires the fixed-length string layout, whose zarr-v3 specification is still unstable;
+            # the notice is not actionable for this format
+            warnings.simplefilter('ignore', UnstableSpecificationWarning)
+            array = self._root.create_array(name, shape=shape, dtype=dtype,
+                                            chunks=self._chunks(shape if extent is None else extent, dimensions))
         array.attrs['_ARRAY_DIMENSIONS'] = list(dimensions)
 
         return array

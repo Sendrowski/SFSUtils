@@ -3847,7 +3847,8 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
             # Return the negative log likelihood and take average over major and minor bases
             # Also multiply by the multiplicity of each site.
             # The final likelihood is the product of the likelihoods for each site.
-            return -(np.log(p_sites.mean(axis=1)) * configs.multiplicity.values).sum()
+            with np.errstate(divide='ignore'):
+                return -(np.log(p_sites.mean(axis=1)) * configs.multiplicity.values).sum()
 
         return compute_likelihood
 

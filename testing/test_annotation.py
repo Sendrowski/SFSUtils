@@ -3385,7 +3385,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
             if n % 2 == 0:
                 df.loc[(df['major_base'] == 'A') & (df['n_major'] == n // 2), 'major_base'] = 'T'
 
-            grouped = df.groupby(['major_base', 'n_major']).aggregate(sum)
+            grouped = df.groupby(['major_base', 'n_major']).aggregate('sum')
 
             random_binned = np.zeros((3, n + 1), dtype=object)
             for i, prob in enumerate(probabilistic.T):

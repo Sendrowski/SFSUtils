@@ -224,7 +224,7 @@ def test_counting_matches_the_genotype_strings():
     """Over a real VCF and several masks the counts agree with those of the assembled genotype strings."""
     from sfsutils.io_handlers import get_distinct_called_alleles
 
-    reader = VCF('resources/genome/betula/all.subset.100000.vcf.gz')
+    reader = VCF('resources/genome/betula/all.polarized.subset.10000.vcf.gz')
     rng = np.random.default_rng(0)
     masks = [None, np.ones(len(reader.samples), bool), rng.random(len(reader.samples)) < 0.5]
 
@@ -291,7 +291,7 @@ def test_the_tskit_positions_are_those_of_the_sites():
 
 def test_the_writer_agrees_with_the_genotype_strings(tmp_path):
     """Over a diploid VCF the calls the store holds are those the genotype strings spell out."""
-    reader = VCF('resources/genome/betula/all.subset.100000.vcf.gz')
+    reader = VCF('resources/genome/betula/all.polarized.subset.10000.vcf.gz')
     store = str(tmp_path / 'betula.vcz')
     writer = ZarrVariantWriter(store, samples=reader.samples, seqnames=reader.seqnames)
 

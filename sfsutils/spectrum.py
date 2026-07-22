@@ -1989,9 +1989,11 @@ class TwoSFS(AbstractSpectrum):
             ax.set_xscale('log', base=1.001)
             ax.set_yscale('log', base=1.001)
 
-        ax.set_xticks(ax.get_yticks())
-        ax.set_xticklabels([str(int(label + 1)) for label in ax.get_xticks()])
-        ax.set_yticklabels([str(int(label + 1)) for label in ax.get_yticks()])
+        ticks = ax.get_yticks()
+        ax.set_xticks(ticks)
+        ax.set_yticks(ticks)
+        ax.set_xticklabels([str(int(t + 1)) for t in ticks])
+        ax.set_yticklabels([str(int(t + 1)) for t in ticks])
 
         # remove confusing color bar ticks
         ax.collections[0].colorbar.ax.tick_params(size=0)
