@@ -2289,7 +2289,8 @@ class VariantWriter(ABC):
 
         if fmt == 'zarr':
             return ZarrVariantWriter(output, samples=list(reader.samples), seqnames=list(reader.seqnames),
-                                     info_ancestral=info_ancestral)
+                                     info_ancestral=info_ancestral,
+                                     contig_lengths=VariantWriter._declared_lengths(reader))
 
         if fmt == 'tskit':
             if not isinstance(reader, TskitVariantReader):
@@ -2302,6 +2303,23 @@ class VariantWriter(ABC):
             return TskitVariantWriter(reader.tree_sequence, output)
 
         return VCFVariantWriter(output, reader)
+
+    @staticmethod
+    def _declared_lengths(reader: Union['cyvcf2.VCF', VariantReader]) -> Dict[str, int]:
+        """
+        The contig lengths the input declares, so an output store records the region the input covers
+        rather than the span of the variants that survive filtering, which understates it.
+
+        :param reader: The open input reader.
+        :return: The per-contig lengths the input declares, empty where it declares none.
+        """
+        if isinstance(reader, VariantReader):
+            return dict(reader.contig_lengths or {})
+
+        # cyvcf2 reports a contig whose header declares no length as length 0
+        return {contig: int(length)
+                for contig, length in zip(reader.seqnames, getattr(reader, 'seqlens', []))
+                if int(length) > 0}
 
     def write(self, variant: Site) -> None:
         """
@@ -2405,7 +2423,8 @@ class ZarrVariantWriter(VariantWriter):
     #: encoding of the chunk it first appears in and promoted where a later chunk does not fit it.
     _info_dtypes: Dict[str, Any] = {'bool': bool, 'int': np.int64, 'float': np.float64, 'str': str}
 
-    def __init__(self, output: str, samples: List[str], seqnames: List[str], info_ancestral: str = 'AA'):
+    def __init__(self, output: str, samples: List[str], seqnames: List[str], info_ancestral: str = 'AA',
+                 contig_lengths: Optional[Dict[str, int]] = None):
         """
         Open the writer.
 
@@ -2413,6 +2432,9 @@ class ZarrVariantWriter(VariantWriter):
         :param samples: The sample names.
         :param seqnames: The contig names.
         :param info_ancestral: The INFO tag holding the ancestral allele (written as ``variant_<tag>``).
+        :param contig_lengths: The lengths the source declares for its contigs, written to
+            ``contig_length`` so the store reports the region rather than the span of the variants it
+            holds. A contig absent from the mapping falls back to the last position written on it.
         """
         try:
             import zarr  # noqa: F401
@@ -2434,6 +2456,11 @@ class ZarrVariantWriter(VariantWriter):
 
         # per-contig lengths (the last position seen on each), so a ##contig header can be emitted
         self._contig_length: List[int] = [1] * len(self._contig_ids)
+
+        # the lengths the source declares, which describe the whole contig and not just the part of it
+        # the written variants reach
+        self._contig_declared: Dict[str, int] = {contig: int(length) for contig, length
+                                                 in dict(contig_lengths or {}).items() if int(length) > 0}
 
         # the INFO values of the variants of the current chunk, one list per field, padded with the
         # missing marker where a variant does not carry the field
@@ -2855,7 +2882,9 @@ class ZarrVariantWriter(VariantWriter):
 
         self._write('sample_id', self._str_data(self._samples), ['samples'])
         self._write('contig_id', self._str_data(self._contig_ids), ['contigs'])
-        self._write('contig_length', np.array(self._contig_length, dtype=np.int64), ['contigs'])
+        lengths = [self._contig_declared.get(contig, observed)
+                   for contig, observed in zip(self._contig_ids, self._contig_length)]
+        self._write('contig_length', np.array(lengths, dtype=np.int64), ['contigs'])
 
         for key in sorted(self._skipped):
             self._logger.warning(f"Skipping INFO field '{key}': it collides with the reserved VCF-Zarr "
@@ -2975,7 +3004,9 @@ class ZarrVariantWriter(VariantWriter):
             return np.array([False if self._absent(v) else bool(v) for v in values], dtype=bool)
 
         if kind == 'int':
-            return np.array([int(v) for v in values], dtype=np.int64)
+            # an integer array has no encoding for an absent value beyond the VCF-Zarr missing sentinel,
+            # which the reader maps back to absent
+            return np.array([-1 if self._absent(v) else int(v) for v in values], dtype=np.int64)
 
         if kind == 'float':
             return np.array([self._float_missing if self._absent(v) else float(v) for v in values],
@@ -3008,7 +3039,8 @@ class ZarrVariantWriter(VariantWriter):
         if source == 'int':
             return self._str_data([str(int(v)) for v in data])
 
-        return self._str_data([str(bool(v)) for v in data])
+        # a bool array spells an unset flag as False, which is an absent value and not the string 'False'
+        return self._str_data(['True' if bool(v) else '' for v in data])
 
     def _flush_info(self, start: int, stop: int) -> None:
         """
@@ -3026,7 +3058,19 @@ class ZarrVariantWriter(VariantWriter):
             # a field the last variants of the chunk do not carry is missing on them
             values.extend([self._missing] * (self._row - len(values)))
 
-            kind = self._widest(self._info_kind.get(key, 'empty'), self._kind(values))
+            chunk = self._kind(values)
+            kind = self._widest(self._info_kind.get(key, 'empty'), chunk)
+
+            # an integer array cannot mark a value the whole chunk is missing, so a field stored as one
+            # widens to the encoding that can
+            if chunk == 'empty' and kind == 'int':
+                kind = 'float'
+
+            # a field carrying no value at all so far is held as strings, whose empty string the reader
+            # reports as absent, and which a later chunk can still widen
+            if kind == 'empty':
+                kind = 'str'
+
             integral = self._info_integral.get(key, True) and all(
                 isinstance(v, (int, np.integer)) and not self._is_bool(v)
                 for v in values if not self._absent(v))
