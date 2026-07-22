@@ -38,10 +38,8 @@ requirements:
     - biopython >=1.84,<2
     - requests >=2.28
     - scipy >=1.13,<2
-    # Optional backends, bundled so `conda install sfsutils` can read VCF, VCF-Zarr, and tree sequences out of the box.
-    - cyvcf2 >=0.31,<1
-    - zarr >=3.1,<4
-    - tskit >=0.5
+    # The optional input backends (cyvcf2 for VCF, zarr for VCF-Zarr, tskit for tree sequences) are not run
+    # dependencies: cyvcf2 lives on bioconda, and the installation docs cover adding the ones a user needs.
 
 test:
   imports:
