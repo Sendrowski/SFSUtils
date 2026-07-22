@@ -28,6 +28,6 @@ jobs:
         with:
           enable-cache: true
       - name: Install sfsutils + test deps
-        run: uv pip install --system -e ".[vcf]" pytest pytest-xdist pytest-sugar
+        run: uv pip install --system -e ".[vcf,zarr,arg]" pytest pytest-xdist pytest-sugar
       - name: Run tests
         run: pytest -n auto testing/

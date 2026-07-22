@@ -46,3 +46,6 @@ docs/reference/Python/*.vcf.gz.tbi
 /snps.vcz/
 /snps.trees
 /out/
+
+# R CMD check artifacts
+*.Rcheck/

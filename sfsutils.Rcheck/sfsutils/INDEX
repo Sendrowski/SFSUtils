@@ -1,5 +1,0 @@
-install_sfsutils        Install the 'sfsutils' Python module
-load_sfsutils           Load the sfsutils library and associated
-                        visualization functions
-sfsutils_is_installed   Check if the 'sfsutils' Python module is
-                        installed
