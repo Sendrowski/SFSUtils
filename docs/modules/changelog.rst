@@ -3,7 +3,7 @@
 Changelog
 =========
 
-[1.0.0] - 2026-07-20
+[1.0.0] - 2026-07-22
 ^^^^^^^^^^^^^^^^^^^^
 First stable release, consolidating extensive correctness, performance and robustness work on the beta.
 
