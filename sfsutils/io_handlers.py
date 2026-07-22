@@ -482,7 +482,8 @@ def open_file(file: str) -> TextIO:
 
 class FileHandler:
     """
-    Base class for file handling.
+    Base class for the handlers that read a local or remote file. Provides the shared plumbing: resolving a URL
+    or a gzipped path to a readable local file, optional caching of downloads, and per-contig name aliasing.
     """
 
     #: The logger instance
@@ -668,6 +669,11 @@ class FileHandler:
 
 
 class FASTAHandler(FileHandler):
+    """
+    Handler for a FASTA reference. Reads the reference sequence used by the degeneracy, synonymy and CpG logic,
+    indexed by record offset so a contig can be fetched without scanning the whole file, and resolving contig
+    name aliases against the variant source.
+    """
 
     def __init__(self, fasta: str | None, cache: bool = True, aliases: Dict[str, List[str]] = {}):
         """
@@ -911,7 +917,8 @@ class _GFFAnnotationLines(io.TextIOBase):
 
 class GFFHandler(FileHandler):
     """
-    GFF handler.
+    Handler for a GFF/GTF annotation. Loads the coding-sequence records the degeneracy and synonymy
+    stratifications and the coding-sequence filtration rely on, keyed per contig and per transcript.
     """
 
     #: The number of GFF lines read at a time, which bounds the memory the attributes column occupies
@@ -1125,7 +1132,9 @@ class GFFHandler(FileHandler):
 
 class VCFHandler(FileHandler):
     """
-    Base class for variant source handling.
+    Base class for the handlers that read a variant source. Opens the source (a VCF file, a VCF-Zarr store or a
+    tskit tree sequence) as a streamed :class:`VariantReader` and exposes the sample names, contig names and site
+    count the parser and filters need.
     """
 
     def __init__(
