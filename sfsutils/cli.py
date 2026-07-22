@@ -38,6 +38,8 @@ def _parse_pops(value: str) -> Dict[str, List[str]]:
 
     :param value: The raw option string.
     :return: Mapping of population name to sample names.
+    :raises argparse.ArgumentTypeError: If a group is malformed, names a population twice, or leaves a name or
+        its sample list empty.
     """
     pops: Dict[str, List[str]] = {}
 
@@ -50,7 +52,20 @@ def _parse_pops(value: str) -> Dict[str, List[str]]:
         if not sep:
             raise argparse.ArgumentTypeError(f"Invalid population spec '{group}'; expected 'name=sample1,sample2'.")
 
-        pops[name.strip()] = _split_csv(samples)
+        name = name.strip()
+
+        if not name:
+            raise argparse.ArgumentTypeError(f"Invalid population spec '{group}'; the population name is empty.")
+
+        # a repeated name would overwrite the earlier group and yield a joint SFS of the wrong dimension, which
+        # looks entirely valid downstream
+        if name in pops:
+            raise argparse.ArgumentTypeError(f"Population '{name}' is specified more than once.")
+
+        pops[name] = _split_csv(samples)
+
+        if not pops[name]:
+            raise argparse.ArgumentTypeError(f"Population '{name}' has no samples.")
 
     return pops
 
@@ -72,6 +87,24 @@ def _positive_int(value: str) -> int:
     # equivalent to no limit at all
     if parsed < 1:
         raise argparse.ArgumentTypeError(f"Value must be at least 1, got {parsed}.")
+
+    return parsed
+
+
+def _sample_size(value: str) -> int:
+    """
+    Parse an option value that has to be an SFS sample size.
+
+    :param value: The raw option string.
+    :return: The parsed integer.
+    :raises argparse.ArgumentTypeError: If the value is not an integer of at least two.
+    """
+    parsed = _positive_int(value)
+
+    # bin 1 is the divergence bin for n == 1, so a spectrum of that size books every segregating site as a
+    # fixed difference
+    if parsed < 2:
+        raise argparse.ArgumentTypeError(f"The sample size must be at least 2, got {parsed}.")
 
     return parsed
 
@@ -323,19 +356,41 @@ def _check_output_distinct_from_input(args: argparse.Namespace) -> None:
     Reject an ``--output`` path that resolves to the input source.
 
     :param args: Parsed arguments.
-    :raises SystemExit: If the output and the input source are the same path.
+    :raises SystemExit: If the output is the input source, lies inside it, or is a directory holding it.
     """
     source, output = _input_source(args), args.output
 
     # a remote source is never written to, and neither path can be resolved when either is absent
-    if not source or not output or '://' in source:
+    if not source or not output or '://' in source or not os.path.exists(source):
         return
 
-    # the writers truncate the output before the reader is done with it, so an output resolving to the
-    # input destroys the input beyond recovery; the same holds for a zarr store, where both are directories
-    if os.path.realpath(source) == os.path.realpath(output):
-        raise SystemExit(f"--output '{output}' resolves to the input source '{source}'. Writing the output "
-                         f"over the input would destroy it; choose a different output path.")
+    message = "Writing the output over the input would destroy it; choose a different output path."
+
+    # the leaf need not exist yet, so the comparison is made against the nearest existing ancestor: an output
+    # written inside a zarr store destroys the store just as an output equal to it does
+    probe = os.path.abspath(output)
+    while not os.path.exists(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            return
+        probe = parent
+
+    # samefile compares (st_dev, st_ino), so it catches a hard link and a case-insensitive filesystem, both
+    # of which a string comparison of realpath() lets through
+    if os.path.samefile(source, probe):
+        raise SystemExit(f"--output '{output}' resolves to the input source '{source}', or to a path inside "
+                         f"it. {message}")
+
+    # a zarr output directory is emptied whole, taking an input stored below it with it
+    if os.path.isdir(os.path.abspath(output)):
+        ancestor = os.path.abspath(source)
+
+        while os.path.dirname(ancestor) != ancestor:
+            ancestor = os.path.dirname(ancestor)
+
+            if os.path.samefile(ancestor, output):
+                raise SystemExit(f"--output '{output}' is a directory containing the input source "
+                                 f"'{source}'. {message}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -378,7 +433,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--output", required=True,
                    help="Output spectrum file (CSV for a single-population SFS, JSON for a joint or two-site SFS).")
 
-    p.add_argument("--n", type=_positive_int, required=True,
+    p.add_argument("--n", type=_sample_size, required=True,
                    help="SFS sample size (per population for a joint SFS).")
     p.add_argument("--pops", type=_parse_pops, default=None,
                    help="Population spec for a joint SFS, e.g. 'A=s1,s2;B=s3,s4'.")

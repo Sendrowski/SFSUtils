@@ -417,8 +417,12 @@ class Spectrum(AbstractSpectrum):
         mid = (self.n + 1) // 2
         data = self.data.copy()
 
-        data[:mid] += data[-mid:][::-1]
-        data[-mid:] = 0
+        # index the upper half from the front: for a single-bin spectrum mid is 0 and ``data[-0:]`` is the whole
+        # array, which would blank it instead of leaving it alone
+        upper = self.n + 1 - mid
+
+        data[:mid] += data[upper:][::-1]
+        data[upper:] = 0
 
         return Spectrum(data)
 
@@ -534,7 +538,9 @@ class Spectrum(AbstractSpectrum):
         """
         mid = (self.n + 1) // 2
 
-        return np.all(self.data[-mid:] == 0)
+        # index the upper half from the front, as ``fold`` does, so a single-bin spectrum tests the empty upper half
+        # rather than the whole array
+        return bool(np.all(self.data[self.n + 1 - mid:] == 0))
 
     def normalize(self) -> 'Spectrum':
         """
@@ -1301,11 +1307,44 @@ class Spectra(AbstractSpectra):
 
         :param level: Level(s) to group over
         :return: Spectra object with merged groups
+        :raises ValueError: If some type has no name at one of the requested levels
         """
         # cast to int
         level = [int(l) for l in level] if isinstance(level, Iterable) else int(level)
 
+        self._check_levels([level] if isinstance(level, int) else level)
+
         return Spectra.from_dataframe(self._to_multi_index().data.T.groupby(level=level).sum().T)._to_single_index()
+
+    def _check_levels(self, levels: List[int]):
+        """
+        Make sure every type is named at each of the given levels.
+
+        Types are padded to the deepest name when multi-indexed, and grouping silently drops the padding, so a
+        shallower type would vanish together with its sites. Mixed-depth names arise from combining a stratified
+        with an unstratified spectra object, or from a partial prefix.
+
+        :param levels: Levels to group over
+        :raises ValueError: If some type has no name at one of the given levels
+        """
+        depths = {str(col): len(str(col).split('.')) for col in self.data.columns}
+
+        if not depths:
+            return
+
+        # resolve negative levels against the deepest name, which is what the multi-index has
+        deepest = max(depths.values())
+        resolved = [l if l >= 0 else deepest + l for l in levels]
+        required = max(resolved, default=0) + 1
+
+        offending = sorted(col for col, depth in depths.items() if depth < required)
+
+        if offending:
+            raise ValueError(
+                f'Cannot merge groups over level(s) {levels}: type(s) {offending} have fewer than {required} '
+                f'level(s). Merge over a lower level, or rename these types so that all types have the same '
+                f'number of dot-separated levels.'
+            )
 
     def has_dots(self) -> bool:
         """
@@ -1891,22 +1930,33 @@ class TwoSFS(AbstractSpectrum):
         c, m = self._branch_length_covariance()
         var = np.clip(np.diag(c), 0.0, None)
 
-        # judge smallness against the probability scale the covariance lives on, not against the covariance itself:
-        # for independent loci the covariance is pure roundoff, and a self-scaled floor would sink with it and turn
-        # every noise/noise ratio into a spurious +/-1
-        scale = float(np.max(m)) ** 2
-        floor = 1e-12 * scale
+        # judge smallness against the probability scale each entry lives on, not against the covariance itself nor
+        # against the largest class: for independent loci the covariance is pure roundoff, and a self-scaled floor
+        # would sink with it and turn every noise/noise ratio into a spurious +/-1, while a floor set by the
+        # (monomorphic-dominated) maximum is absolute and censors every genuine signal in a low-diversity spectrum,
+        # however much data it rests on. The roundoff of p_ij - m_i m_j scales with m_i m_j, so the floor does too.
+        floor = 1e-12 * np.outer(m, m)
 
         # a class whose branch-length variance is negligible has no correlation to report, so return zero for it
         # rather than dividing by ~0 and amplifying noise
-        sd = np.sqrt(np.where(var > floor, var, 0.0))
+        sd = np.sqrt(np.where(var > np.diag(floor), var, 0.0))
         denom = np.outer(sd, sd)
 
         with np.errstate(divide='ignore', invalid='ignore'):
             r = np.where(denom > 0, c / denom, 0.0)
 
         # a covariance at roundoff carries no signal whatever the variances are, so zero it before clipping
-        r = np.where(np.abs(c) > floor, r, 0.0)
+        censored = np.abs(c) <= floor
+        r = np.where(censored, 0.0, r)
+
+        # zeroing is indistinguishable from a genuine zero correlation in the returned matrix, so say how much
+        # of the interior it covered, which is what tells a caller their spectrum sits at the resolution limit
+        n_censored = int(censored[1:-1, 1:-1].sum())
+        if n_censored:
+            interior = censored[1:-1, 1:-1].size
+            logger.debug(f'Zeroed {n_censored} of {interior} interior correlations whose covariance is at the '
+                         f'resolution of the class probabilities; a spectrum resting on more sites of the same '
+                         f'composition would not recover them.')
 
         # the standardized cross-covariance is not Cauchy-Schwarz bounded for a non-coalescent input, so clip
         return self._embed(np.clip(r, -1.0, 1.0)[1:-1, 1:-1])

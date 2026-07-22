@@ -35,12 +35,12 @@ def test_corr_of_independent_loci_is_zero():
 
 
 def test_corr_of_perturbed_independent_loci_is_zero():
-    """A relative perturbation far above roundoff but far below the probability scale still leaves the loci
-    independent for all practical purposes, so no class may read as correlated."""
+    """A perturbation at the roundoff scale of the covariance carries no signal, so no class may read as
+    correlated. The perturbation is relative because the roundoff of ``P(i, j) - P(i) P(j)`` is."""
     f = np.array([1e6, 500.0, 200.0, 120.0, 90.0, 3000.0])
     rng = np.random.default_rng(0)
 
-    data = np.outer(f, f) * (1 + 1e-8 * rng.standard_normal((6, 6)))
+    data = np.outer(f, f) * (1 + 1e-14 * rng.standard_normal((6, 6)))
 
     np.testing.assert_allclose(np.asarray(su.TwoSFS(data).corr()), 0.0, atol=1e-9)
 

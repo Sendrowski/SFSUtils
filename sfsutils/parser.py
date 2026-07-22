@@ -15,7 +15,7 @@ import logging
 import random
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict, deque
-from typing import Any, List, Callable, Literal, Optional, Dict, Tuple
+from typing import Any, Iterable, List, Callable, Literal, Optional, Dict, Tuple
 
 import numpy as np
 from Bio.SeqRecord import SeqRecord
@@ -1241,12 +1241,35 @@ class TargetSiteCounter:
 
         return updated
 
+    @staticmethod
+    def _window_factor(spans: Iterable[float], distance: int) -> float:
+        """
+        The mean fraction of the nominal ``2 * distance`` window that falls on the site's own contig. Pairs form
+        within a contig only, so a site on a contig of span ``s`` has on average ``2 * distance * f`` partners
+        within the window, with ``f = 1 - distance / (2 * s)`` while the window fits (``distance <= s``) and
+        ``f = s / (2 * distance)`` once it saturates at the contig's own site count. The per-contig factors are
+        averaged over the spans, which is where the sites lie under a uniform density.
+
+        :param spans: The per-contig lengths (bp).
+        :param distance: The two-SFS distance window width (bp).
+        :return: The factor, in ``(0, 1]``.
+        """
+        spans = [float(s) for s in spans if s > 0]
+
+        if not spans or distance <= 0:
+            return 1.0
+
+        return sum(
+            s * (1 - distance / (2 * s)) if distance <= s else s * (s / (2 * distance)) for s in spans
+        ) / sum(spans)
+
     def _extrapolate_two_sfs(
             self,
             two_sfs: np.ndarray,
             marginal: np.ndarray,
             region_length: float,
             distance: int,
+            contig_spans: Dict[str, float] | None = None,
     ) -> np.ndarray:
         """
         Add the pairs involving the sites the input never showed to a two-SFS, extrapolating their number from
@@ -1257,12 +1280,14 @@ class TargetSiteCounter:
         ``n_missing = n_target_sites - marginal.sum()`` and are monomorphic and ancestral (a site absent from a
         SNP-only input carries no derived allele), so they belong to bin ``0``. Under a uniform site density the
         ``+/- distance`` window around a site holds ``2 * rho * distance`` of them, with
-        ``rho = n_missing / region_length``. An observed site of derived count ``j`` therefore contributes that
-        many pairs to ``(0, j)`` and ``(j, 0)`` together, which the symmetric storage splits evenly between the
-        two slots, and the missing sites contribute ``n_missing * rho * distance`` pairs among themselves to
-        ``(0, 0)``. This holds for every observed bin, the monomorphic ones included: a divergence site (bin
-        ``n``, all-derived) pairs with the missing sites just as a segregating site does, so the divergence row
-        and column are populated too. The window offset drops out: a band of width ``distance`` holds the same
+        ``rho = n_missing / region_length``. Pairs only form within a contig, so that count is scaled by
+        :meth:`_window_factor`, which accounts for the window running off the ends of a contig and saturating
+        once ``distance`` approaches the contig's span. An observed site of derived count ``j`` therefore
+        contributes that many pairs to ``(0, j)`` and ``(j, 0)`` together, which the symmetric storage splits
+        evenly between the two slots, and the missing sites contribute the same number of pairs per site among
+        themselves to ``(0, 0)``. This holds for every observed bin, the monomorphic ones included: a divergence
+        site (bin ``n``, all-derived) pairs with the missing sites just as a segregating site does, so the
+        divergence row and column are populated too. The window offset drops out: a band of width ``distance`` holds the same
         expected number of sites regardless of where it starts.
 
         Only the sites that are truly missing are extrapolated, so passing an all-sites input (where the
@@ -1274,6 +1299,8 @@ class TargetSiteCounter:
         :param marginal: The one-dimensional marginal of the observed sites.
         :param region_length: The length (bp) over which the sites are distributed.
         :param distance: The two-SFS distance window width (bp).
+        :param contig_spans: The per-contig lengths (bp), or ``None`` to leave the window uncorrected for the
+            contig boundaries.
         :return: The two-SFS with the pairs involving the missing sites added.
         """
         two_sfs = np.array(two_sfs, dtype=float)
@@ -1301,15 +1328,23 @@ class TargetSiteCounter:
 
         rho = n_missing / region_length
 
+        # without the per-contig geometry there is nothing to correct the window against
+        factor = self._window_factor(contig_spans.values(), distance) if contig_spans else 1.0
+
+        if factor < 0.9:
+            self._logger.info(f"The two-SFS distance ({distance} bp) is large relative to the contigs of the input, "
+                              f"so a site has only {factor:.0%} of the partners a single long contig would give it; "
+                              f"the extrapolated monomorphic pairs are scaled accordingly.")
+
         # pairs of an observed site with a missing one, spread over the two symmetric slots. Bin 0 is not
         # excluded here: the two slots coincide there, so an observed all-ancestral site correctly receives
-        # both halves of its 2 * rho * distance partners
-        contribution = marginal * rho * distance
+        # both halves of its 2 * rho * distance * factor partners
+        contribution = marginal * rho * distance * factor
         two_sfs[0, :] += contribution
         two_sfs[:, 0] += contribution
 
         # pairs among the missing sites themselves
-        two_sfs[0, 0] += n_missing * rho * distance
+        two_sfs[0, 0] += n_missing * rho * distance * factor
 
         return two_sfs
 
@@ -1528,9 +1563,18 @@ class Parser(MultiHandler):
         #: Mapping of population name to sample names for the joint SFS, or ``None`` for a single-population SFS
         self.pops: Dict[str, List[str]] | None = pops
 
+        # bin 1 is the divergence bin for n == 1, so every segregating site would be booked as a fixed
+        # difference, and n == 0 collapses the ancestral and the divergence bin onto the same index
+        if n is None:
+            raise ValueError("'n' must be given: the SFS sample size (number of haplotypes to project down to), "
+                             "at least 2.")
+
         if self.pops is None:
             #: The per-population sample size (single population)
             self.n: int = int(n)
+
+            if self.n < 2:
+                raise ValueError(f"'n' must be at least 2, got {self.n}.")
 
             #: Ordered population names (single ``all`` population)
             self._pop_names: List[str] = []
@@ -1556,6 +1600,10 @@ class Parser(MultiHandler):
                 self._n_per_pop = [int(x) for x in n]
             else:
                 self._n_per_pop = [int(n)] * len(self._pop_names)
+
+            invalid = {name: size for name, size in zip(self._pop_names, self._n_per_pop) if size < 2}
+            if invalid:
+                raise ValueError(f"'n' must be at least 2 for every population, got {invalid}.")
 
             # the single-population sample size is undefined in joint mode
             self.n: int | None = None
@@ -2186,23 +2234,60 @@ class Parser(MultiHandler):
                 "spectrum). If your dataset does not contain monomorphic sites, provide an all-sites input."
             )
 
+    def _declared_contig_lengths(self) -> Dict[str, float]:
+        """
+        The contig lengths the source declares, read off the open reader. A VCF header and a VCF-Zarr store both
+        carry them, and a tree sequence reports a single total length.
+
+        :return: Mapping of contig name to length, empty when the source declares none.
+        """
+        lengths = getattr(self, 'contig_lengths', None) or getattr(self._reader, 'contig_lengths', None)
+
+        if lengths is None:
+            sequence_length = getattr(self._reader, 'sequence_length', None)
+            names = list(getattr(self._reader, 'seqnames', None) or [])
+
+            # a source reporting one total length describes a single contig
+            if sequence_length is not None and len(names) == 1:
+                lengths = {names[0]: sequence_length}
+
+        return {str(k): float(v) for k, v in (lengths or {}).items() if v is not None and float(v) > 0}
+
+    def _contig_spans(self) -> Dict[str, float]:
+        """
+        The length (bp) of each contig carrying parsed variants, used when a :class:`TargetSiteCounter`
+        extrapolates the monomorphic pairs of the two-SFS. The length the source declares is preferred, since the
+        observed variants never reach the contig ends and their span underestimates the region, inflating the site
+        density and every extrapolated entry; the observed span is the last resort.
+
+        :return: Mapping of contig name to length.
+        """
+        declared, spans, undeclared = self._declared_contig_lengths(), {}, []
+
+        for contig, (low, high) in self._contig_bounds.items():
+            length = declared.get(contig)
+
+            if length is None:
+                undeclared.append(contig)
+                length = float(high - low) if np.isfinite(low) and np.isfinite(high) and high > low else 0.0
+
+            spans[contig] = float(length)
+
+        if undeclared:
+            self._logger.warning(f"The source declares no length for contig(s) {sorted(undeclared)[:5]} "
+                                 f"({len(undeclared)} in total); the span of the observed variants is used instead, "
+                                 f"which underestimates the region and inflates the extrapolated monomorphic pairs "
+                                 f"of the two-SFS.")
+
+        return spans
+
     def _region_length(self) -> float:
         """
-        The length (bp) of the region over which sites are distributed, used when a :class:`TargetSiteCounter`
-        extrapolates the monomorphic pairs of the two-SFS. When the source reports its own length (a tree sequence
-        does) that is used, since the observed polymorphic sites never reach the ends and their span underestimates
-        the region; otherwise the summed per-contig span of the parsed variants is used.
+        The total length (bp) of the region over which sites are distributed.
 
         :return: The region length.
         """
-        sequence_length = getattr(self._reader, 'sequence_length', None)
-        if sequence_length is not None:
-            return float(sequence_length)
-
-        return float(sum(
-            high - low for low, high in self._contig_bounds.values()
-            if np.isfinite(low) and np.isfinite(high) and high > low
-        ))
+        return float(sum(self._contig_spans().values()))
 
     def _process_site(self, variant: Site) -> bool:
         """
@@ -2406,9 +2491,9 @@ class Parser(MultiHandler):
             if self.polarize_probabilistically:
                 self._logger.info(f'Considered {self.n_aa_prob} sites with valid ancestral allele probability.')
 
-        # the region length is read off the still-open reader, as closing it below discards the cached reader
+        # the contig lengths are read off the still-open reader, as closing it below discards the cached reader
         # and asking afterwards would load the whole source a second time
-        region_length = self._region_length() if self.two_sfs and self.target_site_counter is not None else None
+        contig_spans = self._contig_spans() if self.two_sfs and self.target_site_counter is not None else None
 
         # close VCF reader
         VCFHandler._rewind(self)
@@ -2428,7 +2513,8 @@ class Parser(MultiHandler):
                 matrix = TwoSFS(self._two_sfs_matrices['all']).symmetrize().data
                 if self.target_site_counter is not None:
                     matrix = self.target_site_counter._extrapolate_two_sfs(
-                        matrix, self._two_sfs_marginal['all'], region_length, self.d
+                        matrix, self._two_sfs_marginal['all'], float(sum(contig_spans.values())), self.d,
+                        contig_spans=contig_spans
                     )
                 return TwoSpectra({'all': TwoSFS(matrix)})
 

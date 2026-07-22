@@ -17,7 +17,7 @@ import pandas as pd
 from .annotation import DegeneracyAnnotation, _CDSIndex
 from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_distinct_called_bases, \
     get_distinct_called_alleles, DummyVariant, SiteAlleles, \
-    Site, VariantReader, \
+    Site, VariantReader, VCFHandler, \
     VariantWriter
 
 # get logger
@@ -104,7 +104,14 @@ class MaskedFiltration(Filtration, ABC):
     Filter sites based on a samples mask. A mask of ``None`` selects every sample rather than turning the
     filtration into a test on the ``ALT`` field, so that naming every sample and naming none of them reach
     the same verdict, and a sample belonging to no requested population cannot change one.
+
+    Where the input carries no samples at all, as a sites-only VCF or store does, the genotypes cannot
+    settle anything and the verdict is taken from the declared alleles instead, with one warning on setup.
     """
+
+    #: Whether the declared alleles stand in for the genotypes, held at class level so a restored instance
+    #: predating this attribute has one.
+    _use_declared_alleles: bool = False
 
     def __init__(
             self,
@@ -132,6 +139,9 @@ class MaskedFiltration(Filtration, ABC):
 
         #: The samples mask.
         self._samples_mask: np.ndarray | None = None
+
+        #: Whether the verdict is taken from the declared alleles because no sample is left to judge by.
+        self._use_declared_alleles: bool = False
 
     def _prepare_samples_mask(self):
         """
@@ -188,7 +198,7 @@ class MaskedFiltration(Filtration, ABC):
 
     def _setup(self, handler: MultiHandler):
         """
-        Prepare the samples mask.
+        Prepare the samples mask and determine whether any sample is left to judge a site by.
 
         :param handler: The handler.
         """
@@ -196,6 +206,25 @@ class MaskedFiltration(Filtration, ABC):
 
         # prepare samples mask
         self._prepare_samples_mask()
+
+        self._use_declared_alleles = self._count_effective_samples() == 0
+
+        # a sites-only input carries no genotypes at all, and judging from none of them would make every
+        # site look monomorphic and bi-allelic at once, so the declared alleles are all there is to go on
+        if self._use_declared_alleles:
+            self._logger.warning(f'No sample is available to judge sites by, so {self.__class__.__name__} '
+                                 f'falls back to the alleles declared in the REF and ALT fields.')
+
+    def _count_effective_samples(self) -> int:
+        """
+        Count the samples the filtration judges a site by.
+
+        :return: The number of samples the mask selects, or all of them where no mask restricts them.
+        """
+        if self._samples_mask is not None:
+            return int(np.asarray(self._samples_mask).sum())
+
+        return len(self._handler._reader.samples)
 
 
 class SNPFiltration(MaskedFiltration):
@@ -222,6 +251,10 @@ class SNPFiltration(MaskedFiltration):
         # a dummy site carries a single ancestral allele by construction and no genotypes to judge it by
         if isinstance(variant, DummyVariant):
             return True
+
+        # with no sample to carry them, an alternate allele is polymorphic iff the input declares one
+        if self._use_declared_alleles:
+            return len(variant.ALT) > 0
 
         # check whether the variant is polymorphic among the included samples, which are all of them where
         # no mask restricts them. Building and re-splitting the genotype strings dominates this check, so
@@ -297,6 +330,10 @@ class PolyAllelicFiltration(MaskedFiltration):
 
         # a dummy site carries no genotypes to count, so the declared alleles are all there is to go on
         if isinstance(variant, DummyVariant):
+            return False
+
+        # likewise where the input carries no sample that could leave an alternate allele uncarried
+        if self._use_declared_alleles:
             return False
 
         # count the alleles called among the included samples. Building and splitting the genotype strings
@@ -429,6 +466,10 @@ class CodingSequenceFiltration(Filtration):
 
         # reset coding sequence
         self.cd = None
+
+        # the count guards the warning about a GFF whose contigs do not match the input, which must be
+        # reachable on every pass rather than only on the first one of an instance's lifetime
+        self.n_processed = 0
 
     @_count_filtered
     def filter_site(self, v: Site) -> bool:
@@ -775,12 +816,15 @@ class CpGFiltration(Filtration):
 
     Like :class:`CodingSequenceFiltration`, this filtration requires a FASTA reference (passed to
     :class:`~sfsutils.parser.Parser` or :class:`~sfsutils.filtration.Filterer`), which is used for the
-    ``±1`` base lookup. Sites on a contig the FASTA carries no sequence for cannot be typed and are kept,
-    with one warning per contig.
+    ``±1`` base lookup. Sites on a contig the FASTA carries no sequence for, and sites the FASTA sequence
+    does not reach, cannot be typed and are kept, with one warning per contig.
     """
 
     #: The contigs the FASTA carries no sequence for, held at class level so a restored instance has one.
     _missing_contigs: Set[str] = set()
+
+    #: The contigs whose FASTA sequence is too short, held at class level so a restored instance has one.
+    _short_contigs: Set[str] = set()
 
     def __init__(self):
         """
@@ -790,6 +834,9 @@ class CpGFiltration(Filtration):
 
         #: The contigs the FASTA carries no sequence for, warned about once each.
         self._missing_contigs: Set[str] = set()
+
+        #: The contigs whose FASTA sequence does not reach every site, warned about once each.
+        self._short_contigs: Set[str] = set()
 
     def _setup(self, handler: MultiHandler):
         """
@@ -801,28 +848,33 @@ class CpGFiltration(Filtration):
         handler._require_fasta(self.__class__.__name__)
 
         self._missing_contigs = set()
+        self._short_contigs = set()
 
         super()._setup(handler)
 
     @staticmethod
-    def _is_cpg(contig, pos: int, ref: str) -> bool:
+    def _is_cpg(contig, pos: int, ref: str) -> Optional[bool]:
         """
         Whether the reference base at ``pos`` (1-based) sits in a CpG dinucleotide context.
 
         :param contig: The reference sequence record for the variant's contig.
         :param pos: The 1-based position of the reference base.
         :param ref: The reference base.
-        :return: Whether the site is in CpG context.
+        :return: Whether the site is in CpG context, or ``None`` where the FASTA sequence does not reach
+            the position and the context cannot be determined.
         """
         i = pos - 1  # 0-based index of the reference base
 
-        if ref == 'C' and i + 1 < len(contig):
-            return str(contig[i + 1]).upper() == 'G'
+        # a FASTA record shorter than the contig the input declares leaves the site itself outside the
+        # sequence, which no neighbour lookup can be based on and which Bio.SeqRecord raises over
+        if not 0 <= i < len(contig):
+            return None
 
-        if ref == 'G' and i - 1 >= 0:
-            return str(contig[i - 1]).upper() == 'C'
+        # a site at either end of the sequence has no neighbour on that side, so it is not in CpG context
+        if ref == 'C':
+            return i + 1 < len(contig) and str(contig[i + 1]).upper() == 'G'
 
-        return False
+        return i - 1 >= 0 and str(contig[i - 1]).upper() == 'C'
 
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
@@ -850,7 +902,20 @@ class CpGFiltration(Filtration):
 
             return True
 
-        return not self._is_cpg(contig, variant.POS, ref)
+        cpg = self._is_cpg(contig, variant.POS, ref)
+
+        # a site the sequence does not reach is treated like one on an absent contig, keeping it rather
+        # than aborting the whole run over a reference that is truncated or does not match the input
+        if cpg is None:
+            if variant.CHROM not in self._short_contigs:
+                self._short_contigs.add(variant.CHROM)
+                self._logger.warning(f'Retaining sites beyond the end of contig {variant.CHROM} unchecked: the '
+                                     f'FASTA sequence is {len(contig)} bases long. Are you sure the reference '
+                                     f'matches the input?')
+
+            return True
+
+        return not cpg
 
 
 class ContigFiltration(Filtration):
@@ -1018,6 +1083,17 @@ class Filterer(MultiHandler):
         Filter the input.
         """
         self._logger.info('Start filtering')
+
+        # discard the reader a previous pass left behind in the cache, and reset the count it left filled,
+        # so that a second call starts at the first record rather than writing a header and raising on it.
+        # Release it first, as the cache is the only reference to it and a pass that raised before its
+        # teardown left it open. The FASTA and GFF caches are kept, as they do not depend on the pass
+        if '_reader' in self.__dict__:
+            self._reader.close()
+
+        VCFHandler._rewind(self)
+
+        self.n_filtered = 0
 
         # tear down (closing the writer/reader) even if setup or iteration raises, so a failure after the
         # reader is opened but before/within writing does not leak the open reader and the output is flushed

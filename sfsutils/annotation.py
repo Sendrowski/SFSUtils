@@ -31,7 +31,7 @@ from scipy.stats import hypergeom
 from tqdm import tqdm
 
 from .io_handlers import DummyVariant, Site, MultiHandler, FASTAHandler, VariantReader
-from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter
+from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter, VCFHandler
 from ._parallelization import parallelize as parallelize_func, check_bounds
 from .settings import Settings
 from .spectrum import Spectra, Spectrum, _decode_json
@@ -133,6 +133,10 @@ class Annotation(ABC):
 
         :param handler: The handler.
         """
+        # an annotation reused across inputs otherwise keeps the coding sequence, the reference sequence
+        # and the counts of the previous input, and would annotate this one against that reference
+        self._rewind()
+
         self._handler = handler
 
     def _rewind(self):
@@ -275,6 +279,36 @@ class _CDSIndex:
         self._columns: Dict[str, np.ndarray] = {
             field: cds[field].to_numpy() for field in _CDSRecord._fields if field in cds.columns
         }
+
+        if 'phase' in self._columns:
+            self._columns['phase'] = self._parse_phases(self._columns['phase'])
+
+    @staticmethod
+    def _parse_phases(phases: np.ndarray) -> np.ndarray:
+        """
+        Convert the phase column to integers.
+
+        GFF3 allows a CDS to leave the phase undefined as ``.``, which the codon machinery reads several
+        times per site and cannot make sense of. Converting the column once here keeps the raw category
+        out of the arithmetic, where it would abort the whole annotation on the first such record.
+
+        :param phases: The phase column.
+        :return: The phases, with an undefined phase read as no offset into the first codon.
+        """
+        parsed = np.zeros(len(phases), dtype=np.int64)
+        n_undefined = 0
+
+        for i, phase in enumerate(phases):
+            try:
+                parsed[i] = int(phase)
+            except (TypeError, ValueError):
+                n_undefined += 1
+
+        if n_undefined:
+            logger.warning(f'{n_undefined} of {len(phases)} coding sequences leave the phase undefined, which '
+                           f'is read as a phase of 0. Codons of these coding sequences may be out of frame.')
+
+        return parsed
 
     def _neighbourhood(self, parent: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -475,7 +509,7 @@ class DegeneracyAnnotation(Annotation):
         :return: Codon, Codon position, Codon start position, Position within codon, and relative position.
         """
         # position relative to start of coding sequence
-        pos_rel = variant.POS - (self._cd.start + int(self._cd.phase))
+        pos_rel = variant.POS - (self._cd.start + self._cd.phase)
 
         # position relative to codon
         pos_codon = pos_rel % 3
@@ -523,7 +557,7 @@ class DegeneracyAnnotation(Annotation):
         :return: Codon, Codon position, Codon start position, Position within codon, and relative position.
         """
         # position relative to end of coding sequence
-        pos_rel = (self._cd.end - int(self._cd.phase)) - variant.POS
+        pos_rel = (self._cd.end - self._cd.phase) - variant.POS
 
         # position relative to codon end
         pos_codon = pos_rel % 3
@@ -661,10 +695,11 @@ class DegeneracyAnnotation(Annotation):
             if row is not None:
                 self._cd = index.get(row)
 
-                self._logger.debug(f'Found coding sequence: {self._cd.seqid}:{self._cd.start}-{self._cd.end}, '
-                                   f'reminder: {(self._cd.end - self._cd.start + 1) % 3}, '
-                                   f'phase: {int(self._cd.phase)}, orientation: {self._cd.strand}, '
-                                   f'current position: {v.CHROM}:{v.POS}')
+                if self._logger.isEnabledFor(logging.DEBUG):
+                    self._logger.debug(f'Found coding sequence: {self._cd.seqid}:{self._cd.start}-{self._cd.end}, '
+                                       f'reminder: {(self._cd.end - self._cd.start + 1) % 3}, '
+                                       f'phase: {self._cd.phase}, orientation: {self._cd.strand}, '
+                                       f'current position: {v.CHROM}:{v.POS}')
 
                 # only splice codons together within one transcript: the nearest coding sequence by coordinate
                 # may belong to an unrelated gene, whose bases (and strand) have nothing to do with this codon
@@ -4809,6 +4844,15 @@ class Annotator(MultiHandler):
         Annotate the input.
         """
         self._logger.info('Start annotating')
+
+        # discard the reader a previous pass left behind in the cache, so that a second call starts at the
+        # first record rather than writing a header and raising on it. Release it first, as the cache is
+        # the only reference to it and a pass that raised before its teardown left it open. The FASTA and
+        # GFF caches are kept, as they do not depend on the pass
+        if '_reader' in self.__dict__:
+            self._reader.close()
+
+        VCFHandler._rewind(self)
 
         # tear down (closing the writer and the reader) even if setup or iteration raises, so a failure
         # part-way through does not leak the open reader or leave the output unflushed

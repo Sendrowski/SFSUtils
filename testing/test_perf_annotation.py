@@ -7,7 +7,7 @@ position, and the neighbouring coding sequences of the same transcript a codon s
 boundary is completed from. A linear scan over the coding sequences of the contig answers the same
 questions, and serves as the reference here: the two must agree at every position of every contig.
 """
-import time
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -300,15 +300,30 @@ def test_lookup_advances_across_contigs_and_survives_rewind():
     assert walked == again
 
 
-def test_lookup_cost_does_not_scale_with_genome():
+def test_lookup_cost_does_not_scale_with_genome(monkeypatch):
     """
     The cost per CDS transition is set by the contig, not by the number of coding sequences in the genome.
-    """
 
-    def elapsed(n_padding: int) -> float:
+    The work done is counted rather than timed: the index searched holds the coding sequences of the current
+    contig alone, and each transition costs a fixed number of lookups into it, both independent of how many
+    coding sequences sit on unrelated contigs.
+    """
+    counts = Counter()
+
+    for name in ('locate', 'locate_next', 'locate_prev'):
+        original = getattr(_CDSIndex, name)
+
+        def counting(self, *args, _name=name, _original=original, **kwargs):
+            counts[_name] += 1
+
+            return _original(self, *args, **kwargs)
+
+        monkeypatch.setattr(_CDSIndex, name, counting)
+
+    def work(n_padding: int) -> tuple:
         """
         :param n_padding: The number of coding sequences on unrelated contigs.
-        :return: The time per CDS transition in seconds.
+        :return: The lookups per CDS transition and the size of the index searched.
         """
         records = [('ctg1', 100 * i + 1, 100 * i + 60, '+', 0, f'tx{i}') for i in range(500)]
         records += [('pad', 10 * i + 1, 10 * i + 5, '+', 0, f'p{i}') for i in range(n_padding)]
@@ -320,13 +335,16 @@ def test_lookup_cost_does_not_scale_with_genome():
         # the first call builds the index for the contig
         ann._fetch_cds(sites[0])
 
-        start = time.time()
+        counts.clear()
         for site in sites:
             ann._fetch_cds(site)
 
-        return (time.time() - start) / len(sites)
+        # the first site still sits on the coding sequence the warm-up call fetched, so it is no transition
+        return {name: n / (len(sites) - 1) for name, n in counts.items()}, len(ann._indexes['ctg1'].cds)
 
-    small = elapsed(1000)
-    large = elapsed(200000)
+    small = work(1000)
+    large = work(200000)
 
-    assert large < 5 * small
+    # one lookup of each kind per transition, into an index of the 500 coding sequences of 'ctg1' only
+    assert small == ({'locate': 1.0, 'locate_next': 1.0, 'locate_prev': 1.0}, 500)
+    assert large == small

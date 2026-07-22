@@ -13,7 +13,6 @@ __date__ = "2026-07-22"
 import os
 import subprocess
 import sys
-import time
 
 import numpy as np
 import pytest
@@ -467,24 +466,42 @@ class TestExistingOutgroupBatching:
 
         assert compared == len(MIXED_ROWS)
 
-    def test_batching_is_faster_than_one_call_per_outgroup(self):
-        """The cost of a site no longer grows with a re-binning per outgroup."""
+    def test_batching_does_not_rebin_once_per_outgroup(self, monkeypatch):
+        """The cost of a site no longer grows with a re-binning per outgroup.
+
+        The binning passes are counted rather than timed: the filtration settles every outgroup in one pass over
+        their rows, while asking the view sample by sample bins the whole site once per outgroup."""
         if not os.path.exists(TRIO[0][0]):
             pytest.skip("the msprime fixture is not available")
 
         sites = read(TRIO[0][0])
         samples = samples_of(TRIO[0][0])
 
+        n_binned = 0
+        original = SiteAlleles._count
+
+        def counting(self, mask):
+            nonlocal n_binned
+            n_binned += 1
+
+            return original(self, mask)
+
+        monkeypatch.setattr(SiteAlleles, '_count', counting)
+
         f = setup(su.ExistingOutgroupFiltration(list(samples), n_missing=1), samples)
 
-        start = time.perf_counter()
+        n_sites = 0
         for v in sites:
             f.filter_site(v)
-        batched = time.perf_counter() - start
+            n_sites += 1
 
-        start = time.perf_counter()
+        batched = n_binned
+        n_binned = 0
+
         for v in sites:
             self._reference(f, v, 1)
-        per_outgroup = time.perf_counter() - start
+        per_outgroup = n_binned
 
-        assert batched < per_outgroup
+        assert n_sites > 0
+        assert batched == 0  # no binning pass at all, the rows are read directly
+        assert per_outgroup == n_sites * len(f._outgroup_rows)

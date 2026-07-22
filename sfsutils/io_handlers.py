@@ -9,6 +9,7 @@ __date__ = "2023-05-29"
 import atexit
 import gzip
 import hashlib
+import io
 import logging
 import os
 import shutil
@@ -235,7 +236,40 @@ class SiteAlleles:
 
         return cls(indices, [variant.REF or ''] + list(variant.ALT))
 
+    #: Stands in for a mask the view has not been asked about, which ``None`` cannot: ``None`` is itself
+    #: the mask selecting every sample
+    _unbinned: Any = object()
+
+    #: The mask the counts in :attr:`_binned_bins` were computed for. Every filtration and the parser
+    #: itself ask the same view for the counts under the same mask object, which is built once for the
+    #: whole pass, so the index array is walked once per site rather than once per consumer. Held on the
+    #: class so that a view asked for one set of counts carries nothing of its own. The mask itself is
+    #: held rather than its identity alone, so that a mask released since and another built at its
+    #: address cannot be taken for it. A joint parse, whose populations carry a mask each, asks for each
+    #: of them once per site, so a single slot covers every access pattern the parser has
+    _binned_mask: Any = _unbinned
+
+    #: The counts for :attr:`_binned_mask`
+    _binned_bins: Optional[np.ndarray] = None
+
     def _bins(self, mask: Optional[np.ndarray]) -> np.ndarray:
+        """
+        The number of haplotypes of the selected samples carrying each allele index, reusing the counts
+        already computed for the same mask.
+
+        :param mask: The boolean samples mask, or ``None`` for every sample.
+        :return: The per-index counts, allele ``i`` in bin ``i + 2``.
+        """
+        if self._binned_mask is mask:
+            return self._binned_bins
+
+        bins = self._count(mask)
+        self._binned_bins = bins
+        self._binned_mask = mask
+
+        return bins
+
+    def _count(self, mask: Optional[np.ndarray]) -> np.ndarray:
         """
         The number of haplotypes of the selected samples carrying each allele index, shifted by the two
         negative sentinels so that a missing call (``-1``) and the fill of a shorter genotype (``-2``)
@@ -791,6 +825,90 @@ class FASTAHandler(FileHandler):
             del self._ref
 
 
+class _GFFAnnotationLines(io.TextIOBase):
+    """
+    The annotation records of a GFF file, ending at the ``##FASTA`` pragma. GFF3 permits the sequences the
+    annotation refers to be appended after that pragma, and those lines carry a single field each, which a
+    block-wise read would otherwise hand the parser as a block of its own.
+    """
+
+    #: The pragma introducing the appended sequences
+    _pragma: str = '##FASTA'
+
+    def __init__(self, path: str):
+        """
+        Open the file.
+
+        :param path: The path to the GFF file.
+        """
+        #: The underlying stream
+        self._file: TextIO = open_file(path)
+
+        #: Whether the pragma (or the end of the file) has been reached
+        self._exhausted: bool = False
+
+        #: The last, possibly incomplete, line of what has been read so far. Only whole lines are handed
+        #: out, so the pragma cannot be split across two reads and each read starts at a line boundary
+        self._held: str = ''
+
+    def readable(self) -> bool:
+        """
+        Whether the stream can be read.
+
+        :return: Always ``True``.
+        """
+        return True
+
+    def _cut(self, data: str) -> Optional[int]:
+        """
+        Where the appended sequences begin.
+
+        :param data: The text read, starting at a line boundary.
+        :return: The offset of the pragma, or ``None`` where the text does not reach it.
+        """
+        if data.startswith(self._pragma):
+            return 0
+
+        found = data.find('\n' + self._pragma)
+
+        return None if found < 0 else found + 1
+
+    def read(self, size: Optional[int] = -1) -> str:
+        """
+        The annotation records, up to roughly the requested number of characters.
+
+        :param size: The number of characters to read, or a negative number for all of them.
+        :return: The records read, ending in a complete line, or the empty string past the last record.
+        """
+        while not self._exhausted:
+            chunk = self._file.read() if size is None or size < 0 else self._file.read(size)
+            data = self._held + chunk
+            cut = self._cut(data)
+
+            if cut is not None or not chunk:
+                self._exhausted = True
+                self._held = ''
+
+                return data if cut is None else data[:cut]
+
+            end = data.rfind('\n') + 1
+            self._held = data[end:]
+
+            # a read landing inside a single line hands out nothing, so the next one is taken right away
+            if end:
+                return data[:end]
+
+        return ''
+
+    def close(self) -> None:
+        """
+        Close the underlying stream.
+        """
+        self._file.close()
+
+        io.TextIOBase.close(self)
+
+
 class GFFHandler(FileHandler):
     """
     GFF handler.
@@ -882,34 +1000,41 @@ class GFFHandler(FileHandler):
             phase='category'
         )
 
-        # a whole-genome annotation is dominated by the attributes of the many non-CDS records, so the
-        # file is read a block of lines at a time and only the coding sequences of each block, with their
-        # attributes already reduced to the parent transcript, are carried over
-        blocks = pd.read_csv(
-            local_file,
-            sep='\t',
-            comment='#',
-            names=col_labels,
-            dtype=dtypes,
-            usecols=['seqid', 'type', 'start', 'end', 'strand', 'phase', 'attributes'],
-            chunksize=self._gff_block
-        )
+        used = ['seqid', 'type', 'start', 'end', 'strand', 'phase', 'attributes']
 
         categorical = ('seqid', 'strand', 'phase')
         categories: Dict[str, Dict[str, None]] = {column: {} for column in categorical}
         kept = []
 
-        for block in blocks:
-            # a category the block does not carry is not in its own dtype, so the categories of every
-            # block are collected: a contig without any coding sequence keeps its category and thereby
-            # its (empty) group in a per-contig count, as it has when the file is read in one pass
-            for column in categorical:
-                categories[column].update(dict.fromkeys(block[column].cat.categories))
+        # a whole-genome annotation is dominated by the attributes of the many non-CDS records, so the
+        # file is read a block of lines at a time and only the coding sequences of each block, with their
+        # attributes already reduced to the parent transcript, are carried over
+        # the columns to keep are resolved against the field count of each block rather than of the file,
+        # so a block of lines carrying fewer fields than the nine of the format aborts the whole read.
+        # GFF3 appends the sequences the annotation refers to, one field per line, which past a certain
+        # length make up such a block: the read ends where they begin
+        with _GFFAnnotationLines(local_file) as lines:
+            blocks = pd.read_csv(
+                lines,
+                sep='\t',
+                comment='#',
+                names=col_labels,
+                dtype=dtypes,
+                usecols=used,
+                chunksize=self._gff_block
+            )
 
-            kept.append(self._cds_of_block(block))
+            for block in blocks:
+                # a category the block does not carry is not in its own dtype, so the categories of every
+                # block are collected: a contig without any coding sequence keeps its category and thereby
+                # its (empty) group in a per-contig count, as it has when the file is read in one pass
+                for column in categorical:
+                    categories[column].update(dict.fromkeys(block[column].cat.categories))
+
+                kept.append(self._cds_of_block(block))
 
         df = pd.concat(kept, ignore_index=True) if kept else self._cds_of_block(
-            pd.DataFrame(columns=col_labels))
+            pd.DataFrame(columns=used))
 
         # the categories are ordered by name rather than by the block they first appear in, so that the
         # frame, which is sorted on the contig, does not depend on where the blocks fall
@@ -1129,7 +1254,7 @@ class VCFHandler(FileHandler):
         except ImportError:
             raise ImportError(
                 "Reading tree sequences in sfsutils requires the optional 'tskit' package. "
-                "Please install sfsutils with the 'arg' extra: pip install sfsutils[arg]"
+                "Please install sfsutils with the 'arg' extra: pip install \"sfsutils-popgen[arg]\""
             )
 
         return tskit.load(source)
@@ -1145,12 +1270,35 @@ class VCFHandler(FileHandler):
         except ImportError:
             raise ImportError(
                 "VCF support in sfsutils requires the optional 'cyvcf2' package. "
-                "Please install sfsutils with the 'vcf' extra: pip install sfsutils[vcf]"
+                "Please install sfsutils with the 'vcf' extra: pip install \"sfsutils-popgen[vcf]\""
             )
 
         self._logger.info("Loading VCF file")
 
         return VCF(self.download_if_url(self.vcf))
+
+    @property
+    def contig_lengths(self) -> Optional[Dict[str, int]]:
+        """
+        The declared length (bp) of each contig of the source: the ``##contig`` headers of a VCF, the
+        ``contig_length`` array of a VCF-Zarr store, or the length of the genome of a tree sequence. Only
+        the contigs whose length is known are present, and a source declaring none gives ``None``. The
+        span of the observed variants understates the region on a sparsely covered contig, so this is
+        what a spectrum extrapolating monomorphic sites should be sized against.
+
+        :return: The per-contig lengths, or ``None`` where the source declares none.
+        """
+        reader = self._reader
+
+        if isinstance(reader, VariantReader):
+            return reader.contig_lengths
+
+        # cyvcf2 reports a contig whose header declares no length as length 0
+        lengths = {contig: int(length)
+                   for contig, length in zip(reader.seqnames, getattr(reader, 'seqlens', []))
+                   if int(length) > 0}
+
+        return lengths or None
 
     @cached_property
     def n_sites(self) -> int:
@@ -1536,6 +1684,17 @@ class VariantReader(Iterable, ABC):
         """
         return None
 
+    @property
+    def contig_lengths(self) -> Optional[Dict[str, int]]:
+        """
+        The declared length (bp) of each contig of the source, where the source declares them. Only the
+        contigs whose length is known are present. Used to size the region a spectrum extrapolates over,
+        which the span of the observed variants understates on a sparsely covered contig.
+
+        :return: The per-contig lengths, or ``None`` where the source declares none.
+        """
+        return None
+
     def add_info_to_header(self, data: dict):
         """
         Declare an INFO field, registering it with the underlying VCF header. Does nothing for
@@ -1650,6 +1809,15 @@ class TskitVariantReader(VariantReader):
         """
         return float(self._ts.sequence_length)
 
+    @property
+    def contig_lengths(self) -> Dict[str, int]:
+        """
+        The length of the single synthetic contig the tree sequence is reported under.
+
+        :return: The per-contig lengths.
+        """
+        return {self._contig: int(self._ts.sequence_length)}
+
     def count_sites(self) -> int:
         """
         The number of sites in the tree sequence.
@@ -1756,7 +1924,7 @@ class ZarrVariantReader(VariantReader):
         except ImportError:
             raise ImportError(
                 "VCF-Zarr support in sfsutils requires the optional 'zarr' package. "
-                "Please install sfsutils with the 'zarr' extra: pip install sfsutils[zarr]"
+                "Please install sfsutils with the 'zarr' extra: pip install \"sfsutils-popgen[zarr]\""
             )
 
         #: The Zarr store root
@@ -1805,24 +1973,55 @@ class ZarrVariantReader(VariantReader):
     #: tskit2zarr also writes for a mutation to the empty allele
     _empty_alleles = frozenset(('', '.'))
 
+    #: Marker for an entry the store fills a site with, as opposed to one the site is missing. The VCF-Zarr
+    #: spec keeps the two apart throughout: fill pads a site to the widest value count of the field and is
+    #: no part of the field's value, where missing is a value the site carries and does not know
+    _fill_marker = object()
+
+    #: The NaN bit patterns the VCF-Zarr spec gives the fill marker of a float array, by width. Any other
+    #: NaN, the spec's missing marker among them, is a value the site is missing rather than padding
+    _float_fill_bits: Dict[int, int] = {4: 0x7F800002, 8: 0x7FF0000000000002}
+
     @classmethod
-    def _info_scalar(cls, value, kind: str):
+    def _float_entry(cls, value):
+        """
+        One entry of a float ``variant_<key>`` array, telling the two NaN markers apart.
+
+        :param value: The stored entry.
+        :return: The value, ``None`` where it is missing, or :attr:`_fill_marker` where it is padding.
+        """
+        entry = np.asarray(value)
+
+        if not np.isnan(entry):
+            return float(entry)
+
+        # the payload distinguishing the markers is lost on a widening cast, so the bits are read in the
+        # width the array itself is stored in
+        bits = int(entry.view(f'u{entry.dtype.itemsize}'))
+
+        return cls._fill_marker if bits == cls._float_fill_bits.get(entry.dtype.itemsize) else None
+
+    @classmethod
+    def _info_entry(cls, value, kind: str):
         """
         One entry of a ``variant_<key>`` array as an INFO value, with the types cyvcf2 surfaces
-        (str/float/int/bool) and the store's missing markers reported as absent.
+        (str/float/int/bool).
 
         :param value: The stored entry.
         :param kind: The dtype kind of the array it comes from.
-        :return: The value, or ``None`` where the store marks the entry as absent.
+        :return: The value, ``None`` where the entry is missing, or :attr:`_fill_marker` where it is the
+            padding of a site carrying fewer values than the widest.
         """
         if kind in ('U', 'S', 'O', 'T'):
             decoded = cls._decode(value)
 
-            return None if decoded in cls._empty_alleles else decoded
+            if decoded == '':
+                return cls._fill_marker
+
+            return None if decoded == '.' else decoded
 
         if kind == 'f':
-            # NaN (a plain NaN or the VCF-Zarr missing sentinel) means an absent value
-            return None if np.isnan(value) else float(value)
+            return cls._float_entry(value)
 
         if kind == 'b':
             # a bool array encodes a VCF Flag: surface it only when set, as cyvcf2 does (an absent flag
@@ -1833,7 +2032,25 @@ class ZarrVariantReader(VariantReader):
         # emits for a field a site does not carry
         entry = int(value)
 
-        return None if entry in (-1, -2) else entry
+        if entry == -2:
+            return cls._fill_marker
+
+        return None if entry == -1 else entry
+
+    @classmethod
+    def _info_scalar(cls, value, kind: str):
+        """
+        One entry of a one-dimensional ``variant_<key>`` array as an INFO value, with the store's missing
+        markers reported as absent. A one-dimensional array holds one value per site, so it carries no
+        padding and the two markers coincide.
+
+        :param value: The stored entry.
+        :param kind: The dtype kind of the array it comes from.
+        :return: The value, or ``None`` where the store marks the entry as absent.
+        """
+        entry = cls._info_entry(value, kind)
+
+        return None if entry is cls._fill_marker else entry
 
     @classmethod
     def _info_row(cls, values, kind: str):
@@ -1841,24 +2058,51 @@ class ZarrVariantReader(VariantReader):
         One row of a two-dimensional ``variant_<key>`` array as an INFO value. A field of ``Number != 1``
         is stored one value per column, padded to the widest site, which is collapsed back to the form
         cyvcf2 hands out: the comma-separated string for a string field, the scalar or the tuple of
-        values for a numeric one.
+        values for a numeric one. A value the site is missing keeps its position, so that the values
+        surviving it stay with the allele they belong to.
 
         :param values: The stored row.
         :param kind: The dtype kind of the array it comes from.
         :return: The value, or ``None`` where the site carries no entry at all.
         """
-        entries = [entry for entry in (cls._info_scalar(v, kind) for v in values) if entry is not None]
+        entries = [cls._info_entry(value, kind) for value in values]
 
-        if not entries:
+        # only the padding past the last value of the site is no part of the field
+        while entries and entries[-1] is cls._fill_marker:
+            entries.pop()
+
+        # padding a writer left between the values rather than after them cannot be told from a value the
+        # site is missing, and reads back as one
+        entries = [None if entry is cls._fill_marker else entry for entry in entries]
+
+        if all(entry is None for entry in entries):
             return None
 
         if kind in ('U', 'S', 'O', 'T'):
-            return ','.join(entries)
+            # cyvcf2 hands back the field as the VCF spells it, a missing value included
+            return ','.join('.' if entry is None else entry for entry in entries)
 
         return entries[0] if len(entries) == 1 else tuple(entries)
 
     @classmethod
-    def _alleles(cls, stored, rows: np.ndarray) -> Tuple[List[str], np.ndarray]:
+    def _decode_alleles(cls, batch) -> List[List[str]]:
+        """
+        The allele strings of a batch of sites. Decoding the batch in one go spares a call per allele of
+        every site, which is where the bulk of the strings of a store are.
+
+        :param batch: The stored allele entries of the batch.
+        :return: The allele strings of each site.
+        """
+        rows = np.asarray(batch).tolist()
+
+        # a fixed-width unicode array and the zarr-3 variable-length string dtype both hand out ``str``
+        if getattr(batch, 'dtype', None) is not None and batch.dtype.kind in ('U', 'T'):
+            return rows
+
+        return [[cls._decode(x) for x in row] for row in rows]
+
+    @classmethod
+    def _alleles(cls, alleles: List[str], rows: np.ndarray) -> Tuple[List[str], np.ndarray]:
         """
         The allele strings of one site alongside its calls. An empty entry is either the padding a site
         with fewer alleles than the widest carries or, from a tree sequence, a mutation to the empty
@@ -1866,14 +2110,21 @@ class ZarrVariantReader(VariantReader):
         remain and a call of a dropped allele reads back as missing, exactly as the tree sequence itself
         streams it.
 
-        :param stored: The stored allele entries of the site.
+        :param alleles: The allele strings of the site, padding included.
         :param rows: The stored allele indices of the site.
         :return: The allele strings and the re-indexed allele indices.
         """
-        alleles = [cls._decode(x) for x in stored]
+        # a store pads every site to the widest allele count it holds anywhere, so one multi-allelic site
+        # gives every other site a trailing empty entry. That padding sits past the last allele of the
+        # site and is therefore referenced by no call, which leaves the numbering of the alleles before it
+        # untouched: dropping it is the whole of the work, and the re-indexing below is the identity
+        k = len(alleles)
 
-        if not any(a in cls._empty_alleles for a in alleles):
-            return alleles, rows
+        while k > 1 and alleles[k - 1] in cls._empty_alleles:
+            k -= 1
+
+        if not any(a in cls._empty_alleles for a in alleles[:k]):
+            return alleles[:k], rows
 
         remap = np.full(len(alleles) + 1, -1, dtype=np.intp)
         remap[0] = 0
@@ -1907,6 +2158,25 @@ class ZarrVariantReader(VariantReader):
         :return: The contig names.
         """
         return list(self._contig_ids)
+
+    @property
+    def contig_lengths(self) -> Optional[Dict[str, int]]:
+        """
+        The contig lengths the store declares in its ``contig_length`` array, which vcf2zarr fills from
+        the ``##contig`` headers of the VCF it converts. A contig whose length the store leaves unset is
+        absent from the mapping. A store written by :class:`ZarrVariantWriter` from a source declaring no
+        lengths carries the last position written on each contig instead, so a length read here is a
+        lower bound on the contig rather than a guarantee.
+
+        :return: The per-contig lengths, or ``None`` where the store carries no lengths at all.
+        """
+        if 'contig_length' not in self._root:
+            return None
+
+        lengths = np.asarray(self._root['contig_length'][:], dtype=float)
+
+        return {contig: int(length) for contig, length in zip(self._contig_ids, lengths)
+                if np.isfinite(length) and length > 0}
 
     def count_sites(self) -> int:
         """
@@ -1951,7 +2221,7 @@ class ZarrVariantReader(VariantReader):
             end = min(start + self._chunk_size, n)
 
             pos_batch = position[start:end]
-            allele_batch = allele[start:end]
+            allele_batch = self._decode_alleles(allele[start:end])
             contig_batch = contig[start:end]
             gt_batch = np.asarray(genotype[start:end]) if genotype is not None else None
             phased_batch = np.asarray(phased[start:end]) if phased is not None else None
@@ -2065,7 +2335,7 @@ class VCFVariantWriter(VariantWriter):
         except ImportError:
             raise ImportError(
                 "VCF support in sfsutils requires the optional 'cyvcf2' package. "
-                "Please install sfsutils with the 'vcf' extra: pip install sfsutils[vcf]"
+                "Please install sfsutils with the 'vcf' extra: pip install \"sfsutils-popgen[vcf]\""
             )
 
         if isinstance(template, VariantReader):
@@ -2146,7 +2416,7 @@ class ZarrVariantWriter(VariantWriter):
         except ImportError:
             raise ImportError(
                 "VCF-Zarr support in sfsutils requires the optional 'zarr' package. "
-                "Please install sfsutils with the 'zarr' extra: pip install sfsutils[zarr]"
+                "Please install sfsutils with the 'zarr' extra: pip install \"sfsutils-popgen[zarr]\""
             )
 
         self._output = output
@@ -2764,8 +3034,14 @@ class ZarrVariantWriter(VariantWriter):
                 if start and kind == 'int':
                     kind = 'float'
 
-                self._create(name, (start,), self._info_dtypes[kind], ['variants'], extent=(self._n,))
-                self._root[name][:] = self._encode([self._missing] * start, kind)
+                array = self._create(name, (0,), self._info_dtypes[kind], ['variants'], extent=(self._n,))
+
+                # the variants written before the field first appears are marked a chunk at a time, so
+                # that the memory held stays that of one chunk rather than that of the whole input
+                for begin in range(0, start, self._variant_chunk):
+                    finish = min(begin + self._variant_chunk, start)
+                    array.resize((finish,))
+                    array[begin:finish] = self._encode([self._missing] * (finish - begin), kind)
             elif kind != self._info_kind[key]:
                 self._rebuild_info(name, self._info_kind[key], kind, self._info_integral[key])
 

@@ -61,7 +61,7 @@ def test_multivalued_string_info_is_joined_as_the_vcf_spells_it(tmp_path):
 def test_multivalued_numeric_info_drops_the_padding(tmp_path):
     """A numeric field of Number != 1 surfaces as the tuple cyvcf2 hands out, or as the scalar where the
     site carries a single value; the sentinels padding the shorter sites are not values."""
-    store = _multivalued(tmp_path / 'ac.vcz', [[3, 5], [7, -1]], key='AC', dtype='int32')
+    store = _multivalued(tmp_path / 'ac.vcz', [[3, 5], [7, -2]], key='AC', dtype='int32')
 
     assert [variant.INFO['AC'] for variant in ZarrVariantReader(store)] == [(3, 5), 7]
 
