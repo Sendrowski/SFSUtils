@@ -1954,7 +1954,7 @@ class TwoSFS(AbstractSpectrum):
         n_censored = int(censored[1:-1, 1:-1].sum())
         if n_censored:
             interior = censored[1:-1, 1:-1].size
-            logger.debug(f'Zeroed {n_censored} of {interior} interior correlations whose covariance is at the '
+            logger.info(f'Zeroed {n_censored} of {interior} interior correlations whose covariance is at the '
                          f'resolution of the class probabilities; a spectrum resting on more sites of the same '
                          f'composition would not recover them.')
 

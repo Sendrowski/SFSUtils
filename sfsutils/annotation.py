@@ -4849,9 +4849,6 @@ class Annotator(MultiHandler):
         # first record rather than writing a header and raising on it. Release it first, as the cache is
         # the only reference to it and a pass that raised before its teardown left it open. The FASTA and
         # GFF caches are kept, as they do not depend on the pass
-        if '_reader' in self.__dict__:
-            self._reader.close()
-
         VCFHandler._rewind(self)
 
         # tear down (closing the writer and the reader) even if setup or iteration raises, so a failure

@@ -1175,11 +1175,14 @@ class VCFHandler(FileHandler):
 
     def _rewind(self):
         """
-        Rewind the variant iterator.
+        Rewind the variant iterator, releasing the open reader.
         """
         # check the instance cache directly: hasattr() would fire the cached_property and open the very
-        # reader we are about to discard
+        # reader we are about to discard. The cache holds the only reference, so close before dropping it,
+        # or the handle survives the rewind with nothing left to release it
         if '_reader' in self.__dict__:
+            self._reader.close()
+
             # noinspection all
             del self._reader
 

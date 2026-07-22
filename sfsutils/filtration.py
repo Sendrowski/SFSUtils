@@ -1088,9 +1088,6 @@ class Filterer(MultiHandler):
         # so that a second call starts at the first record rather than writing a header and raising on it.
         # Release it first, as the cache is the only reference to it and a pass that raised before its
         # teardown left it open. The FASTA and GFF caches are kept, as they do not depend on the pass
-        if '_reader' in self.__dict__:
-            self._reader.close()
-
         VCFHandler._rewind(self)
 
         self.n_filtered = 0

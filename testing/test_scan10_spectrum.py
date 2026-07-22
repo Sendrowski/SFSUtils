@@ -166,7 +166,7 @@ def test_corr_reports_how_much_of_the_interior_it_zeroed(caplog):
 
     f = np.array([1e6, 500, 200, 120, 90, 3000])
 
-    with caplog.at_level(logging.DEBUG, logger='sfsutils'):
+    with caplog.at_level(logging.INFO, logger='sfsutils'):
         su.TwoSFS(np.outer(f, f)).corr()
 
     assert any('Zeroed 16 of 16 interior correlations' in record.message for record in caplog.records)
@@ -179,7 +179,7 @@ def test_corr_stays_quiet_when_it_zeroes_nothing(caplog):
     f = np.array([1e6, 500, 200, 120, 90, 3000])
     base = np.outer(f, f) * (1 + 0.3 * rng.random((6, 6)))
 
-    with caplog.at_level(logging.DEBUG, logger='sfsutils'):
+    with caplog.at_level(logging.INFO, logger='sfsutils'):
         su.TwoSFS((base + base.T) / 2).corr()
 
     assert not any('interior correlations' in record.message for record in caplog.records)
