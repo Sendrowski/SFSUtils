@@ -149,11 +149,19 @@ def _matches(written, read):
     return read is not None and float(read) == float(written)
 
 
-@pytest.mark.parametrize("seed", range(400))
-def test_info_encoding_round_trip_fuzz(tmp_path, seed):
-    """Across chunk sizes and sequences of types, a value written reads back as itself and a variant
-    carrying no value reads back as carrying none. A boolean False is excluded: an unset VCF Flag is
-    absent from INFO, so it is not a value a source can carry."""
+#: Seeds of the encoder fuzz. Two thirds of them draw a chunk in which a field appears but carries no
+#: usable value, the shape the encoder used to fail on, so this many hits it about thirty times over.
+FUZZ_SEEDS = 50
+
+
+def _fuzz_case(tmp_path, seed):
+    """
+    Round-trip one randomly drawn sequence of INFO fields.
+
+    :param tmp_path: Directory to write the store into.
+    :param seed: Seed of the draw.
+    :return: The written INFO mappings and the ones read back.
+    """
     rng = random.Random(seed)
 
     def value():
@@ -174,18 +182,26 @@ def test_info_encoding_round_trip_fuzz(tmp_path, seed):
     infos = [{key: value() for key in rng.sample(["F", "DP", "AA"], rng.randrange(0, 4))}
              for _ in range(n)]
 
-    read = _roundtrip(tmp_path / f"fuzz{seed}.vcz", infos, chunk=rng.randrange(1, 6))
+    return infos, _roundtrip(tmp_path / f"fuzz{seed}.vcz", infos, chunk=rng.randrange(1, 6))
 
-    assert len(read) == n
 
-    for written, got in zip(infos, read):
-        for key in ("F", "DP", "AA"):
-            expected = written.get(key)
+def test_info_encoding_round_trip_fuzz(tmp_path):
+    """Across chunk sizes and sequences of types, a value written reads back as itself and a variant
+    carrying no value reads back as carrying none. A boolean False is excluded: an unset VCF Flag is
+    absent from INFO, so it is not a value a source can carry."""
+    for seed in range(FUZZ_SEEDS):
+        infos, read = _fuzz_case(tmp_path, seed)
 
-            if expected is None or expected == ".":
-                assert got.get(key) is None, (key, written, got)
-            else:
-                assert _matches(expected, got.get(key)), (key, written, got)
+        assert len(read) == len(infos), f"seed {seed}"
+
+        for written, got in zip(infos, read):
+            for key in ("F", "DP", "AA"):
+                expected = written.get(key)
+
+                if expected is None or expected == ".":
+                    assert got.get(key) is None, f"seed {seed}: {key} {written} -> {got}"
+                else:
+                    assert _matches(expected, got.get(key)), f"seed {seed}: {key} {written} -> {got}"
 
 
 def test_info_dtypes_cover_every_encoding_the_writer_reaches():
