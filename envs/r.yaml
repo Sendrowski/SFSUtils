@@ -4,8 +4,10 @@
 #   mamba env create -f envs/r.yaml
 #   export RETICULATE_PYTHON=$(mamba run -n sfsutils-dev which python)
 #   mamba run -n r-sfsutils R CMD INSTALL .
-#   mamba run -n r-sfsutils Rscript tests/testthat.R
-# (or `make test-r RETICULATE_PYTHON=$RETICULATE_PYTHON` once the package is installed).
+#   mamba run -n r-sfsutils Rscript -e 'testthat::test_dir("tests/testthat")'
+# (or `make test-r RETICULATE_PYTHON=$RETICULATE_PYTHON` once the package is installed). Running
+# tests/testthat.R directly reports "No test files found": it resolves the test directory relative to
+# the working directory, so it only works from within tests/.
 name: r-sfsutils
 channels:
   - conda-forge
