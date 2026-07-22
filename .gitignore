@@ -49,3 +49,6 @@ docs/reference/Python/*.vcf.gz.tbi
 
 # R CMD check artifacts
 *.Rcheck/
+
+# R CMD build tarball
+sfsutils_*.tar.gz

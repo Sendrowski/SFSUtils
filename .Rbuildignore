@@ -45,3 +45,4 @@
 ^\.RData$
 ^\.Rhistory$
 \.Rcheck$
+sfsutils_.*\.tar\.gz$
