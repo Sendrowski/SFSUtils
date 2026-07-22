@@ -45,7 +45,7 @@ arg = ["tskit"]
 pytest = "^9.1"
 pytest-xdist = "^3.5"
 urllib3 = "^2.5.0"
-sphinx_book_theme = "^1.1.2"
+sphinx_book_theme = "~1.1.2"  # cap <1.2: 1.4.0 (pydata-sphinx-theme 0.20) breaks the mobile sidebar toggle
 sphinx-autodoc-typehints = ">=2.1,<4"
 sphinx-copybutton = "^0.5.2"
 myst-nb = "^1.1.0"
