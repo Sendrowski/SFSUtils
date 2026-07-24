@@ -4,11 +4,21 @@
 \alias{install_sfsutils}
 \title{Install the \code{sfsutils} Python module}
 \usage{
-install_sfsutils(version = NULL, force = FALSE, silent = FALSE, python_version = "3.11")
+install_sfsutils(
+  version = NULL,
+  extras = c("vcf"),
+  force = FALSE,
+  silent = FALSE,
+  python_version = "3.11"
+)
 }
 \arguments{
 \item{version}{A character string specifying the version of the \code{sfsutils} module
 to install. Default is \code{NULL} which will install the latest version.}
+
+\item{extras}{A character vector of optional input backends to install alongside the module:
+\code{'vcf'} for VCF files, \code{'zarr'} for VCF-Zarr stores and \code{'arg'} for tree sequences.
+Default is \code{c("vcf")}; pass \code{NULL} to install none of them.}
 
 \item{force}{Logical, if \code{TRUE} it will force the reinstallation of the \code{sfsutils} module
 even if it's already available. Default is \code{FALSE}.}
@@ -30,8 +40,10 @@ message when the module is already installed.
 }
 \examples{
 \dontrun{
-install_sfsutils()  # Installs the latest version of sfsutils
+install_sfsutils()  # Installs the latest version of sfsutils with the vcf backend
 install_sfsutils("1.0.0")  # Installs version 1.0.0 of sfsutils
+install_sfsutils(extras = c("vcf", "zarr", "arg"))  # Installs all input backends
+install_sfsutils(extras = NULL)  # Installs without any of the optional backends
 install_sfsutils(force = TRUE)  # Reinstalls the sfsutils module
 }
 

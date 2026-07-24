@@ -50,6 +50,9 @@ sfsutils_is_installed <- function() {
 #'
 #' @param version A character string specifying the version of the `sfsutils` module
 #'        to install. Default is `NULL` which will install the latest version.
+#' @param extras A character vector of optional input backends to install alongside the module:
+#'        `'vcf'` for VCF files, `'zarr'` for VCF-Zarr stores and `'arg'` for tree sequences.
+#'        Default is `c("vcf")`; pass `NULL` to install none of them.
 #' @param force Logical, if `TRUE` it will force the reinstallation of the `sfsutils` module
 #'        even if it's already available. Default is `FALSE`.
 #' @param silent Logical, if `TRUE` it will suppress the message about `sfsutils` being
@@ -61,17 +64,22 @@ sfsutils_is_installed <- function() {
 #'
 #' @examples
 #' \dontrun{
-#' install_sfsutils()  # Installs the latest version of sfsutils
+#' install_sfsutils()  # Installs the latest version of sfsutils with the vcf backend
 #' install_sfsutils("1.0.0")  # Installs version 1.0.0 of sfsutils
+#' install_sfsutils(extras = c("vcf", "zarr", "arg"))  # Installs all input backends
+#' install_sfsutils(extras = NULL)  # Installs without any of the optional backends
 #' install_sfsutils(force = TRUE)  # Reinstalls the sfsutils module
 #' }
 #'
 #' @export
-install_sfsutils <- function(version = NULL, force = FALSE, silent = FALSE, python_version = '3.11') {
+install_sfsutils <- function(version = NULL, extras = c("vcf"), force = FALSE, silent = FALSE, python_version = '3.11') {
 
-  # Create the package string with the version if specified. The distribution is named
+  # Create the package string with the extras and version if specified. The distribution is named
   # 'sfsutils-popgen' on PyPI, where 'sfsutils' is an unrelated project
   package_name <- "sfsutils-popgen"
+  if (length(extras) > 0) {
+    package_name <- paste0(package_name, "[", paste(extras, collapse = ","), "]")
+  }
   if (!is.null(version)) {
     package_name <- paste0(package_name, "==", version)
   }

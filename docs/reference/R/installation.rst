@@ -27,28 +27,11 @@ The ``sfsutils`` R package serves as a wrapper around the Python library but re-
 
    The backends for the different input sources are optional extras: ``vcf`` (the :mod:`cyvcf2 <cyvcf2.cyvcf2>` dependency, for VCF
    files), ``zarr`` (the :mod:`zarr` dependency, for VCF-Zarr stores) and ``arg`` (the :mod:`tskit` dependency, for
-   tree sequences / ARGs). To enable the ones you need, run the following command in R **before** calling
-   ``install_sfsutils()``, for example for all of them:
+   tree sequences / ARGs). Only ``vcf`` is installed by default; pass ``extras`` to change that:
 
    .. code-block:: r
 
-      reticulate::py_install("sfsutils-popgen[vcf,zarr,arg]", pip = TRUE)
-
-.. note::
-
-   ``sfsutils`` is also available on **conda-forge**. As ``install_sfsutils()`` installs the Python package into a
-   conda environment via reticulate, you can instead provision that environment directly. ``zarr`` and ``tskit``
-   are on **conda-forge**, while ``cyvcf2`` (for VCF handling) is on **bioconda**, so add both channels:
-
-   .. code-block:: bash
-
-      mamba create -n sfsutils -c conda-forge -c bioconda sfsutils cyvcf2 zarr tskit
-
-   Then point reticulate at that environment before loading the package:
-
-   .. code-block:: r
-
-      reticulate::use_condaenv("sfsutils", required = TRUE)
+      install_sfsutils(extras = c("vcf", "zarr", "arg"))
 
 Alternatively, you can also follow the instructions in the `Python installation guide <../Python/installation.html>`_ to install the Python package.
 
