@@ -62,7 +62,7 @@ sfsutils_is_installed <- function() {
 #' @examples
 #' \dontrun{
 #' install_sfsutils()  # Installs the latest version of sfsutils
-#' install_sfsutils("1.2.1")  # Installs version 1.2.1 of sfsutils
+#' install_sfsutils("1.0.0")  # Installs version 1.0.0 of sfsutils
 #' install_sfsutils(force = TRUE)  # Reinstalls the sfsutils module
 #' }
 #'
