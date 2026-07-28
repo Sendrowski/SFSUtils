@@ -1227,7 +1227,9 @@ class VCFHandler(FileHandler):
         :return: The variant reader.
         """
         if self._is_tree_sequence(self.vcf):
-            return TskitVariantReader(self._load_tree_sequence(self.vcf))
+            return TskitVariantReader(
+                self._load_tree_sequence(self.vcf), info_ancestral=self.info_ancestral,
+            )
 
         if self._is_zarr_store(self.vcf):
             return ZarrVariantReader(self.vcf, info_ancestral=self.info_ancestral)
@@ -1736,17 +1738,32 @@ class TskitVariantReader(VariantReader):
     Stream variants from a tskit tree sequence (e.g. an inferred ARG or an msprime simulation). Sample
     haplotype nodes are grouped into diploid (or higher-ploidy) samples by individual, exactly as
     :meth:`tskit.TreeSequence.write_vcf` does, so parsing a ``.trees`` file yields the same spectrum as
-    parsing the VCF written from it. tskit stores the ancestral state as allele ``0``, which becomes the
-    reference allele, so the parser recovers the correct polarisation with ``skip_non_polarized=False``.
+    parsing the VCF written from it. tskit states each site's ancestral allele as allele ``0``, which is
+    surfaced under the ancestral INFO tag, so polarisation works as it does for an annotated VCF and
+    ``skip_non_polarized`` keeps its meaning.
     """
 
-    def __init__(self, ts: 'tskit.TreeSequence', contig: str = '1'):
+    def __init__(
+            self,
+            ts: 'tskit.TreeSequence',
+            contig: str = '1',
+            info_ancestral: str = 'AA',
+            info_ancestral_prob: str = 'AA_prob',
+    ):
         """
         Initialize the reader.
 
         :param ts: The tree sequence.
         :param contig: The contig name to report (tree sequences have no contig concept).
+        :param info_ancestral: The INFO tag to surface the site's ancestral allele under.
+        :param info_ancestral_prob: The INFO tag to surface an annotator's confidence under.
         """
+        #: The INFO tag the ancestral allele is surfaced under
+        self._info_ancestral = info_ancestral
+
+        #: The INFO tag the ancestral-allele probability is surfaced under
+        self._info_ancestral_prob = info_ancestral_prob
+
         #: The tree sequence
         self._ts = ts
 
@@ -1838,6 +1855,32 @@ class TskitVariantReader(VariantReader):
         """
         return int(self._ts.num_sites)
 
+    def _info(self, var) -> Dict[str, object]:
+        """
+        The INFO entries a tree-sequence site carries.
+
+        A tree sequence has no INFO field, but it does state each site's ancestral allele, as allele
+        ``0``. Surfacing that under the ancestral tag lets the usual polarisation logic apply, so a
+        ``.trees`` source behaves as a VCF annotated with that tag does. An annotator that could not
+        call a site writes the empty ancestral state, which is not a valid base and so reads as
+        non-polarized rather than silently falling back to the reference allele.
+
+        :param var: The tskit variant.
+        :return: The INFO entries, empty where the site states nothing.
+        """
+        info: Dict[str, object] = {self._info_ancestral: var.alleles[0]}
+
+        # An annotator may record its confidence in the site metadata; surface it so probabilistic
+        # polarisation works from a tree sequence too.
+        metadata = var.site.metadata
+        if isinstance(metadata, dict):
+            block = metadata.get('ancestree')
+
+            if isinstance(block, dict) and block.get('max_prob') is not None:
+                info[self._info_ancestral_prob] = float(block['max_prob'])
+
+        return info
+
     def __iter__(self) -> Iterator[Variant]:
         """
         Iterate over the sites of the tree sequence.
@@ -1902,6 +1945,7 @@ class TskitVariantReader(VariantReader):
                 allele_indices=allele_indices,
                 # tree-sequence haplotypes within an individual are ordered, hence phased, as in write_vcf
                 phased=True,
+                info=self._info(var),
             )
 
             # carry the exact (possibly non-integer) tskit position so TskitVariantWriter can identify the

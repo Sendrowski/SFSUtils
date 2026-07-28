@@ -246,3 +246,65 @@ def test_target_site_counter_input_agnostic(source):
 
     assert spectra.n_sites.sum() == pytest.approx(50_000)
     assert spectra.n_polymorphic.sum() == 608
+
+
+@requires_trees
+class TestTreeSequencePolarisation:
+    """A tree sequence states its ancestral allele, so it needs no opt-out to be polarised."""
+
+    @staticmethod
+    def _spectrum(source, **kwargs):
+        """The spectrum parsed from ``source``."""
+        Settings.disable_pbar = True
+        parsed = su.Parser(
+            source=source, n=20, subsample_mode="random", **kwargs,
+        ).parse().data
+        if not parsed.shape[1]:
+            return []
+        return [int(x) for x in parsed.iloc[:, 0].tolist()]
+
+    def test_default_skip_non_polarized_keeps_the_sites(self):
+        """Parsing with the defaults gives the same spectrum as opting out.
+
+        A tree sequence carries no INFO field, so before its ancestral allele was
+        surfaced under the ancestral tag every site counted as non-polarized and
+        the default left the spectrum empty.
+        """
+        import tskit
+
+        ts = tskit.load(TREES)
+        default = self._spectrum(ts)
+        opted_out = self._spectrum(ts, skip_non_polarized=False)
+        assert sum(default) > 0
+        assert default == opted_out
+
+    def test_matches_the_vcf_written_from_it(self):
+        """The tree sequence under the defaults matches its VCF read off the reference.
+
+        The VCF written from a tree sequence carries no ancestral tag, so it has
+        to fall back to the reference allele, which is the tree sequence's
+        allele ``0``. Reaching that same spectrum without the opt-out is the
+        point of surfacing the ancestral state as the tag.
+        """
+        import tskit
+
+        assert self._spectrum(tskit.load(TREES)) == self._spectrum(
+            VCF, skip_non_polarized=False,
+        )
+
+    def test_an_unstated_ancestral_allele_is_not_polarised(self):
+        """A site whose ancestral state is empty is skipped, not read as the reference.
+
+        An annotator that declines to call a site writes the empty ancestral
+        state; treating that as the reference allele would silently mis-polarise
+        it rather than leave it out.
+        """
+        import tskit
+
+        tables = tskit.load(TREES).dump_tables()
+        rows = [(s.position, s.ancestral_state, s.metadata) for s in tables.sites]
+        tables.sites.clear()
+        for position, _, metadata in rows:
+            tables.sites.add_row(position=position, ancestral_state="", metadata=metadata)
+
+        assert self._spectrum(tables.tree_sequence()) == []

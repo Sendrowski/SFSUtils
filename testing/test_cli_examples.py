@@ -188,22 +188,40 @@ def test_parse_from_zarr(zarr_store, tmp_path):
 
 
 def test_parse_from_trees(trees_path, tmp_path):
-    # sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --output sfs.csv
-    # A tree sequence carries no AA tag (tskit stores the ancestral state as REF, recovered only with
-    # skip_non_polarized=False), so the documented command passes --no-skip-non-polarized and the SFS is
-    # populated. Without it every site is skipped and the command now fails rather than writing an empty file.
+    # sfsutils parse --trees ancestry.trees --n 20 --output sfs.csv
+    # A tree sequence states each site's ancestral allele, which the reader surfaces under the ancestral
+    # tag, so the documented command needs no opt-out and --no-skip-non-polarized changes nothing.
     trees, _ = trees_path
     out = tmp_path / "sfs.csv"
-    assert _run("parse", "--trees", trees, "--n", "20", "--no-skip-non-polarized", "--output", str(out)) == 0
-
-    # the unpolarized form includes no sites, so it must fail loudly instead of writing an unreadable stub
-    empty = tmp_path / "empty.csv"
-    assert _run("parse", "--trees", trees, "--n", "20", "--output", str(empty)) == 1
-    assert not empty.exists()
+    assert _run("parse", "--trees", trees, "--n", "20", "--output", str(out)) == 0
     assert out.exists()
-    polarized = np.array(su.Parser(source=trees, n=20, skip_non_polarized=False,
+
+    opted_out = tmp_path / "opted_out.csv"
+    assert _run("parse", "--trees", trees, "--n", "20", "--no-skip-non-polarized",
+                "--output", str(opted_out)) == 0
+    assert opted_out.read_text() == out.read_text()
+
+    polarized = np.array(su.Parser(source=trees, n=20,
                                    subsample_mode="random").parse().all.to_list())
     assert polarized.shape == (21,) and polarized[1:20].sum() > 0
+
+
+def test_parse_from_trees_without_ancestral_states(trees_path, tmp_path):
+    """A tree sequence stating no ancestral allele still fails loudly rather than writing a stub."""
+    import tskit
+
+    trees, _ = trees_path
+    tables = tskit.load(trees).dump_tables()
+    rows = [(site.position, site.metadata) for site in tables.sites]
+    tables.sites.clear()
+    for position, metadata in rows:
+        tables.sites.add_row(position=position, ancestral_state="", metadata=metadata)
+    blank = tmp_path / "blank.trees"
+    tables.tree_sequence().dump(str(blank))
+
+    empty = tmp_path / "empty.csv"
+    assert _run("parse", "--trees", str(blank), "--n", "20", "--output", str(empty)) == 1
+    assert not empty.exists()
 
 
 def test_parse_degeneracy_stratified(coding_fixture, tmp_path):

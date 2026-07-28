@@ -30,9 +30,8 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
    # the same, reading a VCF-Zarr store instead
    sfsutils parse --zarr variants.vcz --n 20 --output sfs.csv
 
-   # a tree sequence stores the ancestral state as the reference allele rather than in an AA tag, so the
-   # polarization has to be told not to skip the sites that carry no such tag
-   sfsutils parse --trees ancestry.trees --n 20 --no-skip-non-polarized --output sfs.csv
+   # a tree sequence states each site's ancestral allele, so it polarizes without further arguments
+   sfsutils parse --trees ancestry.trees --n 20 --output sfs.csv
 
    # neutral vs selected SFS, annotating and stratifying by degeneracy
    sfsutils parse --vcf variants.vcf.gz --n 20 \
