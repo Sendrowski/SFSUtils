@@ -23,72 +23,72 @@ A :class:`~sfsutils.parser.Stratification` splits sites into categories so the :
    ~sfsutils.parser.ChunkedStratification
    ~sfsutils.parser.RandomStratification
 
-Stratification
-~~~~~~~~~~~~~~
+``Stratification``
+~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.Stratification
 
-SNPStratification
-~~~~~~~~~~~~~~~~~
+``SNPStratification``
+~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.SNPStratification
 
-BaseContextStratification
-~~~~~~~~~~~~~~~~~~~~~~~~~
+``BaseContextStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.BaseContextStratification
 
-BaseTransitionStratification
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``BaseTransitionStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.BaseTransitionStratification
 
-TransitionTransversionStratification
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``TransitionTransversionStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.TransitionTransversionStratification
 
-AncestralBaseStratification
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``AncestralBaseStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.AncestralBaseStratification
 
-DegeneracyStratification
-~~~~~~~~~~~~~~~~~~~~~~~~
+``DegeneracyStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.DegeneracyStratification
 
-SynonymyStratification
-~~~~~~~~~~~~~~~~~~~~~~
+``SynonymyStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.SynonymyStratification
 
-VEPStratification
-~~~~~~~~~~~~~~~~~
+``VEPStratification``
+~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.VEPStratification
 
-SnpEffStratification
-~~~~~~~~~~~~~~~~~~~~
+``SnpEffStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.SnpEffStratification
 
-GenomePositionDependentStratification
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``GenomePositionDependentStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.GenomePositionDependentStratification
 
-ContigStratification
-~~~~~~~~~~~~~~~~~~~~
+``ContigStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.ContigStratification
 
-ChunkedStratification
-~~~~~~~~~~~~~~~~~~~~~
+``ChunkedStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.ChunkedStratification
 
-RandomStratification
-~~~~~~~~~~~~~~~~~~~~
+``RandomStratification``
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.RandomStratification

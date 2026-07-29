@@ -26,87 +26,87 @@ An :class:`~sfsutils.annotation.Annotation` adds site-level information such as 
    ~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation
    ~sfsutils.annotation.AdHocAncestralAnnotation
 
-Annotator
-~~~~~~~~~
+``Annotator``
+~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.Annotator
 
-Annotation
-~~~~~~~~~~
+``Annotation``
+~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.Annotation
 
-DegeneracyAnnotation
-~~~~~~~~~~~~~~~~~~~~
+``DegeneracyAnnotation``
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.DegeneracyAnnotation
 
-SynonymyAnnotation
-~~~~~~~~~~~~~~~~~~
+``SynonymyAnnotation``
+~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.SynonymyAnnotation
 
-AncestralAlleleAnnotation
-~~~~~~~~~~~~~~~~~~~~~~~~~
+``AncestralAlleleAnnotation``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.AncestralAlleleAnnotation
 
-MaximumParsimonyAncestralAnnotation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``MaximumParsimonyAncestralAnnotation``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.MaximumParsimonyAncestralAnnotation
 
-SubstitutionModel
-~~~~~~~~~~~~~~~~~
+``SubstitutionModel``
+~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.SubstitutionModel
 
-JCSubstitutionModel
-~~~~~~~~~~~~~~~~~~~
+``JCSubstitutionModel``
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.JCSubstitutionModel
 
-K2SubstitutionModel
-~~~~~~~~~~~~~~~~~~~
+``K2SubstitutionModel``
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.K2SubstitutionModel
 
-SiteConfig
-~~~~~~~~~~
+``SiteConfig``
+~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.SiteConfig
 
-SiteInfo
-~~~~~~~~
+``SiteInfo``
+~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.SiteInfo
 
-BaseType
-~~~~~~~~
+``BaseType``
+~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.BaseType
 
-PolarizationPrior
-~~~~~~~~~~~~~~~~~
+``PolarizationPrior``
+~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.PolarizationPrior
 
-KingmanPolarizationPrior
-~~~~~~~~~~~~~~~~~~~~~~~~
+``KingmanPolarizationPrior``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.KingmanPolarizationPrior
 
-AdaptivePolarizationPrior
-~~~~~~~~~~~~~~~~~~~~~~~~~
+``AdaptivePolarizationPrior``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.AdaptivePolarizationPrior
 
-MaximumLikelihoodAncestralAnnotation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``MaximumLikelihoodAncestralAnnotation``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.MaximumLikelihoodAncestralAnnotation
 
-AdHocAncestralAnnotation
-~~~~~~~~~~~~~~~~~~~~~~~~
+``AdHocAncestralAnnotation``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.AdHocAncestralAnnotation

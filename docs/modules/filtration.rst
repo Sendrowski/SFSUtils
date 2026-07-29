@@ -23,72 +23,72 @@ A :class:`~sfsutils.filtration.Filtration` drops sites that violate downstream m
    ~sfsutils.filtration.CpGFiltration
    ~sfsutils.filtration.ContigFiltration
 
-Filterer
-~~~~~~~~
+``Filterer``
+~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.Filterer
 
-Filtration
-~~~~~~~~~~
+``Filtration``
+~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.Filtration
 
-MaskedFiltration
-~~~~~~~~~~~~~~~~
+``MaskedFiltration``
+~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.MaskedFiltration
 
-SNPFiltration
-~~~~~~~~~~~~~
+``SNPFiltration``
+~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.SNPFiltration
 
-SNVFiltration
-~~~~~~~~~~~~~
+``SNVFiltration``
+~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.SNVFiltration
 
-PolyAllelicFiltration
-~~~~~~~~~~~~~~~~~~~~~
+``PolyAllelicFiltration``
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.PolyAllelicFiltration
 
-AllFiltration
-~~~~~~~~~~~~~
+``AllFiltration``
+~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.AllFiltration
 
-NoFiltration
-~~~~~~~~~~~~
+``NoFiltration``
+~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.NoFiltration
 
-CodingSequenceFiltration
-~~~~~~~~~~~~~~~~~~~~~~~~
+``CodingSequenceFiltration``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.CodingSequenceFiltration
 
-DeviantOutgroupFiltration
-~~~~~~~~~~~~~~~~~~~~~~~~~
+``DeviantOutgroupFiltration``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.DeviantOutgroupFiltration
 
-ExistingOutgroupFiltration
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+``ExistingOutgroupFiltration``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.ExistingOutgroupFiltration
 
-BiasedGCConversionFiltration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``BiasedGCConversionFiltration``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.BiasedGCConversionFiltration
 
-CpGFiltration
-~~~~~~~~~~~~~
+``CpGFiltration``
+~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.CpGFiltration
 
-ContigFiltration
-~~~~~~~~~~~~~~~~
+``ContigFiltration``
+~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.ContigFiltration

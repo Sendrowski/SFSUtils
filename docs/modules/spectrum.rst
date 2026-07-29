@@ -18,47 +18,47 @@ The spectrum classes and their named-collection types.
    ~sfsutils.spectrum.AbstractSpectrum
    ~sfsutils.spectrum.AbstractSpectra
 
-Spectrum
-~~~~~~~~
+``Spectrum``
+~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.Spectrum
 
-Spectra
-~~~~~~~
+``Spectra``
+~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.Spectra
 
-JointSFS
-~~~~~~~~
+``JointSFS``
+~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.JointSFS
 
-JointSpectra
-~~~~~~~~~~~~
+``JointSpectra``
+~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.JointSpectra
 
-TwoSFS
-~~~~~~
+``TwoSFS``
+~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.TwoSFS
 
-TwoLocusSFS
-~~~~~~~~~~~
+``TwoLocusSFS``
+~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.TwoLocusSFS
 
-TwoSpectra
-~~~~~~~~~~
+``TwoSpectra``
+~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.TwoSpectra
 
-AbstractSpectrum
-~~~~~~~~~~~~~~~~
+``AbstractSpectrum``
+~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.AbstractSpectrum
 
-AbstractSpectra
-~~~~~~~~~~~~~~~
+``AbstractSpectra``
+~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.spectrum.AbstractSpectra

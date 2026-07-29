@@ -11,12 +11,12 @@ The :class:`~sfsutils.parser.Parser` reads variants into a site-frequency spectr
    ~sfsutils.parser.Parser
    ~sfsutils.parser.TargetSiteCounter
 
-Parser
-~~~~~~
+``Parser``
+~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.Parser
 
-TargetSiteCounter
-~~~~~~~~~~~~~~~~~
+``TargetSiteCounter``
+~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.parser.TargetSiteCounter
