@@ -100,3 +100,11 @@ References
 ----------
 .. bibliography::
    :style: plain
+
+.. Register the package itself as a target so that ``:mod:`sfsutils``` resolves, here and in
+   the projects that cross-reference these docs over intersphinx. The reference pages document
+   individual classes with ``autoclass`` and never ``automodule``, so without this the inventory
+   carries no module entry at all. Renders nothing.
+
+.. py:module:: sfsutils
+

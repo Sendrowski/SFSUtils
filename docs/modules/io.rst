@@ -23,86 +23,44 @@ The :class:`~sfsutils.parser.Parser`, :class:`~sfsutils.filtration.Filterer` and
    ~sfsutils.io_handlers.FASTAHandler
    ~sfsutils.io_handlers.GFFHandler
 
-``Site``
-~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.Site
    :members:
-
-``Variant``
-~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.Variant
    :members:
 
-``VariantReader``
-~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.VariantReader
    :members:
-
-``TskitVariantReader``
-~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.TskitVariantReader
    :members:
 
-``ZarrVariantReader``
-~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.ZarrVariantReader
    :members:
-
-``VariantWriter``
-~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.VariantWriter
    :members:
 
-``VCFVariantWriter``
-~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.VCFVariantWriter
    :members:
-
-``ZarrVariantWriter``
-~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.ZarrVariantWriter
    :members:
 
-``TskitVariantWriter``
-~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.TskitVariantWriter
    :members:
-
-``NoTypeException``
-~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.NoTypeException
    :members:
 
-``FileHandler``
-~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.FileHandler
    :members:
-
-``VCFHandler``
-~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.VCFHandler
    :members:
 
-``FASTAHandler``
-~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.io_handlers.FASTAHandler
    :members:
-
-``GFFHandler``
-~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.io_handlers.GFFHandler
    :members:

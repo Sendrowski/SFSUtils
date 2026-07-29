@@ -26,87 +26,36 @@ An :class:`~sfsutils.annotation.Annotation` adds site-level information such as 
    ~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation
    ~sfsutils.annotation.AdHocAncestralAnnotation
 
-``Annotator``
-~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.Annotator
-
-``Annotation``
-~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.Annotation
 
-``DegeneracyAnnotation``
-~~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.DegeneracyAnnotation
-
-``SynonymyAnnotation``
-~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.SynonymyAnnotation
 
-``AncestralAlleleAnnotation``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.AncestralAlleleAnnotation
-
-``MaximumParsimonyAncestralAnnotation``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.MaximumParsimonyAncestralAnnotation
 
-``SubstitutionModel``
-~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.SubstitutionModel
-
-``JCSubstitutionModel``
-~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.JCSubstitutionModel
 
-``K2SubstitutionModel``
-~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.K2SubstitutionModel
-
-``SiteConfig``
-~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.SiteConfig
 
-``SiteInfo``
-~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.SiteInfo
-
-``BaseType``
-~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.BaseType
 
-``PolarizationPrior``
-~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.PolarizationPrior
-
-``KingmanPolarizationPrior``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.KingmanPolarizationPrior
 
-``AdaptivePolarizationPrior``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.AdaptivePolarizationPrior
 
-``MaximumLikelihoodAncestralAnnotation``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.annotation.MaximumLikelihoodAncestralAnnotation
-
-``AdHocAncestralAnnotation``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.annotation.AdHocAncestralAnnotation

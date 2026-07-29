@@ -23,72 +23,30 @@ A :class:`~sfsutils.filtration.Filtration` drops sites that violate downstream m
    ~sfsutils.filtration.CpGFiltration
    ~sfsutils.filtration.ContigFiltration
 
-``Filterer``
-~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.Filterer
-
-``Filtration``
-~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.Filtration
 
-``MaskedFiltration``
-~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.MaskedFiltration
-
-``SNPFiltration``
-~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.SNPFiltration
 
-``SNVFiltration``
-~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.SNVFiltration
-
-``PolyAllelicFiltration``
-~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.PolyAllelicFiltration
 
-``AllFiltration``
-~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.AllFiltration
-
-``NoFiltration``
-~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.NoFiltration
 
-``CodingSequenceFiltration``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.CodingSequenceFiltration
-
-``DeviantOutgroupFiltration``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.DeviantOutgroupFiltration
 
-``ExistingOutgroupFiltration``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.ExistingOutgroupFiltration
-
-``BiasedGCConversionFiltration``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.BiasedGCConversionFiltration
 
-``CpGFiltration``
-~~~~~~~~~~~~~~~~~
-
 .. autoclass:: sfsutils.filtration.CpGFiltration
-
-``ContigFiltration``
-~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: sfsutils.filtration.ContigFiltration
