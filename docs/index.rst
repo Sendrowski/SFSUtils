@@ -43,11 +43,9 @@ Features
 
 - Visualization of individual and stratified spectra
 
-Contents
---------
-
 .. toctree::
    :caption: Python Reference
+   :hidden:
 
    reference/Python/installation
    reference/Python/quickstart
@@ -61,6 +59,7 @@ Contents
 
 .. toctree::
    :caption: R Reference
+   :hidden:
 
    reference/R/installation
    reference/R/quickstart
@@ -74,12 +73,14 @@ Contents
 
 .. toctree::
    :caption: CLI Reference
+   :hidden:
 
    reference/CLI/usage
 
 .. toctree::
    :caption: API Reference
    :maxdepth: 1
+   :hidden:
 
    modules/spectrum
    modules/parser
@@ -92,6 +93,7 @@ Contents
 .. toctree::
    :caption: Miscellaneous
    :maxdepth: 1
+   :hidden:
 
    modules/citing
    modules/changelog
