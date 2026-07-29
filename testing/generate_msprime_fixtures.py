@@ -7,7 +7,7 @@ as REF, the parser can recover the correct polarisation via ``skip_non_polarized
 ancestral) without an ``AA`` tag. The test itself only needs sfsutils + numpy, so it runs in CI
 where msprime/tskit are absent; this script is run manually to (re)generate the committed fixtures.
 
-Usage (in the sfsutils-dev env, from the repository root):
+Usage (in the dev-sfsutils env, from the repository root):
     python testing/generate_msprime_fixtures.py
 """
 import numpy as np

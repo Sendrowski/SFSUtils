@@ -17,7 +17,7 @@ segregating sites. The low-frequency off-diagonal correlations then contrast by 
 adjacent low-frequency classes are negatively correlated (Fu 1995), whereas under the Beta coalescent the multiple
 mergers make them positively correlated (Birkner et al. 2013).
 
-Usage (in the sfsutils-dev env, from the repository root):
+Usage (in the dev-sfsutils env, from the repository root):
     python testing/generate_two_sfs_demo.py
 """
 import gzip

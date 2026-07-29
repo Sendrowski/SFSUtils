@@ -8,9 +8,9 @@
 # install of the package itself remains a post-step, since an in-yaml `-e .` resolves the path
 # relative to envs/ rather than the repo root and fails. From the repository root:
 #   mamba env create -f envs/dev.yaml
-#   mamba run -n sfsutils-dev pip install -e .
-#   mamba activate sfsutils-dev
-name: sfsutils-dev
+#   mamba run -n dev-sfsutils pip install -e .
+#   mamba activate dev-sfsutils
+name: dev-sfsutils
 channels:
   - conda-forge
 dependencies:
