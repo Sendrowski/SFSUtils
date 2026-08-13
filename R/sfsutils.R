@@ -26,6 +26,12 @@ for(package in required_packages){
 #' @export
 sfsutils_is_installed <- function() {
 
+  # An unbound session reports FALSE without touching Python, leaving the interpreter
+  # for the declared requirements to select at the version they ask for
+  if (!reticulate::py_available(initialize = FALSE)) {
+    return(FALSE)
+  }
+
   # Check if sfsutils is installed
   if (!reticulate::py_module_available("sfsutils")) {
     return(FALSE)
@@ -41,22 +47,45 @@ sfsutils_is_installed <- function() {
 }
 
 
-#' Install the `sfsutils` Python module
+# Requirement string for the Python distribution, carrying the optional input backends
+# and a pinned version where one is given. The distribution is named 'sfsutils-popgen'
+# on PyPI, where 'sfsutils' is an unrelated project
+py_requirement <- function(version = NULL, extras = c("vcf")) {
+
+  spec <- "sfsutils-popgen"
+
+  if (length(extras) > 0) {
+    spec <- paste0(spec, "[", paste(extras, collapse = ","), "]")
+  }
+
+  if (!is.null(version)) {
+    spec <- paste0(spec, "==", version)
+  }
+
+  spec
+}
+
+
+.onLoad <- function(libname, pkgname) {
+  reticulate::py_require(py_requirement(), python_version = "3.11")
+}
+
+
+#' Declare the `sfsutils` Python module requirement
 #'
-#' This function checks if the `sfsutils` Python module is available.
-#' If not, or if the `force` argument is TRUE, it installs it via pip.
-#' If the `silent` argument is set to TRUE, the function will not output a
-#' message when the module is already installed.
+#' Loading the package declares `sfsutils` with the `vcf` backend. This function declares
+#' a different set of backends, or a pinned version.
+#' The requirement is resolved when Python is first initialised, at which point
+#' reticulate provisions an environment satisfying it.
 #'
 #' @param version A character string specifying the version of the `sfsutils` module
-#'        to install. Default is `NULL` which will install the latest version.
-#' @param extras A character vector of optional input backends to install alongside the module:
+#'        to require. Default is `NULL` which resolves to the latest version.
+#' @param extras A character vector of optional input backends to require alongside the module:
 #'        `'vcf'` for VCF files, `'zarr'` for VCF-Zarr stores and `'arg'` for tree sequences.
-#'        Default is `c("vcf")`; pass `NULL` to install none of them.
-#' @param force Logical, if `TRUE` it will force the reinstallation of the `sfsutils` module
-#'        even if it's already available. Default is `FALSE`.
-#' @param silent Logical, if `TRUE` it will suppress the message about `sfsutils` being
-#'        already installed. Default is `FALSE`.
+#'        Default is `c("vcf")`; pass `NULL` to require none of them.
+#' @param force Logical, has no effect. Default is `FALSE`.
+#' @param silent Logical, if `TRUE` it will suppress the message naming the declared
+#'        requirement. Default is `FALSE`.
 #' @param python_version A character string specifying the Python version reticulate
 #'        should provision the environment with. Default is `'3.11'`.
 #'
@@ -64,39 +93,24 @@ sfsutils_is_installed <- function() {
 #'
 #' @examples
 #' \dontrun{
-#' install_sfsutils()  # Installs the latest version of sfsutils with the vcf backend
-#' install_sfsutils("1.0.0")  # Installs version 1.0.0 of sfsutils
-#' install_sfsutils(extras = c("vcf", "zarr", "arg"))  # Installs all input backends
-#' install_sfsutils(extras = NULL)  # Installs without any of the optional backends
-#' install_sfsutils(force = TRUE)  # Reinstalls the sfsutils module
+#' install_sfsutils()  # Requires the latest version of sfsutils with the vcf backend
+#' install_sfsutils(extras = c("vcf", "zarr", "arg"))  # Requires all input backends
+#' install_sfsutils(extras = NULL)  # Requires none of the optional backends
 #' }
 #'
 #' @export
 install_sfsutils <- function(version = NULL, extras = c("vcf"), force = FALSE, silent = FALSE, python_version = '3.11') {
 
-  # Create the package string with the extras and version if specified. The distribution is named
-  # 'sfsutils-popgen' on PyPI, where 'sfsutils' is an unrelated project
-  package_name <- "sfsutils-popgen"
-  if (length(extras) > 0) {
-    package_name <- paste0(package_name, "[", paste(extras, collapse = ","), "]")
-  }
-  if (!is.null(version)) {
-    package_name <- paste0(package_name, "==", version)
+  if (force) {
+    warning("'force' has no effect.", call. = FALSE)
   }
 
-  # Check if sfsutils is installed or if force is TRUE
-  if (force || !sfsutils_is_installed()) {
-    reticulate::py_install(
-      package_name,
-      method = "conda",
-      pip = TRUE,
-      python_version = python_version,
-      ignore_installed = TRUE
-   )
-  } else {
-    if (!silent) {
-      message("The 'sfsutils' Python module is already installed.")
-    }
+  spec <- py_requirement(version, extras)
+
+  reticulate::py_require(spec, python_version = python_version)
+
+  if (!silent) {
+    message("Declared Python requirement '", spec, "' on Python ", python_version, ".")
   }
 
   invisible(NULL)

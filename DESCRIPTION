@@ -11,9 +11,9 @@ Imports:
     cowplot,
     ggplot2,
     RColorBrewer,
-    reticulate,
+    reticulate (>= 1.41.0),
     scales
 Suggests:
     testthat
 URL: https://sfsutils.readthedocs.io
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.0

@@ -2,7 +2,7 @@
 % Please edit documentation in R/sfsutils.R
 \name{install_sfsutils}
 \alias{install_sfsutils}
-\title{Install the \code{sfsutils} Python module}
+\title{Declare the \code{sfsutils} Python module requirement}
 \usage{
 install_sfsutils(
   version = NULL,
@@ -14,17 +14,16 @@ install_sfsutils(
 }
 \arguments{
 \item{version}{A character string specifying the version of the \code{sfsutils} module
-to install. Default is \code{NULL} which will install the latest version.}
+to require. Default is \code{NULL} which resolves to the latest version.}
 
-\item{extras}{A character vector of optional input backends to install alongside the module:
+\item{extras}{A character vector of optional input backends to require alongside the module:
 \code{'vcf'} for VCF files, \code{'zarr'} for VCF-Zarr stores and \code{'arg'} for tree sequences.
-Default is \code{c("vcf")}; pass \code{NULL} to install none of them.}
+Default is \code{c("vcf")}; pass \code{NULL} to require none of them.}
 
-\item{force}{Logical, if \code{TRUE} it will force the reinstallation of the \code{sfsutils} module
-even if it's already available. Default is \code{FALSE}.}
+\item{force}{Logical, has no effect. Default is \code{FALSE}.}
 
-\item{silent}{Logical, if \code{TRUE} it will suppress the message about \code{sfsutils} being
-already installed. Default is \code{FALSE}.}
+\item{silent}{Logical, if \code{TRUE} it will suppress the message naming the declared
+requirement. Default is \code{FALSE}.}
 
 \item{python_version}{A character string specifying the Python version reticulate
 should provision the environment with. Default is \code{'3.11'}.}
@@ -33,18 +32,16 @@ should provision the environment with. Default is \code{'3.11'}.}
 Invisible \code{NULL}.
 }
 \description{
-This function checks if the \code{sfsutils} Python module is available.
-If not, or if the \code{force} argument is TRUE, it installs it via pip.
-If the \code{silent} argument is set to TRUE, the function will not output a
-message when the module is already installed.
+Loading the package declares \code{sfsutils} with the \code{vcf} backend. This function declares
+a different set of backends, or a pinned version.
+The requirement is resolved when Python is first initialised, at which point
+reticulate provisions an environment satisfying it.
 }
 \examples{
 \dontrun{
-install_sfsutils()  # Installs the latest version of sfsutils with the vcf backend
-install_sfsutils("1.0.0")  # Installs version 1.0.0 of sfsutils
-install_sfsutils(extras = c("vcf", "zarr", "arg"))  # Installs all input backends
-install_sfsutils(extras = NULL)  # Installs without any of the optional backends
-install_sfsutils(force = TRUE)  # Reinstalls the sfsutils module
+install_sfsutils()  # Requires the latest version of sfsutils with the vcf backend
+install_sfsutils(extras = c("vcf", "zarr", "arg"))  # Requires all input backends
+install_sfsutils(extras = NULL)  # Requires none of the optional backends
 }
 
 }
