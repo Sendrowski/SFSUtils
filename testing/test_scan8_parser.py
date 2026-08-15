@@ -114,10 +114,11 @@ def test_joint_target_sites_keep_types_first_seen_when_sampling(tmp_path):
     spectra, and the joint total must match the one-dimensional total."""
     Settings.disable_pbar = True
 
-    seq = "".join(random.Random(1).choice("ACGT") for _ in range(5000))
+    rng = random.Random(1)
+    seq = "".join(rng.choice("ACGT") for _ in range(5000))
     fasta = _write_fasta(tmp_path / "ref.fasta", seq)
 
-    # the variants sit in a short stretch, so most base contexts appear only among the sampled sites
+    # the variants sit in a short stretch, so many base contexts appear only among the sampled sites
     vcf = _write_vcf(tmp_path / "joint_types.vcf", _snp_rows(list(range(2, 60)) + [4900], seq))
 
     def parse(pops):
@@ -277,7 +278,8 @@ def test_target_site_counter_restores_filtrations_when_sampling_raises(tmp_path)
     when the sampling pass raises."""
     Settings.disable_pbar = True
 
-    seq = "".join(random.Random(2).choice("ACGT") for _ in range(1000))
+    rng = random.Random(2)
+    seq = "".join(rng.choice("ACGT") for _ in range(1000))
     fasta = _write_fasta(tmp_path / "ref.fasta", seq)
     vcf = _write_vcf(tmp_path / "restore.vcf", _snp_rows(range(1, 51), seq))
 
@@ -301,7 +303,8 @@ def test_target_site_counter_handles_fasta_shorter_than_variants(tmp_path):
     end; the sampling is confined to the part backed by the reference."""
     Settings.disable_pbar = True
 
-    seq = "".join(random.Random(3).choice("ACGT") for _ in range(500))
+    rng = random.Random(3)
+    seq = "".join(rng.choice("ACGT") for _ in range(500))
     fasta = _write_fasta(tmp_path / "short.fasta", seq)
     vcf = _write_vcf(tmp_path / "short_ref.vcf", _snp_rows([1, 50, 300, 900]))
 
