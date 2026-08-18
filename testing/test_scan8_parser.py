@@ -121,7 +121,7 @@ def test_joint_target_sites_keep_types_first_seen_when_sampling(tmp_path):
     # the variants sit in a short stretch, so many base contexts appear only among the sampled sites
     vcf = _write_vcf(tmp_path / "joint_types.vcf", _snp_rows(list(range(2, 60)) + [4900], seq))
 
-    def parse(pops):
+    def parse(pops, sampling=True):
         kwargs = dict(
             source=vcf,
             n=4,
@@ -129,8 +129,10 @@ def test_joint_target_sites_keep_types_first_seen_when_sampling(tmp_path):
             seed=7,
             stratifications=[su.BaseContextStratification(fasta=fasta, n_flanking=1)],
             filtrations=[SNPFiltration()],
-            target_site_counter=su.TargetSiteCounter(n_target_sites=40000, n_samples=2000),
         )
+
+        if sampling:
+            kwargs['target_site_counter'] = su.TargetSiteCounter(n_target_sites=40000, n_samples=2000)
 
         if pops:
             kwargs['pops'] = {"p1": list(SAMPLES[:3]), "p2": list(SAMPLES[3:])}
@@ -139,6 +141,9 @@ def test_joint_target_sites_keep_types_first_seen_when_sampling(tmp_path):
 
     spectra = parse(False)
     joint = parse(True)
+
+    # the fixture only tests the sampled-only strata while some strata are in fact sampled-only
+    assert set(spectra.types) - set(parse(False, sampling=False).types)
 
     assert set(joint.types) == set(spectra.types)
     assert sum(float(np.asarray(joint[t]).sum()) for t in joint.types) == pytest.approx(40000)
