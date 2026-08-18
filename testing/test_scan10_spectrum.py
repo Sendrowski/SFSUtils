@@ -176,10 +176,15 @@ def test_corr_stays_quiet_when_it_zeroes_nothing(caplog):
     import logging
 
     rng = np.random.default_rng(0)
-    f = np.array([1e6, 500, 200, 120, 90, 3000])
-    base = np.outer(f, f) * (1 + 0.3 * rng.random((6, 6)))
+
+    # the interior sits far below the monomorphic bin, so a floor taken from the monomorphic scale would
+    # censor all of it while the floor set by the class probabilities censors none
+    data = np.zeros((6, 6))
+    data[1:-1, 1:-1] = rng.random((4, 4)) + 0.5
+    data[0, 0] = 1e14
+    data = data + data.T
 
     with caplog.at_level(logging.INFO, logger='sfsutils'):
-        su.TwoSFS((base + base.T) / 2).corr()
+        su.TwoSFS(data).corr()
 
     assert not any('interior correlations' in record.message for record in caplog.records)

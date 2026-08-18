@@ -49,9 +49,11 @@ def test_corr_keeps_unit_diagonal_for_a_genuine_signal():
     """A spectrum with real branch-length variance keeps the unit diagonal the correlation promises."""
     rng = np.random.default_rng(1)
 
+    # the interior sits far below the monomorphic bin, where a floor taken from the monomorphic scale
+    # rather than from the class probabilities censors the whole interior
     data = np.zeros((6, 6))
     data[1:-1, 1:-1] = rng.random((4, 4)) + 0.5
-    data[0, 0] = 1e4
+    data[0, 0] = 1e14
     data = data + data.T
 
     r = np.asarray(su.TwoSFS(data).corr())
@@ -78,8 +80,11 @@ def test_resample_draws_the_monomorphic_bin_independently():
 
     draws = np.array([np.asarray(sfs.resample(seed))[0] for seed in range(300)])
 
-    assert draws.std() > 0
     assert abs(draws.mean() - 500) < 10
+
+    # an independent draw of bin 0 has the spread of Poisson(500); deriving it as n_sites minus the
+    # remaining draws leaves only the spread of those, sqrt(180 + 10)
+    assert draws.std() == pytest.approx(np.sqrt(500), rel=0.25)
 
 
 # --- C18: numpy-typed metadata in a payload --------------------------------------------------------

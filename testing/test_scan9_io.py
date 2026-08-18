@@ -306,6 +306,14 @@ def test_the_view_of_a_released_site_is_not_handed_to_its_successor(tmp_path):
 
     assert views == [(10, {'A': 2}), (20, {'A': 1, 'T': 1})]
 
+    # the cache holds the site itself, which keeps it alive: were it keyed on the identity alone, the
+    # address of a released site would be handed out again and match a later one
+    site = _snp(pos=30)
+    SiteAlleles.from_site(site)
+    cached, _ = SiteAlleles._cached
+
+    assert cached is site
+
 
 # --- the GFF is read in blocks (P1) -----------------------------------------------------------------
 

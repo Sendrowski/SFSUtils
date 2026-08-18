@@ -10,7 +10,7 @@ import pytest
 
 import sfsutils as su
 from sfsutils.settings import Settings
-from sfsutils.io_handlers import Variant
+from sfsutils.io_handlers import Variant, DummyVariant
 from sfsutils.json_handlers import DataframeHandler
 
 
@@ -417,6 +417,10 @@ def test_target_site_counter_with_gt_reading_filtration(tmp_path):
                         filtrations=[su.SNVFiltration()],
                         target_site_counter=su.TargetSiteCounter(n_samples=2000, n_target_sites=2000)).parse()
     assert spectra["all"].n_polymorphic == 2  # did not crash on the dummy sites
+
+    # the genotypes the filtration reads are the ones the dummy site carries, one per sample
+    dummy = DummyVariant(ref="A", pos=1, chrom="1", n_samples=2, ploidy=2)
+    assert list(dummy.gt_bases) == ["A/A", "A/A"]
 
 
 def test_low_coverage_monomorphic_site_is_skipped(tmp_path):

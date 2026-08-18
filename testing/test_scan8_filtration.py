@@ -12,7 +12,7 @@ import pytest
 import sfsutils as su
 from sfsutils.annotation import DegeneracyAnnotation
 from sfsutils.filtration import CodingSequenceFiltration
-from sfsutils.io_handlers import MultiHandler, DummyVariant
+from sfsutils.io_handlers import MultiHandler, DummyVariant, SiteAlleles
 from sfsutils.settings import Settings
 
 HEADER = (
@@ -191,7 +191,11 @@ class TestHaploidLaterAlleleOutgroups:
         f = _setup(su.DeviantOutgroupFiltration(["a"], ingroups=["b", "c", "d"], retain_monomorphic=False),
                    self.samples)
 
-        # the outgroup's majority allele is GC, the ingroup's is AT
+        # the majority is the allele a haplotype carries, not one of the bases spelling it out
+        view = SiteAlleles.from_site(sites[0])
+        assert f._get_major_allele(view, f.outgroup_mask) == "GC"
+        assert f._get_major_allele(view, f.ingroup_mask) == "AT"
+
         assert not f.filter_site(sites[0])
 
         handler._reader.close()

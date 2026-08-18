@@ -232,6 +232,13 @@ def test_a_row_of_nothing_but_markers_carries_no_field(tmp_path):
 
     assert [variant.INFO for variant in ZarrVariantReader(store)] == [{}]
 
+    # a row of missing markers alone carries no fill to strip, so the field is dropped by the row being
+    # absent throughout rather than by the trailing padding being removed
+    missing = _with_array(_store(tmp_path / 'missing.vcz', [_snp(pos=10)]),
+                          'variant_AC', [[-1, -1]], 'int32', ['variants', 'values'])
+
+    assert [variant.INFO for variant in ZarrVariantReader(missing)] == [{}]
+
 
 def test_multivalued_info_matches_cyvcf2(tmp_path):
     """The reference: the same records read through cyvcf2, which keeps the two apart."""
