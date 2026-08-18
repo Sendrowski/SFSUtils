@@ -14,6 +14,17 @@ import pytest
 
 import sfsutils as su
 from sfsutils.spectrum import AbstractSpectrum, AbstractSpectra
+import pandas as pd
+from sfsutils.io_handlers import get_called_alleles
+from sfsutils.spectrum import Spectrum, Spectra
+import os
+from sfsutils.cli import run
+from sfsutils.settings import Settings
+from sfsutils.io_handlers import Variant, DummyVariant
+from sfsutils.json_handlers import DataframeHandler
+import shutil
+from cyvcf2 import VCF
+from testing.test_degeneracy import _write_inputs
 
 
 def test_abstract_bases_not_instantiable():
@@ -465,3 +476,141 @@ def test_spectra_n_polymorphic_is_per_type_total():
     assert n_poly["a"] == 6 and n_poly["b"] == 3
     # each per-type entry is itself a scalar total
     assert np.isscalar(n_poly["a"])
+
+
+class TestMultiIndexRoundTrip:
+    """
+    ``MultiIndex`` axes must survive serialization.
+    """
+
+    def test_multiindex_columns_restored(self):
+        from sfsutils.json_handlers import DataframeHandler
+
+        df = pd.DataFrame([[1, 2], [3, 4]], columns=pd.MultiIndex.from_tuples([('a', 'x'), ('a', 'y')]))
+        handler = DataframeHandler.__new__(DataframeHandler)
+
+        restored = handler.restore(handler.flatten(df, {}))
+
+        assert isinstance(restored.columns, pd.MultiIndex)
+        pd.testing.assert_frame_equal(restored, df, check_dtype=False)
+
+
+def test_joint_sfs_with_numpy_population_names_round_trips(tmp_path):
+    """Population names taken from a numpy array must not make the user's own file unreadable."""
+    file = str(tmp_path / 'joint.json')
+
+    su.JointSFS(np.zeros((2, 2)), pop_names=np.array(['A', 'B'])).to_file(file)
+
+    assert su.JointSFS.from_file(file).pop_names == ['A', 'B']
+
+
+def test_joint_spectra_with_numpy_population_names_round_trips(tmp_path):
+    """The same holds for the dict-backed collection, whose names travel through its spectra."""
+    file = str(tmp_path / 'joint_spectra.json')
+
+    su.JointSpectra({'all': np.zeros((2, 2))}, pop_names=np.unique(np.array(['A', 'B']))).to_file(file)
+
+    assert su.JointSpectra.from_file(file).pop_names == ['A', 'B']
+
+
+def test_dataframe_handler_preserves_integer_index():
+    """A round-trip through DataframeHandler must keep an integer index integer (the default to_dict
+    orient turns integer index labels into strings once JSON-encoded)."""
+    df = pd.DataFrame({"x": [10, 20, 30]}, index=[0, 1, 2])
+    handler = DataframeHandler(context=None)
+
+    # emulate the JSON round-trip: integer dict keys become strings through json, lists do not
+    import json
+    flat = json.loads(json.dumps(handler.flatten(df, {})))
+    restored = handler.restore(flat)
+
+    assert restored.index.tolist() == [0, 1, 2]
+    assert restored.index.dtype == df.index.dtype
+    pd.testing.assert_frame_equal(restored, df)
+
+
+def test_dataframe_handler_restores_legacy_payload():
+    """A dataframe serialized in the legacy column->index mapping still restores (backward compatibility)."""
+    df = pd.DataFrame({"x": [1, 2]})
+    restored = DataframeHandler(context=None).restore({"data": df.to_dict()})
+    assert restored["x"].tolist() == [1, 2]
+
+
+@pytest.mark.parametrize("cls,spectrum", [
+    (su.TwoSpectra, su.TwoSFS(np.arange(25, dtype=float).reshape(5, 5))),
+    (su.JointSpectra, su.JointSFS(np.arange(9, dtype=float).reshape(3, 3))),
+])
+def test_aliased_spectra_serialize(cls, spectrum):
+    """One spectrum object stored under two keys is converted once, not once per key."""
+    restored = cls.from_json(cls({'a': spectrum, 'b': spectrum}).to_json())
+
+    assert set(restored.data) == {'a', 'b'}
+    assert np.allclose(restored.data['a'].data, spectrum.data)
+    assert np.allclose(restored.data['b'].data, spectrum.data)
+
+
+def test_to_file_leaves_an_existing_file_intact_when_rendering_fails(tmp_path, monkeypatch):
+    """The JSON is rendered before the target is opened, so a failure cannot truncate a good file."""
+    target = tmp_path / "spectra.json"
+    good = su.TwoSpectra({'a': su.TwoSFS(np.zeros((3, 3)))})
+    good.to_file(str(target))
+    content = target.read_text()
+
+    monkeypatch.setattr(su.TwoSpectra, 'to_json', lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError):
+        good.to_file(str(target))
+
+    assert target.read_text() == content
+
+
+def test_spectrum_to_file_leaves_an_existing_file_intact_when_rendering_fails(tmp_path, monkeypatch):
+    """The same ordering holds for the single-spectrum containers."""
+    target = tmp_path / "sfs.json"
+    sfs = su.TwoSFS(np.zeros((3, 3)))
+    sfs.to_file(str(target))
+    content = target.read_text()
+
+    monkeypatch.setattr(su.TwoSFS, 'to_json', lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with pytest.raises(RuntimeError):
+        sfs.to_file(str(target))
+
+    assert target.read_text() == content
+
+
+def test_payload_of_the_wrong_class_is_refused():
+    """A payload decoding to another spectrum type does not pass as this one."""
+    with pytest.raises(ValueError):
+        su.JointSFS.from_json(su.TwoSFS(np.zeros((3, 3))).to_json())
+
+
+@pytest.mark.parametrize("obj", [
+    su.Spectrum([0, 1, 2, 3, 0]),
+    su.TwoSFS(np.arange(25, dtype=float).reshape(5, 5)),
+    su.TwoLocusSFS(np.arange(25, dtype=float).reshape(5, 5)),
+    su.JointSFS(np.arange(9, dtype=float).reshape(3, 3)),
+])
+def test_spectrum_round_trip_still_works(obj, tmp_path):
+    """Screening the payload does not break the legitimate round-trip."""
+    target = tmp_path / "spectrum.json"
+    obj.to_file(str(target))
+    restored = type(obj).from_file(str(target))
+
+    assert isinstance(restored, type(obj))
+    assert np.allclose(restored.data, obj.data)
+
+
+@pytest.mark.parametrize("cls,spectrum", [
+    (su.TwoSpectra, su.TwoSFS(np.arange(25, dtype=float).reshape(5, 5))),
+    (su.JointSpectra, su.JointSFS(np.arange(9, dtype=float).reshape(3, 3))),
+])
+def test_spectra_container_round_trip_still_works(cls, spectrum, tmp_path):
+    """The dict-backed containers round-trip through file as well."""
+    target = tmp_path / "spectra.json"
+    obj = cls({'all': spectrum})
+    obj.to_file(str(target))
+    restored = cls.from_file(str(target))
+
+    assert isinstance(restored, cls)
+    assert np.allclose(restored.data['all'].data, spectrum.data)

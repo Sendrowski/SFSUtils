@@ -19,6 +19,16 @@ import sfsutils as su
 from sfsutils.annotation import _ESTSFSAncestralAnnotation, base_indices, SiteConfig, SiteInfo
 from sfsutils.io_handlers import count_sites, GFFHandler, get_called_bases, DummyVariant
 from testing import TestCase, requires
+from sfsutils.annotation import DegeneracyAnnotation, _CDSIndex, _CDSRecord
+from sfsutils.filtration import CodingSequenceFiltration
+from sfsutils.io_handlers import DummyVariant
+from sfsutils.settings import Settings
+from sfsutils.io_handlers import Variant, DummyVariant
+from sfsutils.json_handlers import DataframeHandler
+import shutil
+from cyvcf2 import VCF
+from sfsutils.cli import run
+from testing.test_degeneracy import _write_inputs
 
 
 @pytest.mark.inference
@@ -3920,3 +3930,365 @@ class FastAnnotationTestCase(TestCase):
         # upper bound below lower bound
         with self.assertRaises(ValueError):
             su.JCSubstitutionModel(bounds=dict(K=(10, 9)))
+
+
+CDS = pd.DataFrame(
+    [
+        ('ctg1', 10, 24, '+', 0, 'tx1'),
+        ('ctg1', 40, 54, '+', 1, 'tx1'),
+        ('ctg1', 45, 50, '-', 2, 'tx2'),
+        ('ctg1', 80, 94, '+', 0, 'tx2'),
+    ],
+    columns=['seqid', 'start', 'end', 'strand', 'phase', 'parent']
+)
+
+
+class _Handler:
+    """
+    Stand-in for the file handler, serving coding sequences from a frame held in memory.
+    """
+
+    def __init__(self, cds: pd.DataFrame):
+        """
+        :param cds: The coding sequences.
+        """
+        self._cds = cds
+
+    @staticmethod
+    def get_aliases(chrom: str):
+        """
+        :param chrom: The contig.
+        :return: The aliases of the contig.
+        """
+        return [chrom]
+
+    def _require_gff(self, name: str):
+        """
+        :param name: The name of the requiring component.
+        """
+        pass
+
+
+class _CountingContig:
+    """
+    Reference contig counting how often a base is read off it.
+    """
+
+    def __init__(self, seq: str):
+        """
+        :param seq: The sequence.
+        """
+        self.seq = seq
+        self.n_reads = 0
+        self.id = 'ctg1'
+
+    def __getitem__(self, item):
+        """
+        :param item: The position.
+        :return: The base.
+        """
+        self.n_reads += 1
+
+        return self.seq[item]
+
+
+class TestCDSRecord:
+    """
+    Test the record the coding sequence index hands out.
+    """
+
+    def test_record_holds_the_fields_of_the_frame_row(self):
+        """The record carries the same values as the row it stands in for."""
+        index = _CDSIndex(CDS)
+
+        for row in range(len(CDS)):
+            record = index.get(row)
+
+            assert isinstance(record, _CDSRecord)
+            assert list(record.values) == list(CDS.iloc[row].values)
+
+            for field in ['seqid', 'start', 'end', 'strand', 'phase', 'parent']:
+                assert getattr(record, field) == CDS.iloc[row][field]
+
+    def test_record_rejects_unknown_fields(self):
+        """The record holds exactly the fields of a coding sequence."""
+        record = _CDSIndex(CDS).get(0)
+
+        with pytest.raises(AttributeError):
+            record.attributes = 'Parent=tx1'
+
+    def test_index_without_transcripts_yields_records(self):
+        """A frame without a parent column still yields records, with no transcript."""
+        index = _CDSIndex(CDS.drop(columns=['parent']))
+
+        assert index.get(0).parent is None
+
+    def test_annotation_agrees_with_pandas_rows(self, monkeypatch):
+        """The records reproduce the annotations the pandas rows produced."""
+        seq = ''.join('ACGT'[i % 4] for i in range(120))
+
+        def annotate(patched: bool):
+            """
+            :param patched: Whether to hand out pandas rows instead of records.
+            :return: The annotations of every position.
+            """
+            if patched:
+                monkeypatch.setattr(_CDSIndex, 'get', lambda self, row: self.cds.iloc[row])
+            else:
+                monkeypatch.undo()
+
+            ann = DegeneracyAnnotation()
+            ann._handler = _Handler(CDS)
+            ann._contig = seq
+            ann._fetch_contig = lambda v: None
+
+            out = []
+            for pos in range(1, 100):
+                v = DummyVariant(ref=seq[pos - 1], pos=pos, chrom='ctg1')
+                ann.annotate_site(v)
+                out.append(dict(v.INFO))
+
+            return out
+
+        assert annotate(patched=True) == annotate(patched=False)
+
+    def test_filtration_reads_the_records(self):
+        """The coding sequence filtration keeps working on the records."""
+        f = CodingSequenceFiltration()
+        f._setup(_Handler(CDS))
+
+        kept = [pos for pos in range(1, 100) if f.filter_site(DummyVariant(ref='A', pos=pos, chrom='ctg1'))]
+
+        assert kept == list(range(10, 25)) + list(range(40, 55)) + list(range(80, 95))
+
+    def test_reference_base_is_not_read_for_a_discarded_message(self):
+        """The debug message is not assembled unless debug messages are emitted."""
+        contig = _CountingContig(''.join('ACGT'[i % 4] for i in range(120)))
+
+        def n_reads(level: int) -> int:
+            """
+            :param level: The log level of the annotation.
+            :return: The number of bases read off the contig.
+            """
+            ann = DegeneracyAnnotation()
+            ann._handler = _Handler(CDS)
+            ann._contig = contig
+            ann._fetch_contig = lambda v: None
+            ann._logger.setLevel(level)
+
+            contig.n_reads = 0
+            ann.annotate_site(DummyVariant(ref=contig.seq[14], pos=15, chrom='ctg1'))
+
+            return contig.n_reads
+
+        try:
+            assert n_reads(logging.WARNING) < n_reads(logging.DEBUG)
+        finally:
+            DegeneracyAnnotation()._logger.setLevel(logging.NOTSET)
+
+
+class TestMaxSites:
+    """
+    Test the site limit of the annotator.
+    """
+
+    def test_non_positive_max_sites_is_rejected(self):
+        """A limit of zero or less is not a valid number of sites to annotate."""
+        for max_sites in [0, -1]:
+            with pytest.raises(ValueError, match='max_sites'):
+                su.Annotator(
+                    source='resources/genome/betula/biallelic.subset.10000.vcf.gz',
+                    output='scratch/annotator.max_sites.vcf',
+                    max_sites=max_sites
+                )
+
+    def test_max_sites_is_honoured(self, tmp_path):
+        """The annotator stops after the requested number of sites."""
+        out = str(tmp_path / 'out.vcf')
+
+        su.Annotator(
+            source='resources/genome/betula/biallelic.subset.10000.vcf.gz',
+            output=out,
+            max_sites=7
+        ).annotate()
+
+        with open(out) as fh:
+            assert len([line for line in fh if not line.startswith('#')]) == 7
+
+
+def test_from_est_sfs_ingroup_count_uses_sum_not_max(tmp_path):
+    """n_ingroups is the sum of the first row's A,C,G,T counts, not their max; a polymorphic first row
+    (max < sum) must not shrink the sample size."""
+    # first data row is polymorphic: 6 + 0 + 14 + 0 = 20 ingroups, but max is 14
+    est = tmp_path / "polymorphic_first.txt"
+    est.write_text("6,0,14,0\t0,0,1,0\n20,0,0,0\t0,0,1,0\n0,0,20,0\t0,0,1,0\n")
+
+    anc = su.MaximumLikelihoodAncestralAnnotation.from_est_sfs(
+        file=str(est), model=su.JCSubstitutionModel(), n_runs=1, prior=None, parallelize=False)
+
+    assert anc.n_ingroups == 20
+
+
+def test_gff_remove_overlaps_groups_by_contig():
+    """remove_overlaps must not compare CDS across contig boundaries and drop the last CDS of a contig."""
+    import pandas as pd
+    from sfsutils.io_handlers import GFFHandler
+    df = pd.DataFrame([
+        {"seqid": "chr1", "start": 100, "end": 200}, {"seqid": "chr1", "start": 3000, "end": 5000},
+        {"seqid": "chr2", "start": 100, "end": 200}, {"seqid": "chr2", "start": 3000, "end": 5000},
+    ])
+    out = GFFHandler.remove_overlaps(df.copy())
+    assert len(out) == 4  # no real overlaps; the last CDS of chr1 must survive
+
+
+VCF_PATH = "resources/msprime/two_epoch.vcf"
+
+
+requires_vcf = pytest.mark.skipif(not os.path.exists(VCF_PATH), reason="msprime fixtures absent")
+
+
+def _n_records(file: str) -> int:
+    """
+    Count the variant records of a VCF.
+
+    :param file: The VCF path.
+    :return: The number of records.
+    """
+    return sum(1 for _ in VCF(file))
+
+
+def test_synonymy_annotation_factory():
+    """The factory builds the annotation the stratification needs."""
+    from sfsutils.cli import _build_annotations
+
+    built = _build_annotations(["synonymy"], None, 11)
+
+    assert len(built) == 1
+    assert isinstance(built[0], su.SynonymyAnnotation)
+
+
+@pytest.mark.skipif(not os.path.exists("resources/EST-SFS/test-data.txt"), reason="EST-SFS fixture absent")
+def test_ancestral_annotation_round_trip_still_works(tmp_path):
+    """The annotation payload carries numpy and scipy helpers, which stay decodable."""
+    anc = su.MaximumLikelihoodAncestralAnnotation.from_est_sfs(
+        file="resources/EST-SFS/test-data.txt",
+        model=su.JCSubstitutionModel(),
+        n_runs=1,
+        prior=su.KingmanPolarizationPrior(),
+        parallelize=False
+    )
+    anc.infer()
+
+    target = tmp_path / "anc.json"
+    anc.to_file(str(target))
+    restored = su.MaximumLikelihoodAncestralAnnotation.from_file(str(target))
+
+    assert isinstance(restored, su.MaximumLikelihoodAncestralAnnotation)
+    assert restored.params_mle == anc.params_mle
+
+
+def test_degeneracy_counters_reset_on_rewind():
+    """The counters describe a single pass, so a rewind clears them alongside n_annotated."""
+    ann = su.DegeneracyAnnotation()
+    ann.n_annotated = 7
+    ann.n_skipped = 13
+    ann.mismatches = ['a']
+    ann.errors = ['b']
+
+    ann._rewind()
+
+    assert (ann.n_annotated, ann.n_skipped, ann.mismatches, ann.errors) == (0, 0, [], [])
+
+
+def test_synonymy_counters_reset_on_rewind():
+    """The VEP and SnpEff comparison counters follow the same per-pass lifetime."""
+    ann = su.SynonymyAnnotation()
+    ann.n_skipped = 3
+    ann.vep_mismatches = ['a']
+    ann.snpeff_mismatches = ['b']
+    ann.n_vep_comparisons = 4
+    ann.n_snpeff_comparisons = 5
+
+    ann._rewind()
+
+    assert ann.n_skipped == 0
+    assert ann.vep_mismatches == [] and ann.snpeff_mismatches == []
+    assert ann.n_vep_comparisons == 0 and ann.n_snpeff_comparisons == 0
+
+
+def test_counters_describe_a_single_parse(tmp_path):
+    """Parsing twice with the same annotation reports the same counts, not the accumulated ones."""
+    vcf, fasta, gff = _write_inputs(tmp_path)
+
+    ann = su.DegeneracyAnnotation()
+    parser = su.Parser(source=vcf, n=2, fasta=fasta, gff=gff,
+                       annotations=[ann], stratifications=[su.DegeneracyStratification()])
+
+    parser.parse()
+    first = (ann.n_annotated, ann.n_skipped, len(ann.mismatches), len(ann.errors))
+
+    parser.parse()
+    second = (ann.n_annotated, ann.n_skipped, len(ann.mismatches), len(ann.errors))
+
+    assert first == second
+
+
+def test_counters_come_from_a_single_pass_with_a_target_site_counter(tmp_path):
+    """The target site counter rewinds mid-parse, so all counters must describe the same pass rather than
+    mixing an annotated count from one with a skipped count accumulated over both."""
+    vcf, fasta, gff = _write_inputs(tmp_path)
+
+    ann = su.DegeneracyAnnotation()
+    parser = su.Parser(
+        source=vcf, n=2, fasta=fasta, gff=gff,
+        annotations=[ann],
+        stratifications=[su.DegeneracyStratification()],
+        target_site_counter=su.TargetSiteCounter(n_samples=4, n_target_sites=100)
+    )
+
+    parser.parse()
+    first = (ann.n_annotated, ann.n_skipped, len(ann.mismatches), len(ann.errors))
+
+    parser.parse()
+
+    # a single pass sees at most the six sites of the input plus the four sampled monomorphic ones
+    assert ann.n_annotated + ann.n_skipped <= 10
+    assert (ann.n_annotated, ann.n_skipped, len(ann.mismatches), len(ann.errors)) == first
+
+
+@requires_vcf
+def test_annotator_without_annotations(tmp_path):
+    """The default annotation list is empty rather than absent."""
+    out = tmp_path / "out.vcf"
+    ann = su.Annotator(source=VCF_PATH, output=str(out))
+
+    assert ann.annotations == []
+
+    ann.annotate()
+
+    assert _n_records(str(out)) == 608
+
+
+@requires_vcf
+def test_annotator_releases_the_reader_when_setup_fails(tmp_path):
+    """A writer that cannot be opened must not leave the reader behind."""
+
+    class RecordingReader:
+        """A stand-in reader that records whether it was closed."""
+
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    ann = su.Annotator(source=VCF_PATH, output=str(tmp_path / "out.trees"), annotations=[])
+
+    # pre-empt the cached property, so the reader the teardown has to release is observable
+    reader = RecordingReader()
+    ann.__dict__['_reader'] = reader
+
+    with pytest.raises(ValueError):
+        ann.annotate()
+
+    assert reader.closed

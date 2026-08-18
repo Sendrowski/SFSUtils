@@ -15,6 +15,9 @@ from sfsutils.io_handlers import (
     get_distinct_called_alleles,
     get_distinct_called_bases,
 )
+import pandas as pd
+from sfsutils.io_handlers import get_called_alleles
+from sfsutils.spectrum import Spectrum, Spectra
 
 VCF = "resources/msprime/two_epoch.vcf"
 VCZ = "resources/msprime/two_epoch.vcz"
@@ -342,3 +345,17 @@ class TestSpectraUnchanged:
         expected = np.asarray(self._parse(source, **kwargs).all.data)
 
         np.testing.assert_array_equal(observed, expected)
+
+
+class TestCalledAlleles:
+    """
+    Multi-character alleles must count as one allele per haplotype.
+    """
+
+    def test_mnp_counts_as_two_alleles(self):
+        """A bi-allelic MNP has two alleles, not four bases."""
+        assert list(get_called_alleles(['AT|GC', 'AT|AT'])) == ['AT', 'GC']
+
+    def test_missing_calls_ignored(self):
+        """Missing calls do not contribute an allele."""
+        assert list(get_called_alleles(['./.', 'A|T'])) == ['A', 'T']

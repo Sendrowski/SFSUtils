@@ -5,6 +5,14 @@ from numpy import testing
 
 from sfsutils import spectrum, Spectra, Spectrum
 from testing import TestCase
+import sfsutils as su
+from sfsutils.io_handlers import get_called_alleles
+from sfsutils.spectrum import Spectrum, Spectra
+import os
+from sfsutils.cli import run
+from sfsutils.settings import Settings
+from sfsutils.io_handlers import Variant, DummyVariant
+from sfsutils.json_handlers import DataframeHandler
 
 
 def _watterson_theta(data):
@@ -938,3 +946,306 @@ class SpectraTestCase(TestCase):
         self.assertAlmostEqual(scaled.data[0], 9450)           # all-ancestral complement (was 9650)
         self.assertAlmostEqual(scaled.theta, 2 * div.theta)    # theta actually doubled
         np.testing.assert_array_almost_equal(scaled.data[1:-1], [200, 100, 50])
+
+
+def _two_sfs(theta: float, n: int = 8, rho: float = 0.4, eps: float = 0.05, sites: float = 3e9):
+    """
+    An all-sites-like two-SFS with an exactly known branch-length covariance.
+
+    The joint class distribution is ``P = outer(m, m) + K`` with ``K`` symmetric and of zero row sum, so the
+    marginal is exactly the site-frequency spectrum ``m`` and the branch-length covariance is exactly ``K``. Over
+    the polymorphic interior ``K`` is built to have unit diagonal and off-diagonal correlation ``rho``.
+
+    :param theta: Per-site polymorphism probability, setting the scale of the polymorphic classes
+    :param n: Sample size
+    :param rho: Built-in interior branch-length correlation
+    :param eps: Relative amplitude of the branch-length fluctuations
+    :param sites: Number of sites the probabilities are scaled to
+    :return: The two-SFS, its exact covariance and its exact interior correlation
+    """
+    m = np.zeros(n + 1)
+    m[1:n] = theta / np.arange(1, n)
+    m[n] = theta / 2
+    m[0] = 1 - m[1:].sum()
+
+    corr = np.full((n - 1, n - 1), rho)
+    np.fill_diagonal(corr, 1.0)
+
+    cov = np.zeros((n + 1, n + 1))
+    cov[1:n, 1:n] = eps ** 2 * np.outer(m[1:n], m[1:n]) * corr
+
+    # push the residual into the monomorphic bin so every row sums to zero and the marginal stays exactly m
+    residual = cov.sum(axis=1)
+    cov[0, :] -= residual
+    cov[:, 0] -= residual
+    cov[0, 0] += residual.sum()
+
+    joint = np.outer(m, m) + cov
+    assert joint.min() > 0
+
+    return su.TwoSFS(joint * sites), cov, corr
+
+
+@pytest.mark.parametrize('theta', [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-10])
+def test_corr_recovers_a_genuine_correlation_at_low_diversity(theta):
+    """The covariance of a low-diversity spectrum lives on the scale of the class probabilities, not on the
+    scale of the monomorphic bin, so a floor set by the latter censors a genuine signal however much data it
+    rests on."""
+    two, cov, corr = _two_sfs(theta)
+
+    np.testing.assert_allclose(np.asarray(two.cov())[1:-1, 1:-1], cov[1:-1, 1:-1], rtol=1e-10, atol=0)
+    np.testing.assert_allclose(np.asarray(two.corr())[1:-1, 1:-1], corr, atol=1e-9)
+
+
+def test_corr_is_invariant_to_the_scale_of_the_input():
+    """The correlation is a ratio, so a spectrum supplied as probabilities has to give the same answer as the
+    same spectrum supplied as counts."""
+    counts, _, corr = _two_sfs(1e-6)
+    probs, _, _ = _two_sfs(1e-6, sites=1.0)
+
+    np.testing.assert_allclose(np.asarray(probs.corr()), np.asarray(counts.corr()), atol=1e-12)
+    np.testing.assert_allclose(np.asarray(probs.corr())[1:-1, 1:-1], corr, atol=1e-9)
+
+
+def test_corr_matches_a_shared_genealogy_reference():
+    """An exact Poisson-on-shared-genealogy reference: two sites mutate independently on one random genealogy,
+    so their class correlation follows from the branch-length fluctuations alone."""
+    rng = np.random.default_rng(7)
+    n, reps = 5, 20000
+
+    lengths = rng.gamma(shape=np.array([3.0, 2.0, 1.5, 1.0]), size=(reps, n - 1)) * rng.gamma(2.0, size=(reps, 1))
+
+    for theta in [1e-3, 1e-5, 1e-7]:
+        q = np.zeros((reps, n + 1))
+        q[:, 1:n] = theta * lengths / lengths.sum(axis=1).mean()
+        q[:, 0] = 1 - q[:, 1:].sum(axis=1)
+
+        joint = (q[:, :, None] * q[:, None, :]).mean(axis=0)
+        cov = joint - np.outer(q.mean(axis=0), q.mean(axis=0))
+        sd = np.sqrt(np.diag(cov)[1:n])
+        expected = cov[1:n, 1:n] / np.outer(sd, sd)
+
+        # the reference carries a real signal, so the test would be vacuous if it did not
+        assert np.abs(expected - np.eye(n - 1)).max() > 0.3
+
+        np.testing.assert_allclose(np.asarray(su.TwoSFS(joint * 1e9).corr())[1:n, 1:n], expected, atol=1e-9)
+
+
+def test_fold_leaves_a_single_bin_spectrum_alone():
+    """A one-bin spectrum has no upper half to fold into the lower one, so folding is the identity."""
+    sfs = su.Spectrum([5.0])
+
+    np.testing.assert_array_equal(sfs.fold().data, [5.0])
+    assert sfs.fold().n_sites == 5.0
+    assert sfs.is_folded()
+
+
+@pytest.mark.parametrize('n', range(9))
+def test_fold_matches_a_brute_force_reference(n):
+    """Folding maps bin i onto min(i, n - i)."""
+    data = np.arange(1.0, n + 2)
+
+    expected = np.zeros(n + 1)
+    for i, count in enumerate(data):
+        expected[min(i, n - i)] += count
+
+    np.testing.assert_allclose(su.Spectrum(data).fold().data, expected)
+
+
+def test_subsampling_a_folded_spectrum_to_one_bin_keeps_its_sites():
+    """The n = 0 subsample of a folded spectrum takes the folding branch, which used to blank it."""
+    sfs = su.Spectrum([10.0, 1.0, 2.0, 0.0])
+
+    np.testing.assert_array_equal(sfs.fold().subsample(0).data, sfs.subsample(0).data)
+    assert sfs.fold().subsample(0).n_sites == 13.0
+
+
+def test_merge_groups_rejects_a_level_some_type_does_not_have():
+    """A type with fewer levels has no name at the requested level, and used to be dropped together with all
+    of its sites."""
+    spectra = su.Spectra({'a.b': [0.0, 1, 2, 3, 4, 5, 6], 'c': [0.0, 1, 2, 3, 4, 5, 6]})
+
+    with pytest.raises(ValueError, match="'c'"):
+        spectra.merge_groups(1)
+
+    with pytest.raises(ValueError, match="'c'"):
+        spectra.merge_groups([0, 1])
+
+
+def test_merge_groups_keeps_every_site_at_a_shared_level():
+    """Level 0 exists for every type, so merging over it conserves the sites."""
+    spectra = su.Spectra({'a.b': [0.0, 1, 2, 3, 4, 5, 6], 'c': [0.0, 1, 2, 3, 4, 5, 6]})
+    merged = spectra.merge_groups(0)
+
+    assert merged.types == ['a', 'c']
+    assert merged.n_sites.sum() == spectra.n_sites.sum() == 42.0
+
+
+def test_merge_groups_still_merges_equally_deep_names():
+    """Well-formed names are unaffected, including negative levels."""
+    spectra = su.Spectra({'a.b.c': [0.0, 1, 2], 'd.e.f': [0.0, 1, 2]})
+
+    assert spectra.merge_groups([1, 2]).types == ['b.c', 'e.f']
+    assert spectra.merge_groups(-1).types == ['c', 'f']
+    assert spectra.merge_groups(-1).n_sites.sum() == spectra.n_sites.sum()
+
+
+def test_corr_reports_how_much_of_the_interior_it_zeroed(caplog):
+    """Zeroing is indistinguishable from a genuine zero correlation in the returned matrix, so the count is
+    the only way a caller learns their spectrum sits at the resolution limit."""
+    import logging
+
+    f = np.array([1e6, 500, 200, 120, 90, 3000])
+
+    with caplog.at_level(logging.INFO, logger='sfsutils'):
+        su.TwoSFS(np.outer(f, f)).corr()
+
+    assert any('Zeroed 16 of 16 interior correlations' in record.message for record in caplog.records)
+
+
+def test_corr_stays_quiet_when_it_zeroes_nothing(caplog):
+    import logging
+
+    rng = np.random.default_rng(0)
+
+    # the interior sits far below the monomorphic bin, so a floor taken from the monomorphic scale would
+    # censor all of it while the floor set by the class probabilities censors none
+    data = np.zeros((6, 6))
+    data[1:-1, 1:-1] = rng.random((4, 4)) + 0.5
+    data[0, 0] = 1e14
+    data = data + data.T
+
+    with caplog.at_level(logging.INFO, logger='sfsutils'):
+        su.TwoSFS(data).corr()
+
+    assert not any('interior correlations' in record.message for record in caplog.records)
+
+
+class TestNumpyScalarArithmetic:
+    """
+    A numpy scalar on the left must defer to the reflected operator instead of broadcasting.
+    """
+
+    def test_spectrum_rmul(self):
+        assert (np.float64(2) * Spectrum([1, 2, 3])).data.tolist() == [2, 4, 6]
+
+    def test_spectra_rmul(self):
+        spectra = Spectra(dict(a=[1, 2, 3]))
+
+        assert (np.float64(2) * spectra).data['a'].tolist() == [2, 4, 6]
+
+
+def test_corr_of_independent_loci_is_zero():
+    """A two-SFS that factorizes exactly describes independent loci, whose branch-length correlation is zero
+    rather than the maximal +/-1 a covariance-scaled zero-variance floor produces."""
+    f = np.array([1e6, 500.0, 200.0, 120.0, 90.0, 3000.0])
+    two = su.TwoSFS(np.outer(f, f))
+
+    # the covariance is at roundoff, as independence demands
+    assert np.abs(np.asarray(two.cov())).max() < 1e-15
+
+    np.testing.assert_array_equal(np.asarray(two.corr()), np.zeros((6, 6)))
+
+
+def test_corr_of_perturbed_independent_loci_is_zero():
+    """A perturbation at the roundoff scale of the covariance carries no signal, so no class may read as
+    correlated. The perturbation is relative because the roundoff of ``P(i, j) - P(i) P(j)`` is."""
+    f = np.array([1e6, 500.0, 200.0, 120.0, 90.0, 3000.0])
+    rng = np.random.default_rng(0)
+
+    data = np.outer(f, f) * (1 + 1e-14 * rng.standard_normal((6, 6)))
+
+    np.testing.assert_allclose(np.asarray(su.TwoSFS(data).corr()), 0.0, atol=1e-9)
+
+
+def test_corr_keeps_unit_diagonal_for_a_genuine_signal():
+    """A spectrum with real branch-length variance keeps the unit diagonal the correlation promises."""
+    rng = np.random.default_rng(1)
+
+    # the interior sits far below the monomorphic bin, where a floor taken from the monomorphic scale
+    # rather than from the class probabilities censors the whole interior
+    data = np.zeros((6, 6))
+    data[1:-1, 1:-1] = rng.random((4, 4)) + 0.5
+    data[0, 0] = 1e14
+    data = data + data.T
+
+    r = np.asarray(su.TwoSFS(data).corr())
+
+    np.testing.assert_allclose(np.diag(r)[1:-1], 1.0, atol=1e-9)
+    assert np.all(np.abs(r) <= 1 + 1e-12)
+
+
+def test_resample_never_produces_negative_counts():
+    """A SNP-only spectrum carries no monomorphic mass, so deriving bin 0 as a residual makes it negative;
+    every bin has to be its own Poisson draw."""
+    sfs = su.Spectrum([0.0, 100.0, 50.0, 20.0, 10.0])
+
+    for seed in range(200):
+        assert np.all(np.asarray(sfs.resample(seed)) >= 0)
+
+
+def test_resample_draws_the_monomorphic_bin_independently():
+    """Bin 0 is resampled like any other class, so it varies around its own mean instead of absorbing the
+    noise of the remaining bins."""
+    sfs = su.Spectrum([500.0, 100.0, 50.0, 20.0, 10.0])
+
+    draws = np.array([np.asarray(sfs.resample(seed))[0] for seed in range(300)])
+
+    assert abs(draws.mean() - 500) < 10
+
+    # an independent draw of bin 0 has the spread of Poisson(500); deriving it as n_sites minus the
+    # remaining draws leaves only the spread of those, sqrt(180 + 10)
+    assert draws.std() == pytest.approx(np.sqrt(500), rel=0.25)
+
+
+def test_indexing_an_empty_spectra_raises_key_error():
+    """An empty Spectra has no string columns to match against, which must read as a missing type rather
+    than a pandas accessor error."""
+    with pytest.raises(KeyError):
+        su.Spectra({})['all']
+
+
+def test_indexing_a_non_matching_key_raises_key_error():
+    """A mistyped type name is an error, not an empty selection."""
+    spectra = su.Spectra({'neutral': [0, 1, 2, 0], 'selected': [0, 3, 4, 0]})
+
+    with pytest.raises(KeyError):
+        spectra['neutrol']
+
+    # an array of keys keeps its selection semantics
+    assert spectra[['neutrol']].types == []
+    assert spectra['neutral'].to_list() == [0, 1, 2, 0]
+
+
+def test_is_empty_across_the_collections():
+    """The emptiness of a collection is about parsed mass, not about the number of types: a two-SFS parse
+    always carries an ``all`` type."""
+    assert su.Spectra({}).is_empty
+    assert su.Spectra({'all': [0, 0, 0, 0]}).is_empty
+    assert not su.Spectra({'all': [0, 1, 0, 0]}).is_empty
+
+    assert su.TwoSpectra({'all': np.zeros((5, 5))}).is_empty
+    assert not su.TwoSpectra({'all': np.eye(5)}).is_empty
+
+    assert su.JointSpectra({'all': np.zeros((3, 3))}).is_empty
+    assert not su.JointSpectra({'all': np.eye(3)}).is_empty
+
+
+def test_normalize_on_spectrum_without_polymorphic_sites():
+    """Normalising a spectrum with no polymorphic sites leaves the interior zero rather than dividing by
+    zero into NaNs."""
+    normalized = su.Spectrum([100, 0, 0, 0, 0]).normalize()
+    assert not np.isnan(normalized.to_list()).any()
+    assert normalized.to_list()[1:-1] == [0, 0, 0]
+
+
+def test_scale_theta_on_all_monomorphic_spectrum():
+    """Scaling theta on a spectrum with no polymorphic sites (theta == 0) must not divide by zero."""
+    scaled = su.Spectrum([100, 0, 0, 0]).scale_theta(0.01)
+    assert not np.isnan(scaled.to_list()).any()
+
+
+def test_spectra_normalize_on_empty_spectra():
+    """Normalising an entirely empty spectra must not produce NaN columns."""
+    empty = su.Spectra.from_spectra({"a": su.Spectrum([0, 0, 0, 0]), "b": su.Spectrum([0, 0, 0, 0])})
+    assert not np.isnan(empty.normalize().to_numpy()).any()

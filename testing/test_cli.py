@@ -12,6 +12,13 @@ import sfsutils as su
 from sfsutils.settings import Settings
 from sfsutils.cli import (build_parser, run, _split_csv, _parse_pops, _lookup,
                           _build_filtrations, _build_stratifications, _build_annotations)
+import pandas as pd
+from sfsutils.io_handlers import get_called_alleles
+from sfsutils.spectrum import Spectrum, Spectra
+from sfsutils.cli import run
+import shutil
+from cyvcf2 import VCF as VCFReader
+from testing.test_degeneracy import _write_inputs
 
 VCF = "resources/msprime/two_epoch.vcf"
 JOINT_VCF = "resources/msprime/two_epoch_joint.vcf"
@@ -179,3 +186,163 @@ def test_run_filter(tmp_path):
     out = tmp_path / "filtered.vcf"
     code = run(["-q", "filter", "--vcf", VCF, "--filter", "snp,poly-allelic", "--output", str(out)])
     assert code == 0 and out.exists() and out.stat().st_size > 0
+
+
+class TestCLIWiring:
+    """
+    ``--contigs`` reaches the contig stratification, and a malformed ``--pops`` exits cleanly.
+    """
+
+    def test_contigs_reach_stratification(self):
+        from sfsutils.cli import _build_stratifications
+
+        assert _build_stratifications(['contig'], ['chr1'])[0].contigs == ['chr1']
+
+    def test_malformed_pops_exits(self):
+        from sfsutils.cli import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(['parse', '--source', 'x.vcf', '--n', '10', '--out', 'o.csv',
+                                       '--pops', 'nonsense'])
+
+
+VCF_PATH = "resources/msprime/two_epoch.vcf"
+
+
+requires_vcf = pytest.mark.skipif(not os.path.exists(VCF_PATH), reason="msprime fixtures absent")
+
+
+@requires_vcf
+@pytest.mark.parametrize('n', ['0', '-3'])
+def test_parse_rejects_non_positive_n(tmp_path, n):
+    """A sample size below one either writes a nonsense single-bin spectrum or raises a raw numpy error."""
+    out = str(tmp_path / 'sfs.json')
+
+    with pytest.raises(SystemExit):
+        run(['-q', 'parse', '--vcf', VCF_PATH, '--n', n, '--output', out])
+
+    assert not os.path.exists(out)
+
+
+@requires_vcf
+@pytest.mark.parametrize('option', ['--two-sfs-distance', '--n-ingroups'])
+def test_parse_rejects_non_positive_counts(tmp_path, option):
+    """The remaining count-valued options are validated alongside ``--n``."""
+    with pytest.raises(SystemExit):
+        run(['-q', 'parse', '--vcf', VCF_PATH, '--n', '8', option, '0',
+             '--output', str(tmp_path / 'sfs.json')])
+
+
+
+
+ZARR_PATH = "resources/msprime/two_epoch.vcz"
+
+
+
+
+requires_zarr = pytest.mark.skipif(not os.path.exists(ZARR_PATH), reason="msprime fixtures absent")
+
+
+def _n_records(file: str) -> int:
+    """
+    Count the variant records of a VCF.
+
+    :param file: The VCF path.
+    :return: The number of records.
+    """
+    return sum(1 for _ in VCFReader(file))
+
+
+@requires_vcf
+@pytest.mark.parametrize("argv_tail", [
+    ["filter", "--filter", "no"],
+    ["parse", "--n", "10"],
+    ["annotate", "--annotation", "degeneracy"],
+])
+def test_output_equal_to_input_is_refused(tmp_path, argv_tail):
+    """Every subcommand refuses to write its output over the input, leaving the input untouched."""
+    target = tmp_path / "self.vcf"
+    shutil.copy(VCF_PATH, target)
+    before = _n_records(str(target))
+
+    with pytest.raises(SystemExit) as exc:
+        run([argv_tail[0], "--vcf", str(target), *argv_tail[1:], "--output", str(target)])
+
+    assert "resolves to the input source" in str(exc.value)
+    assert _n_records(str(target)) == before
+
+
+@requires_vcf
+def test_output_equal_to_input_is_refused_through_a_non_canonical_path(tmp_path):
+    """The comparison resolves both paths, so a detour through '.' and '..' is caught as well."""
+    target = tmp_path / "self.vcf"
+    shutil.copy(VCF_PATH, target)
+    (tmp_path / "sub").mkdir()
+
+    with pytest.raises(SystemExit):
+        run(["filter", "--vcf", str(target), "--filter", "no",
+             "--output", str(tmp_path / "sub" / ".." / "self.vcf")])
+
+    assert _n_records(str(target)) == 608
+
+
+@requires_zarr
+def test_zarr_output_equal_to_zarr_input_is_refused(tmp_path):
+    """A zarr store is a directory, and overwriting it in place is the same hazard as for a VCF."""
+    target = tmp_path / "store.vcz"
+    shutil.copytree(ZARR_PATH, target)
+    before = sorted(p.name for p in target.iterdir())
+
+    with pytest.raises(SystemExit):
+        run(["filter", "--zarr", str(target), "--filter", "no", "--output", str(target)])
+
+    assert sorted(p.name for p in target.iterdir()) == before
+
+
+@requires_vcf
+def test_distinct_output_is_still_accepted(tmp_path):
+    """The guard only rejects a genuine collision."""
+    out = tmp_path / "filtered.vcf"
+
+    assert run(["filter", "--vcf", VCF_PATH, "--filter", "no", "--output", str(out)]) == 0
+    assert _n_records(str(out)) == 608
+
+
+def test_synonymy_annotation_is_reachable_from_the_cli(tmp_path):
+    """--annotate synonymy produces the tag --stratify synonymy consumes."""
+    vcf, fasta, gff = _write_inputs(tmp_path)
+    out = tmp_path / "sfs.csv"
+
+    code = run(["parse", "--vcf", vcf, "--n", "2", "--fasta", fasta, "--gff", gff,
+                "--annotate", "synonymy", "--stratify", "synonymy", "--filter", "snp",
+                "--output", str(out)])
+
+    assert code == 0
+
+    spectra = su.Spectra.from_file(str(out))
+    assert set(spectra.types) == {"neutral", "selected"}
+    assert spectra.n_sites.sum() > 0
+
+
+@pytest.mark.parametrize("command,extra", [
+    ("parse", ["--n", "10"]),
+    ("filter", ["--filter", "no"]),
+    ("annotate", ["--annotation", "degeneracy"]),
+])
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_max_sites_below_one_is_a_usage_error(command, extra, value):
+    """A limit the library stop conditions can never reach is rejected as a usage error."""
+    with pytest.raises(SystemExit) as exc:
+        run([command, "--vcf", "x.vcf", *extra, "--max-sites", value, "--output", "out"])
+
+    assert exc.value.code == 2
+
+
+def test_max_sites_of_one_is_accepted():
+    """The smallest limit the stop conditions can reach stays valid."""
+    from sfsutils.cli import build_parser
+
+    ns = build_parser().parse_args(["filter", "--vcf", "x.vcf", "--filter", "no",
+                                    "--max-sites", "1", "--output", "o.vcf"])
+
+    assert ns.max_sites == 1
