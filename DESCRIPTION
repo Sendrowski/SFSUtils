@@ -1,6 +1,6 @@
 Package: sfsutils
 Title: Parsing of site-frequency spectra (SFS) from VCF files
-Version: 1.0.0
+Version: 1.0.1
 Authors@R:
     person("Janek", "Sendrowski", , "sendrowski.janek@gmail.com", role = c("aut", "cre"))
 Description: An R wrapper for the 'sfsutils' Python package which provides fast and flexible parsing of site-frequency spectra (SFS) from VCF files, including annotation, filtration, and stratification of sites.
