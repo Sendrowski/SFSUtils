@@ -163,6 +163,10 @@ class MaskedFiltration(Filtration, ABC):
 
             def _check(names, label):
                 """Reject names that are absent from the input rather than quietly ignoring them."""
+                # a sample table (one row per sample) is matched cell-wise by np.isin and not checked
+                if isinstance(names, pd.DataFrame):
+                    return
+
                 missing = sorted(set(names) - set(samples.tolist()))
 
                 if missing:

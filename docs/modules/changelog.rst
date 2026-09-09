@@ -3,6 +3,10 @@
 Changelog
 =========
 
+[1.0.1] - 2026-09-09
+^^^^^^^^^^^^^^^^^^^^
+- ``include_samples`` / ``exclude_samples`` of the filtrations accept a sample table again.
+
 [1.0.0] - 2026-07-22
 ^^^^^^^^^^^^^^^^^^^^
 First stable release, consolidating extensive correctness, performance and robustness work on the beta.

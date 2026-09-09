@@ -2040,3 +2040,14 @@ def test_snp_filtration_drops_indels():
     assert f.filter_site(Variant(ref="A", pos=2, chrom="1", alt=["T"], gt_bases=["A/T"], is_snp=True)) is True
     # an SNP that is monomorphic among the included samples is still dropped
     assert f.filter_site(Variant(ref="A", pos=3, chrom="1", alt=["T"], gt_bases=["A/A"], is_snp=True)) is False
+
+
+def test_masked_filtration_accepts_sample_table():
+    """A sample table with one row per sample selects the samples named in its cells."""
+    f = su.SNPFiltration(use_parser=False, include_samples=pd.DataFrame(dict(id=['s1', 's3'], species=['x', 'x'])))
+    f._handler = Mock()
+    f._handler._reader.samples = ['s1', 's2', 's3']
+
+    f._prepare_samples_mask()
+
+    np.testing.assert_array_equal(f._samples_mask, [True, False, True])
