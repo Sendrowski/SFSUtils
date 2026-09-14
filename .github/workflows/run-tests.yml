@@ -3,7 +3,7 @@
 # large, uncommitted genome data are skip-guarded (they skip when the data is absent),
 # so no slow/inference marker is needed. Dependencies are installed with uv (no conda).
 
-name: Run tests
+name: tests
 
 on:
   push:
