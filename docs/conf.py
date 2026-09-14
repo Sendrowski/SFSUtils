@@ -3,11 +3,12 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-import datetime
 import sys
 import warnings
 
 sys.path.append('..')
+
+from sfsutils import __version__
 
 # sphinx_autodoc_typehints itself calls a Sphinx API removed in Sphinx 10; the deprecation comes from
 # the extension, not from this project, so silence it to keep the build output clean.
@@ -17,10 +18,9 @@ warnings.filterwarnings('ignore', message=r'.*set_application.*is deprecated.*')
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'sfsutils'
-year = datetime.datetime.now().year
-copyright = f'{year}, Janek Sendrowski'
 author = 'Janek Sendrowski'
-release = '1.0.1'
+release = __version__
+html_show_copyright = False
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
