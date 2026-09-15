@@ -1,0 +1,16 @@
+INFO:Filterer: Start filtering
+INFO:Filterer: Loading VCF file
+Filterer>Counting sites: 608it [--:--, --it/s]
+Filterer>Processing sites: 100%|██████████| 608/608 [--:--<--:--, --it/s]
+INFO:SNPFiltration: Filtered out 0 sites.
+INFO:Filterer: Filtered out 0 of 608 sites in total.
+INFO:Filterer: Start filtering
+INFO:Filterer: Loading VCF file
+Filterer>Counting sites: 608it [--:--, --it/s]
+Filterer>Processing sites: 100%|██████████| 608/608 [--:--<--:--, --it/s]
+INFO:SNPFiltration: Filtered out 0 sites.
+INFO:Filterer: Filtered out 0 of 608 sites in total.
+INFO:Filterer: Start filtering
+Filterer>Processing sites: 100%|██████████| 608/608 [--:--<--:--, --it/s]
+INFO:SNPFiltration: Filtered out 0 sites.
+INFO:Filterer: Filtered out 0 of 608 sites in total.

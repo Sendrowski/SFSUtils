@@ -1,0 +1,15 @@
+INFO:Annotator: Start annotating
+INFO:Annotator: Loading VCF file
+INFO:Annotator: Loading VCF file
+INFO:MaximumLikelihoodAncestralAnnotation: Subsampling 10 ingroup haplotypes probabilistically from 378 individuals in total.
+INFO:MaximumLikelihoodAncestralAnnotation: Using 1 outgroup samples (ERR2103730).
+Annotator>Counting sites: 10000it [--:--, --it/s]
+MaximumLikelihoodAncestralAnnotation>Parsing sites: 100%|██████████| 10000/10000 [--:--<--:--, --it/s]
+INFO:MaximumLikelihoodAncestralAnnotation: Sampling mono-allelic sites.
+MaximumLikelihoodAncestralAnnotation>Sampling mono-allelic sites: 100%|██████████| 100000/100000 [--:--<--:--, --it/s]
+INFO:MaximumLikelihoodAncestralAnnotation: Extrapolating to 127090 mutational target sites based on the number of sites parsed.
+INFO:MaximumLikelihoodAncestralAnnotation: Included 133779 sites for the inference (1027 polymorphic, 132752 monomorphic).
+MaximumLikelihoodAncestralAnnotation>Optimizing rates: 100%|██████████| 10/10 [--:--<--:--, --it/s]
+Annotator>Processing sites: 100%|██████████| 10000/10000 [--:--<--:--, --it/s]
+INFO:MaximumLikelihoodAncestralAnnotation: Annotated 10000 sites.
+INFO:MaximumLikelihoodAncestralAnnotation: There were 195 mismatches between the most likely ancestral allele and the ad-hoc ancestral allele annotation.

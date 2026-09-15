@@ -1,0 +1,8 @@
+INFO:Annotator: Start annotating
+INFO:Annotator: Loading GFF file
+INFO:sfsutils: Unzipping resources/genome/betula/genome.gff.gz to <tmp>/tmp--------.gff
+INFO:Annotator: Loading FASTA file
+INFO:Annotator: Loading VCF file
+Annotator>Counting sites: 10000it [--:--, --it/s]
+Annotator>Processing sites: 100%|██████████| 10000/10000 [--:--<--:--, --it/s]
+INFO:DegeneracyAnnotation: Annotated 3566 sites.

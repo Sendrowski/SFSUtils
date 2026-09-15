@@ -1,0 +1,12 @@
+INFO:Parser: Using stratification: [neutral, selected].[A, C, G, T].
+INFO:Parser: Loading VCF file
+INFO:Parser: Loading GFF file
+INFO:Parser: Loading FASTA file
+Parser>Counting sites: 10000it [--:--, --it/s]
+Parser>Processing sites: 100%|██████████| 10000/10000 [--:--<--:--, --it/s]
+INFO:PolyAllelicFiltration: Filtered out 0 sites.
+INFO:DegeneracyStratification: Number of sites with valid type: 2538
+INFO:AncestralBaseStratification: Number of sites with valid type: 2538
+INFO:DegeneracyAnnotation: Annotated 3494 sites.
+INFO:Parser: Skipped 401 sites without ancestral allele information.
+INFO:Parser: Included 2538 out of 10000 sites in total from the input.

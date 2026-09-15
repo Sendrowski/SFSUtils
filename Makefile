@@ -2,6 +2,7 @@
 #   make test        fast tier only (the pytest.ini default: -m "not slow"); what CI runs
 #   make test-full   the entire suite incl. the slow tier (end-to-end VCF parsing + est-sfs)
 #   make docs        rebuild the HTML docs from scratch (clean + html)
+#   make notebooks   execute the User Guide sources, merge the pages and write their outputs to docs/outputs
 #   make clean       remove the built docs
 #
 # The slow tier (marked `slow` in the tests) is the end-to-end VCF parsing/annotation and
@@ -17,7 +18,7 @@ PYTEST ?= $(shell conda run -n dev-sfsutils which pytest 2>/dev/null || echo pyt
 # or disable with `make test XDIST=""` for a serial run (useful when debugging).
 XDIST ?= -n auto
 
-.PHONY: help test test-full test-r coverage docs clean
+.PHONY: help test test-full test-r coverage docs notebooks clean
 
 help:
 	@echo "Targets:"
@@ -26,6 +27,7 @@ help:
 	@echo "  make coverage   # slow tests on committed data only (-m 'not very_slow'), with coverage report"
 	@echo "  make test-r     # R wrapper plotting tests (needs the r-sfsutils env; see envs/r.yaml)"
 	@echo "  make docs       # rebuild HTML docs from scratch (clean + html)"
+	@echo "  make notebooks  # execute the User Guide sources, merge the pages and write their outputs"
 	@echo "  make clean      # remove the built docs"
 
 test:
@@ -50,6 +52,11 @@ docs:
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
 	@echo "Docs built -> docs/_build/html/index.html"
+
+# execute the User Guide sources in their conda env, as many notebooks at a time as there are cores, merge the pages and
+# write their displayed outputs to docs/outputs
+notebooks:
+	cd snakemake && snakemake --use-conda --cores all --scheduler greedy doc_pages
 
 clean:
 	$(MAKE) -C docs clean

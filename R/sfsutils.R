@@ -1,15 +1,5 @@
 if (getRversion() >= "2.15.1") utils::globalVariables(c(".data"))
 
-# vector of required packages
-required_packages <- c("reticulate", "ggplot2", "cowplot", "RColorBrewer", "scales")
-
-# install required R packages
-for(package in required_packages){
-  if(!package %in% installed.packages()[,"Package"]){
-    install.packages(package)
-  }
-}
-
 #' Check if the `sfsutils` Python module is installed
 #'
 #' This function uses the reticulate package to verify if the `sfsutils` Python
@@ -144,8 +134,7 @@ load_sfsutils <- function(install = FALSE) {
     install_sfsutils(silent = TRUE)
   }
 
-  # configure plot
-  options(repr.plot.width = 4.6, repr.plot.height = 3.2)
+  forward_python_output()
 
   sf <- reticulate::import("sfsutils")
 
@@ -263,9 +252,8 @@ load_sfsutils <- function(install = FALSE) {
       ggplot2::geom_bar(stat = "identity", position = "dodge",
                         width = 0.7, show.legend = length(spectra) > 1) +
       ggplot2::labs(x = "frequency", y = "", title = title, fill = NULL) +
-      ggplot2::theme_bw() +
-      ggplot2::theme(panel.grid.major = ggplot2::element_blank(),
-                     panel.grid.minor = ggplot2::element_blank(),
+      ggplot2::theme(panel.grid = ggplot2::element_blank(),
+                     plot.title = ggplot2::element_text(hjust = 0.5),
                      # draw the legend inside the panel, so it does not eat into the plot width
                      legend.position = "inside",
                      legend.position.inside = c(0.98, 0.98),
@@ -376,10 +364,8 @@ load_sfsutils <- function(install = FALSE) {
     is_counts <- sum(abs(border), na.rm = TRUE) > 0
 
     if (is_counts) {
-      # log10 maps zero counts to -Inf, which ggplot2 would drop to na.value; clamp them to the
-      # smallest positive count instead, so they take the lowest colour as under matplotlib's LogNorm
-      positive <- d[!is.na(d) & d > 0]
-      if (length(positive)) d[!is.na(d) & d == 0] <- min(positive)
+      # zero counts have no logarithm and are left blank, as under matplotlib's LogNorm
+      d[!is.na(d) & d <= 0] <- NA
 
       fill_scale <- ggplot2::scale_fill_viridis_c(trans = 'log10', na.value = 'white')
     } else {
@@ -407,9 +393,8 @@ load_sfsutils <- function(install = FALSE) {
       ggplot2::scale_x_continuous(expand = c(0, 0)) +
       ggplot2::scale_y_continuous(expand = c(0, 0)) +
       ggplot2::labs(x = '', y = '', title = title, fill = '') +
-      ggplot2::theme_bw() +
-      ggplot2::theme(panel.grid.major = ggplot2::element_blank(),
-                     panel.grid.minor = ggplot2::element_blank())
+      ggplot2::theme(panel.grid = ggplot2::element_blank(),
+                     plot.title = ggplot2::element_text(hjust = 0.5))
 
     if (show) print(p)
     if (!is.null(file)) ggplot2::ggsave(file, plot = p)
@@ -468,11 +453,9 @@ load_sfsutils <- function(install = FALSE) {
       mat[nrow(mat), ncol(mat)] <- NA
     }
 
-    # log10 maps zero counts to -Inf, which ggplot2 would drop to na.value; clamp them to the
-    # smallest positive count instead, so they take the lowest colour as under matplotlib's LogNorm
+    # zero counts have no logarithm and are left blank, as under matplotlib's LogNorm
     if (log_scale) {
-      positive <- mat[!is.na(mat) & mat > 0]
-      if (length(positive)) mat[!is.na(mat) & mat == 0] <- min(positive)
+      mat[!is.na(mat) & mat <= 0] <- NA
     }
 
     # allele counts are 0-based
@@ -491,9 +474,8 @@ load_sfsutils <- function(install = FALSE) {
       ) +
       ggplot2::scale_x_continuous(expand = c(0, 0)) +
       ggplot2::scale_y_continuous(expand = c(0, 0)) +
-      ggplot2::theme_bw() +
-      ggplot2::theme(panel.grid.major = ggplot2::element_blank(),
-                     panel.grid.minor = ggplot2::element_blank())
+      ggplot2::theme(panel.grid = ggplot2::element_blank(),
+                     plot.title = ggplot2::element_text(hjust = 0.5))
 
     if (log_scale) {
       p <- p + ggplot2::scale_fill_viridis_c(trans = 'log10', na.value = 'white')
@@ -508,4 +490,54 @@ load_sfsutils <- function(install = FALSE) {
   }
 
   return(sf)
+}
+
+
+# In a Jupyter kernel, write Python's standard output and error through R's output and message streams, which the kernel
+# captures, so log messages and progress bars reach the cell output.
+forward_python_output <- function() {
+
+  if (!isTRUE(getOption("jupyter.in_kernel"))) {
+    return(invisible(NULL))
+  }
+
+  # the kernel ends every message with a line break, so the error stream is passed on as complete lines without one
+  streams <- reticulate::py_run_string("
+import io
+
+class RStream(io.TextIOBase):
+    encoding = 'utf-8'
+
+    def __init__(self, write, lines=False):
+        super().__init__()
+        self._write = write
+        self._lines = lines
+        self._buffer = ''
+
+    def writable(self):
+        return True
+
+    def write(self, text):
+        if not self._lines:
+            self._write(text)
+            return len(text)
+
+        *complete, partial = (self._buffer + text).split('\\n')
+        for line in complete:
+            self._write(line.split('\\r')[-1])
+
+        # a carriage return starts the line over, as a progress bar redraws itself
+        self._buffer = partial.split('\\r')[-1]
+
+        return len(text)
+", local = TRUE, convert = FALSE)
+
+  sys <- reticulate::import("sys", convert = FALSE)
+  sys$stdout <- streams$RStream(function(text) cat(reticulate::py_to_r(text)))
+  sys$stderr <- streams$RStream(
+    function(line) message(reticulate::py_to_r(line), appendLF = FALSE),
+    lines = TRUE
+  )
+
+  invisible(NULL)
 }

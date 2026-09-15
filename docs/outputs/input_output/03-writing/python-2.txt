@@ -1,0 +1,14 @@
+INFO:Parser: Using stratification: [all].
+INFO:Parser: Loading VCF file
+Parser>Counting sites: 608it [--:--, --it/s]
+Parser>Processing sites: 100%|██████████| 608/608 [--:--<--:--, --it/s]
+INFO:PolyAllelicFiltration: Filtered out 0 sites.
+INFO:Parser: Included 608 out of 608 sites in total from the input.
+INFO:Parser: Using stratification: [all].
+Parser>Processing sites: 100%|██████████| 608/608 [--:--<--:--, --it/s]
+INFO:PolyAllelicFiltration: Filtered out 0 sites.
+INFO:Parser: Included 608 out of 608 sites in total from the input.
+INFO:Parser: Using stratification: [all].
+Parser>Processing sites: 100%|██████████| 608/608 [--:--<--:--, --it/s]
+INFO:PolyAllelicFiltration: Filtered out 0 sites.
+INFO:Parser: Included 608 out of 608 sites in total from the input.

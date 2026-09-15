@@ -44,32 +44,19 @@ Features
 - Visualization of individual and stratified spectra
 
 .. toctree::
-   :caption: Python Reference
+   :caption: User Guide
+   :maxdepth: 2
    :hidden:
 
-   reference/Python/installation
-   reference/Python/quickstart
-   reference/Python/parser
-   reference/Python/input_output
-   reference/Python/annotations
-   reference/Python/filtrations
-   reference/Python/spectra
-   reference/Python/joint
-   reference/Python/two_sfs
-
-.. toctree::
-   :caption: R Reference
-   :hidden:
-
-   reference/R/installation
-   reference/R/quickstart
-   reference/R/parser
-   reference/R/input_output
-   reference/R/annotations
-   reference/R/filtrations
-   reference/R/spectra
-   reference/R/joint
-   reference/R/two_sfs
+   reference/installation
+   reference/quickstart
+   reference/parser
+   reference/input_output
+   reference/annotations
+   reference/filtrations
+   reference/spectra
+   reference/joint
+   reference/two_sfs
 
 .. toctree::
    :caption: CLI Reference

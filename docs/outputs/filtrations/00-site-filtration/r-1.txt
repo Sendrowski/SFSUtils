@@ -1,0 +1,6 @@
+INFO:Filterer: Start filtering
+INFO:Filterer: Loading VCF file
+Filterer>Counting sites: 10000it [--:--, --it/s]
+Filterer>Processing sites: 100%|██████████| 10000/10000 [--:--<--:--, --it/s]
+INFO:BiasedGCConversionFiltration: Filtered out 7903 sites.
+INFO:Filterer: Filtered out 7903 of 10000 sites in total.

@@ -1,0 +1,7 @@
+INFO:Parser: Using stratification: [all].
+INFO:Parser: Loading VCF file
+Parser>Counting sites: 600000it [--:--, --it/s]
+Parser>Processing sites: 100%|██████████| 600000/600000 [--:--<--:--, --it/s]
+INFO:PolyAllelicFiltration: Filtered out 0 sites.
+INFO:Parser: Included 600000 out of 600000 sites in total from the input.
+INFO:Parser: Counted 299700000 site pairs within 1000 bp.
