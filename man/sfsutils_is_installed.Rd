@@ -16,7 +16,7 @@ PyPI, so the module is additionally checked for the \code{Parser} class it provi
 }
 \examples{
 \dontrun{
-is_installed()  # Returns TRUE or FALSE based on the installation status of sfsutils
+sfsutils_is_installed()  # Returns TRUE or FALSE based on the installation status of sfsutils
 }
 
 }

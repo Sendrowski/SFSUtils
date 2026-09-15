@@ -17,6 +17,7 @@ dependencies:
   - r-testthat
   # --- plotting dependencies of the R wrapper ---
   - r-ggplot2
+  - r-scales
   - r-cowplot
   - r-rcolorbrewer
   # --- IRkernel for executing the R reference notebooks ---

@@ -1,5 +1,125 @@
 if (getRversion() >= "2.15.1") utils::globalVariables(c(".data"))
 
+# matplotlib's default colour cycle ('C0', 'C1', ...)
+.tab10 <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+
+# ggplot2 theme of the plots: no grid lines and a centred title
+.plot_theme <- function() {
+  ggplot2::theme(panel.grid = ggplot2::element_blank(), plot.title = ggplot2::element_text(hjust = 0.5))
+}
+
+# colour bar spanning the height of the plot without tick marks, as the colour bars of seaborn's heatmaps
+.colourbar <- function() {
+  ggplot2::guide_colourbar(theme = ggplot2::theme(
+    legend.key.height = ggplot2::unit(1, "null"),
+    legend.ticks.length = ggplot2::unit(0, "pt")
+  ))
+}
+
+# print the plot if 'show' is TRUE, save it to 'file' if one is given, and return it
+.show_and_save <- function(p, show, file) {
+  if (show) print(p)
+  if (!is.null(file)) ggplot2::ggsave(file, plot = p)
+  p
+}
+
+# scales transformation of matplotlib's symmetric log scale (base 10, linear scale 1), which is linear within
+# [-linthresh, linthresh] and logarithmic outside
+.symlog_trans <- function(linthresh) {
+  adj <- 1 / (1 - 1 / 10)
+
+  scales::trans_new(
+    "symlog",
+    transform = function(x) {
+      ifelse(abs(x) <= linthresh, x * adj, sign(x) * linthresh * (adj + log10(abs(x) / linthresh)))
+    },
+    inverse = function(y) {
+      ifelse(abs(y) <= linthresh * adj, y / adj, sign(y) * linthresh * 10^(abs(y) / linthresh - adj))
+    }
+  )
+}
+
+# breaks at the powers of ten within the limits of a log scale, and at their 1-3 or 1-2-5 multiples where the limits
+# contain fewer than two powers
+.log_breaks <- function(limits) {
+  powers <- 10^(floor(log10(limits[1])):ceiling(log10(limits[2])))
+  powers <- powers[powers >= limits[1] & powers <= limits[2]]
+
+  if (length(powers) >= 2) powers else scales::breaks_log()(limits)
+}
+
+# breaks at 0 and the signed powers of ten within the limits of a symmetric log scale with linear threshold
+# 'linthresh', and pretty breaks where the limits contain none of them
+.symlog_breaks <- function(linthresh) {
+  function(limits) {
+    powers <- 10^(floor(log10(linthresh)):ceiling(log10(max(abs(limits), linthresh))))
+    breaks <- c(-rev(powers), 0, powers)
+    breaks <- breaks[breaks >= limits[1] & breaks <= limits[2]]
+
+    if (length(breaks) > 0) breaks else scales::extended_breaks()(limits)
+  }
+}
+
+# plotmath labels writing breaks that are all 0 or signed single-digit multiples of powers of ten as m %*% 10^k,
+# and plain numbers otherwise
+.power_labels <- function(breaks) {
+  k <- floor(log10(abs(breaks)) + 1e-9)
+  m <- round(abs(breaks) / 10^k, 8)
+  is_power <- is.na(breaks) | breaks == 0 | m == round(m)
+
+  if (!all(is_power)) {
+    return(format(breaks, trim = TRUE, drop0trailing = TRUE))
+  }
+
+  text <- paste0(ifelse(breaks < 0, "-", ""), ifelse(m == 1, "", paste0(m, " %*% ")), "10^", k)
+  parse(text = ifelse(is.na(breaks), "''", ifelse(breaks == 0, "0", text)))
+}
+
+# ggplot2 y scale that is linear ('lin'), log10 ('log') or matplotlib's symmetric log with its default linear
+# threshold 2 ('symlog'), labelled at the powers of ten on the logarithmic scales
+.scale_y <- function(scale, expand = ggplot2::waiver()) {
+  switch(
+    scale,
+    lin = ggplot2::scale_y_continuous(expand = expand),
+    log = ggplot2::scale_y_continuous(trans = "log10", breaks = .log_breaks, labels = .power_labels,
+                                      expand = expand),
+    symlog = ggplot2::scale_y_continuous(trans = .symlog_trans(2), breaks = .symlog_breaks(2),
+                                         labels = .power_labels, expand = expand)
+  )
+}
+
+# viridis fill scale, on a log10 scale labelled at the powers of ten if 'log_scale' is TRUE, leaving missing cells blank
+.scale_fill_viridis <- function(log_scale) {
+  if (log_scale) {
+    ggplot2::scale_fill_viridis_c(trans = "log10", breaks = .log_breaks, labels = .power_labels,
+                                  na.value = "white", guide = .colourbar())
+  } else {
+    ggplot2::scale_fill_viridis_c(na.value = "white", guide = .colourbar())
+  }
+}
+
+# heatmap of a matrix with square cells and its first row at the bottom, the rows and columns numbered from 'origin'
+.heatmap <- function(mat, origin, fill_scale, title, x = NULL, y = NULL) {
+  df <- data.frame(
+    x = rep(seq_len(ncol(mat)), each = nrow(mat)) + origin - 1,
+    y = rep(seq_len(nrow(mat)), times = ncol(mat)) + origin - 1,
+    value = as.vector(mat)
+  )
+
+  # integer cell numbers, at most twelve of them per axis
+  breaks <- function(limits) seq(ceiling(limits[1]), floor(limits[2]), by = max(1, ceiling(diff(limits) / 12)))
+
+  ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y, fill = .data$value)) +
+    ggplot2::geom_tile() +
+    ggplot2::coord_fixed() +
+    fill_scale +
+    ggplot2::scale_x_continuous(breaks = breaks, expand = c(0, 0)) +
+    ggplot2::scale_y_continuous(breaks = breaks, expand = c(0, 0)) +
+    ggplot2::labs(x = x, y = y, title = title, fill = NULL) +
+    .plot_theme()
+}
+
 #' Check if the `sfsutils` Python module is installed
 #'
 #' This function uses the reticulate package to verify if the `sfsutils` Python
@@ -10,7 +130,7 @@ if (getRversion() >= "2.15.1") utils::globalVariables(c(".data"))
 #'
 #' @examples
 #' \dontrun{
-#' is_installed()  # Returns TRUE or FALSE based on the installation status of sfsutils
+#' sfsutils_is_installed()  # Returns TRUE or FALSE based on the installation status of sfsutils
 #' }
 #'
 #' @export
@@ -110,8 +230,7 @@ install_sfsutils <- function(version = NULL, extras = c("vcf"), force = FALSE, s
 #'
 #' This function imports the Python package 'sfsutils' using the reticulate package
 #' and then configures it to work seamlessly with R, overriding some of the default
-#' visualization functions with custom R-based ones. This function also ensures
-#' that required R libraries are loaded for visualization.
+#' visualization functions with custom R-based ones.
 #'
 #' @param install A logical. If TRUE, the function will attempt to run install_sfsutils().
 #'
@@ -143,11 +262,14 @@ load_sfsutils <- function(install = FALSE) {
 
   # Create a scatter plot.
   #
-  # @param values List or matrix. Values to plot.
+  # @param values List or numeric vector. Values to plot.
   # @param file Character. File path to save plot to. Default is NULL.
   # @param show Logical. Whether to show plot. Default is TRUE.
   # @param title Character. Title of plot.
-  # @param scale Character. Scale of y-axis. One of 'lin', 'log'. Default is 'lin'.
+  # @param scale Character. Scale of y-axis. One of 'lin', 'log', where 'log' is a symmetric log scale.
+  #              Default is 'lin'.
+  # @param ylabel Character. Label of the y-axis. Default is 'lnl'.
+  # @param ... Additional arguments which are ignored.
   #
   # @return A ggplot object.
   viz$plot_scatter <- function(
@@ -156,32 +278,23 @@ load_sfsutils <- function(install = FALSE) {
     show = TRUE,
     title = NULL,
     scale = 'lin',
+    ylabel = 'lnl',
     ...
   ) {
-    # Create data frame
-    data <- data.frame(x = seq_along(values), y = unlist(values))
+    df <- data.frame(x = seq_along(values) - 1, y = unlist(values))
 
-    # Create plot
-    p <- ggplot2::ggplot(data, ggplot2::aes(x = .data$x, y = .data$y)) +
-      ggplot2::geom_point() +
-      ggplot2::labs(title = title, y = 'lnl')
+    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y)) +
+      ggplot2::geom_point(colour = .tab10[1], size = 2) +
+      .scale_y(if (scale == 'log') 'symlog' else 'lin') +
+      ggplot2::labs(x = NULL, y = ylabel, title = title) +
+      .plot_theme()
 
-    # Set y scale
-    if (scale == 'log') {
-      p <- p + ggplot2::scale_y_continuous(trans = 'log10')
-    }
-
-    # Display plot if 'show' is TRUE
-    if (show) print(p)
-
-    # Save plot to file if 'file' is provided
-    if (!is.null(file)) ggplot2::ggsave(file, plot = p)
-
-    return(p)
+    .show_and_save(p, show, file)
   }
 
 
-  # Plot the given 1D spectra
+  # Plot the given 1D spectra as bars, dodged within each allele count and coloured by matplotlib's colour cycle
+  # in the order of the spectra.
   #
   # @param spectra List of lists of spectra or a 2D array in which each row
   #                is a spectrum in the same order as labels
@@ -193,136 +306,114 @@ load_sfsutils <- function(install = FALSE) {
   # @param n_ticks Numeric. Number of x-ticks to use
   # @param file Character. File to save plot to
   # @param show Logical. Whether to show the plot
+  # @param ... Additional arguments which are ignored.
   #
   # @return ggplot object
-  viz$plot_spectra <- function(
+  plot_spectra <- function(
     spectra,
     labels = character(0),
     log_scale = FALSE,
     use_subplots = FALSE,
     show_monomorphic = FALSE,
     title = NULL,
+    n_ticks = 10,
     file = NULL,
     show = TRUE,
     ...
   ) {
-
     if (length(spectra) == 0) {
       warning('No spectra to plot.')
       return(NULL)
     }
 
+    labels <- as.character(unlist(labels))
+
     if (use_subplots) {
-      # Creating a grid of plots
-      plot_list <- lapply(1:length(spectra), function(i) {
-        viz$plot_spectra(
+      # one plot per spectrum on a square grid, titled by its label
+      n_cols <- ceiling(sqrt(length(spectra)))
+
+      plot_list <- lapply(seq_along(spectra), function(i) {
+        label <- if (length(labels) >= i) labels[i] else character(0)
+
+        plot_spectra(
           spectra = list(spectra[[i]]),
-          labels = if (length(labels)) labels[i] else character(0),
+          labels = label,
           log_scale = log_scale,
           show_monomorphic = show_monomorphic,
+          title = if (length(label)) label else NULL,
+          n_ticks = 15 %/% min(2, n_cols),
           show = FALSE
-        ) +
-          ggplot2::labs(title = if (length(labels) >= i) labels[i] else '')
+        )
       })
 
-      plot_grid <- cowplot::plot_grid(plotlist = plot_list)
-
-      if (show) print(plot_grid)
-      if (!is.null(file)) ggplot2::ggsave(file, plot = plot_grid)
-
-      return(plot_grid)
+      return(.show_and_save(cowplot::plot_grid(plotlist = plot_list, nrow = n_cols, ncol = n_cols), show, file))
     }
 
     if (length(labels) == 0) {
-      labels <- as.character(1:length(spectra))
+      labels <- as.character(seq_along(spectra))
     }
 
-    df <- data.frame()
-    for (i in seq_along(spectra)) {
-      indices <- if (show_monomorphic) seq_along(spectra[[i]]) else seq_along(spectra[[i]])[-c(1, length(spectra[[i]]))]
-      heights <- if (show_monomorphic) unlist(spectra[[i]]) else unlist(spectra[[i]][-c(1, length(spectra[[i]]))])
-      df_temp <- data.frame(indices = indices,
-                            heights = heights,
-                            group = rep(labels[i], length(indices)))
-      df <- rbind(df, df_temp)
-    }
+    # allele counts of the bars, each spectrum taking an equal share of the width 0.9 per allele count
+    n <- length(spectra[[1]]) - 1
+    x <- if (show_monomorphic) 0:n else seq_len(n - 1)
+    width <- 0.9 / length(spectra)
 
-    # Create a ggplot object
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = indices, y = heights, fill = .data$group)) +
-      ggplot2::geom_bar(stat = "identity", position = "dodge",
-                        width = 0.7, show.legend = length(spectra) > 1) +
-      ggplot2::labs(x = "frequency", y = "", title = title, fill = NULL) +
-      ggplot2::theme(panel.grid = ggplot2::element_blank(),
-                     plot.title = ggplot2::element_text(hjust = 0.5),
-                     # draw the legend inside the panel, so it does not eat into the plot width
-                     legend.position = "inside",
-                     legend.position.inside = c(0.98, 0.98),
-                     legend.justification.inside = c(1, 1),
-                     legend.background = ggplot2::element_rect(
-                       fill = scales::alpha("white", 0.7), colour = NA
-                     ),
-                     legend.key.size = ggplot2::unit(0.9, "lines")) +
-      ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, .1)))
-
-    if (log_scale) {
-      p <- p + ggplot2::scale_y_log10()
-    }
-
-    # Adjust x-axis labels based on show_monomorphic
-    if (show_monomorphic) {
-      p <- p + ggplot2::scale_x_continuous(breaks = 0:(length(spectra[[1]]) + 1),
-                                           labels = 0:(length(spectra[[1]]) + 1) - 1,
-                                           expand = c(0, 0))
-    } else {
-      p <- p + ggplot2::scale_x_continuous(breaks = 1:length(spectra[[1]]),
-                                           labels = 1:length(spectra[[1]]) - 1,
-                                           expand = c(0, 0))
-    }
-
-    # Display or save the plot
-    if (show) print(p)
-    if (!is.null(file)) ggplot2::ggsave(file, plot = p)
-
-    return(p)
-  }
-
-
-  # Convert a matrix to a long data frame with 1-based integer x (column) and
-  # y (row) coordinates, suitable for ggplot2::geom_tile. The value column is
-  # filled in column-major order to match R's own matrix layout.
-  #
-  # @param mat Numeric matrix.
-  #
-  # @return A data frame with columns x, y and value.
-  matrix_to_long <- function(mat) {
-    nr <- nrow(mat)
-    nc <- ncol(mat)
-
-    data.frame(
-      y = rep(seq_len(nr), times = nc),
-      x = rep(seq_len(nc), each = nr),
-      value = as.vector(mat)
+    df <- data.frame(
+      xmin = unlist(lapply(seq_along(spectra), function(i) x - 0.45 + (i - 1) * width)),
+      y = unlist(lapply(spectra, function(sfs) unlist(sfs)[x + 1])),
+      group = factor(rep(labels, each = length(x)), levels = unique(labels))
     )
+    df$xmax <- df$xmin + width
+
+    # on the log scale, bars rise from the power of ten below the smallest positive count, which is the bottom of the axis
+    if (log_scale) {
+      df <- df[df$y > 0, ]
+      df$ymin <- 10^floor(log10(min(df$y)))
+    } else {
+      df$ymin <- 0
+    }
+
+    # label every allele count, or every k-th starting at 1 where there are more than 'n_ticks'
+    breaks <- if (n > n_ticks) x[x %% ceiling(n / n_ticks) == 1] else x
+
+    p <- ggplot2::ggplot(df, ggplot2::aes(xmin = .data$xmin, xmax = .data$xmax, ymin = .data$ymin, ymax = .data$y,
+                                          fill = .data$group)) +
+      ggplot2::geom_rect(show.legend = length(spectra) > 1) +
+      ggplot2::scale_fill_manual(values = rep_len(.tab10, nlevels(df$group))) +
+      ggplot2::scale_x_continuous(breaks = breaks, expand = c(0, 0)) +
+      .scale_y(if (log_scale) 'log' else 'lin', expand = ggplot2::expansion(mult = c(0, 0.05))) +
+      ggplot2::labs(x = "allele count", y = NULL, title = title) +
+      .plot_theme() +
+      # legend inside the panel (top-right) in a frame over a semi-transparent background
+      ggplot2::theme(
+        legend.position = "inside",
+        legend.position.inside = c(0.97, 0.97),
+        legend.justification = c(1, 1),
+        legend.title = ggplot2::element_blank(),
+        legend.text = ggplot2::element_text(size = 8),
+        legend.key.size = ggplot2::unit(0.8, "lines"),
+        legend.margin = ggplot2::margin(4, 4, 4, 4),
+        legend.background = ggplot2::element_rect(fill = scales::alpha("white", 0.8), colour = "grey80"),
+        legend.key = ggplot2::element_rect(fill = NA, colour = NA)
+      )
+
+    .show_and_save(p, show, file)
   }
 
+  viz$plot_spectra <- plot_spectra
 
-  # The two overrides below replace Python *instance* methods by assigning an R function to a class
-  # attribute. Both call styles work (verified against the tests/testthat suite): `obj$plot()` binds the
-  # instance as `self`, and `sf$TwoSFS$plot(obj)` passes it explicitly (as in the fastdfe wrapper).
+
+  # The heatmaps below override instance methods of the Python classes, so `obj$plot()` and
+  # `sf$TwoSFS$plot(obj)` both pass the object as `self`.
   #
-  # Plot a 2-SFS (TwoSFS) as a heatmap.
-  #
-  # Reimplements TwoSFS.plot using a ggplot2 geom_tile heatmap. The monomorphic first and
-  # last rows and columns are dropped, and if the spectrum is folded only the folded half is
-  # shown. As in the Python backend the colour scale depends on the spectrum: a sequential
-  # log viridis scale for raw pair counts, a diverging symmetric-log PuOr_r scale for the
-  # class-resolved results (cov / corr / fpmi).
+  # Plot a 2-SFS (TwoSFS) as a heatmap of its segregating interior, restricted to the folded half if the
+  # spectrum is folded. Raw pair counts use a sequential log viridis scale, the class-resolved results
+  # (cov / corr / fpmi) a diverging symmetric log PuOr_r scale centred at zero, as in the Python package.
   #
   # @param self The TwoSFS object (passed implicitly as the instance).
   # @param title Character. Title of the plot. Default is NULL.
-  # @param log_scale Logical. Kept for signature compatibility with the Python
-  #                  backend; currently ignored. Default is FALSE.
-  # @param max_abs Numeric. Maximum absolute value for the diverging colour scale; ignored
+  # @param log_scale Logical. Ignored. Default is FALSE.
+  # @param max_abs Numeric. Maximum absolute value of the diverging colour scale; ignored
   #                for raw pair counts. Default is NULL (inferred from the data).
   # @param show Logical. Whether to show the plot. Default is TRUE.
   # @param file Character. File path to save plot to. Default is NULL.
@@ -338,14 +429,14 @@ load_sfsutils <- function(install = FALSE) {
     file = NULL,
     ...
   ) {
-    mat <- as.matrix(self$data)
-    storage.mode(mat) <- "double"
-    n <- nrow(mat)
-
-    if (n < 3) {
+    if (self$n < 3) {
       warning('Nothing to plot.')
       return(invisible(NULL))
     }
+
+    mat <- as.matrix(self$data)
+    storage.mode(mat) <- "double"
+    n <- nrow(mat)
 
     # remove monomorphic first and last row and column
     d <- mat[2:(n - 1), 2:(n - 1), drop = FALSE]
@@ -356,60 +447,43 @@ load_sfsutils <- function(install = FALSE) {
       d <- d[1:(w - 1), 1:(w - 1), drop = FALSE]
     }
 
-    # a raw pair-count spectrum carries mass in the monomorphic bins (row/column 0 and n); the
-    # class-resolved results (cov / corr / fpmi) are embedded with those bins zeroed. Use that to
-    # choose the colour scale, as the Python backend does: a sequential log scale for the
-    # heavy-tailed counts, a diverging symmetric-log scale centred at zero for the derived quantities
-    border <- c(mat[c(1, n), ], mat[, c(1, n)])
-    is_counts <- sum(abs(border), na.rm = TRUE) > 0
+    # a raw pair-count spectrum carries mass in the monomorphic bins (row/column 0 and n), whereas the
+    # class-resolved results are embedded with those bins zeroed
+    is_counts <- sum(abs(c(mat[c(1, n), ], mat[, c(1, n)])), na.rm = TRUE) > 0
 
     if (is_counts) {
       # zero counts have no logarithm and are left blank, as under matplotlib's LogNorm
       d[!is.na(d) & d <= 0] <- NA
 
-      fill_scale <- ggplot2::scale_fill_viridis_c(trans = 'log10', na.value = 'white')
+      fill_scale <- .scale_fill_viridis(log_scale = TRUE)
     } else {
-      # symmetric colour range around zero
       if (is.null(max_abs)) {
         max_abs <- max(abs(d), na.rm = TRUE)
         if (!is.finite(max_abs) || max_abs == 0) max_abs <- 1
       }
 
+      # matplotlib's SymLogNorm(linthresh = max_abs / 10) over a symmetric range, clipping values outside it
       fill_scale <- ggplot2::scale_fill_gradientn(
         colours = rev(RColorBrewer::brewer.pal(11, 'PuOr')),
         limits = c(-max_abs, max_abs),
-        # approximates matplotlib's SymLogNorm(linthresh = max_abs / 10)
-        trans = scales::pseudo_log_trans(sigma = max_abs / 10),
-        na.value = 'white'
+        trans = .symlog_trans(max_abs / 10),
+        breaks = .symlog_breaks(max_abs / 10),
+        labels = .power_labels,
+        oob = scales::squish,
+        na.value = 'white',
+        guide = .colourbar()
       )
     }
 
-    df <- matrix_to_long(d)
-
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y, fill = .data$value)) +
-      ggplot2::geom_tile() +
-      ggplot2::coord_fixed() +
-      fill_scale +
-      ggplot2::scale_x_continuous(expand = c(0, 0)) +
-      ggplot2::scale_y_continuous(expand = c(0, 0)) +
-      ggplot2::labs(x = '', y = '', title = title, fill = '') +
-      ggplot2::theme(panel.grid = ggplot2::element_blank(),
-                     plot.title = ggplot2::element_text(hjust = 0.5))
-
-    if (show) print(p)
-    if (!is.null(file)) ggplot2::ggsave(file, plot = p)
-
-    return(p)
+    .show_and_save(.heatmap(d, 1, fill_scale, title), show, file)
   }
 
 
   # Plot a joint (multi-population) SFS (JointSFS) as a heatmap.
   #
-  # Reimplements JointSFS.plot using a ggplot2 geom_tile heatmap with a viridis
-  # palette. The joint SFS is marginalized onto the two requested populations,
-  # which also puts their axes in the requested order. The monomorphic corners
-  # are masked, and allele counts are shown on both axes with the origin at the
-  # bottom left.
+  # The joint SFS is marginalized onto the two requested populations, which also puts their
+  # axes in the requested order. The monomorphic corners are masked, and allele counts are
+  # shown on both axes with the origin at the bottom left.
   #
   # @param self The JointSFS object (passed implicitly as the instance).
   # @param pops Numeric vector of length two. The (0-based) population indices to
@@ -439,13 +513,10 @@ load_sfsutils <- function(install = FALSE) {
       stop("Exactly two populations must be specified for a 2-dimensional plot.")
     }
 
-    # marginalize onto the two requested populations, which also applies the requested axis order:
-    # for pops = c(1, 0) the spectrum is transposed, as in Python
-    jsfs <- self$marginalize(as.integer(pops))
-
-    mat <- as.matrix(jsfs$data)
+    # for pops = c(1, 0) the marginalized spectrum is transposed
+    mat <- as.matrix(self$marginalize(as.integer(pops))$data)
     storage.mode(mat) <- "double"
-    pop_names <- unlist(jsfs$pop_names)
+    pop_names <- unlist(self$`_names`())[pops + 1]
 
     # mask the monomorphic corners (all-ancestral and all-derived)
     if (mask_monomorphic) {
@@ -458,35 +529,10 @@ load_sfsutils <- function(install = FALSE) {
       mat[!is.na(mat) & mat <= 0] <- NA
     }
 
-    # allele counts are 0-based
-    df <- matrix_to_long(mat)
-    df$x <- df$x - 1
-    df$y <- df$y - 1
+    p <- .heatmap(mat, 0, .scale_fill_viridis(log_scale), title,
+                  x = paste('allele count', pop_names[2]), y = paste('allele count', pop_names[1]))
 
-    p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$x, y = .data$y, fill = .data$value)) +
-      ggplot2::geom_tile() +
-      ggplot2::coord_fixed() +
-      ggplot2::labs(
-        x = paste('allele count', pop_names[2]),
-        y = paste('allele count', pop_names[1]),
-        title = title,
-        fill = ''
-      ) +
-      ggplot2::scale_x_continuous(expand = c(0, 0)) +
-      ggplot2::scale_y_continuous(expand = c(0, 0)) +
-      ggplot2::theme(panel.grid = ggplot2::element_blank(),
-                     plot.title = ggplot2::element_text(hjust = 0.5))
-
-    if (log_scale) {
-      p <- p + ggplot2::scale_fill_viridis_c(trans = 'log10', na.value = 'white')
-    } else {
-      p <- p + ggplot2::scale_fill_viridis_c(na.value = 'white')
-    }
-
-    if (show) print(p)
-    if (!is.null(file)) ggplot2::ggsave(file, plot = p)
-
-    return(p)
+    .show_and_save(p, show, file)
   }
 
   return(sf)

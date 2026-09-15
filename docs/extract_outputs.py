@@ -75,7 +75,10 @@ def output_file(data: dict) -> tuple[str, bytes]:
     text = TEMP_FILE.sub("tmp--------", TEMP_DIR.sub("<tmp>", text))
     text = PROGRESS_TIME.sub(lambda m: re.sub(r"[\d?]+", "--", m[0]), text)
 
-    return "txt", PROGRESS_RATE.sub(" --", text).encode()
+    text = PROGRESS_RATE.sub(" --", text)
+
+    # a stream ends with a line break or not depending on when it was flushed
+    return "txt", (text.rstrip("\n") + "\n").encode()
 
 
 def sections(nb: dict, page: str) -> list[tuple[str, list]]:
