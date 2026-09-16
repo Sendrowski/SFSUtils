@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from notebook_outputs import displayed_outputs, tags
+from notebook_outputs import displayed_outputs, mask_text, tags
 
 ROOT = Path(__file__).parent.parent
 
@@ -73,11 +73,7 @@ def output_file(data: dict) -> tuple[str, bytes]:
     if "image/png" in data:
         return "png", base64.b64decode("".join(data["image/png"]))
 
-    text = TRAILING_SPACE.sub("", ANSI_ESCAPE.sub("", "".join(data["text/plain"])))
-    text = TEMP_FILE.sub("tmp--------", TEMP_DIR.sub("<tmp>", text))
-    text = PROGRESS_TIME.sub(lambda m: re.sub(r"[\d?]+", "--", m[0]), text)
-
-    text = PROGRESS_RATE.sub(lambda m: f" --{m[1] or m[2]}/s", text)
+    text = mask_text("".join(data["text/plain"]))
 
     # a stream ends with a line break or not depending on when it was flushed
     return "txt", (text.rstrip("\n") + "\n").encode()
