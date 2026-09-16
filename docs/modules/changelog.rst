@@ -5,8 +5,8 @@ Changelog
 
 [1.1.0] - 2026-09-16
 ^^^^^^^^^^^^^^^^^^^^
-- ``Parser`` polarizes by the ``AA_post`` posterior over A, C, G and T, renormalised over the site's own alleles, where a record carries it.
-- ``MaximumLikelihoodAncestralAnnotation`` is deprecated in favour of `Ancestree <https://ancestree.readthedocs.io>`_.
+- :class:`~sfsutils.parser.Parser` polarizes by the ``AA_post`` posterior over A, C, G and T, renormalised over the site's own alleles, where a record carries it.
+- :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation` is deprecated in favour of `Ancestree <https://ancestree.readthedocs.io>`_.
 
 [1.0.1] - 2026-09-09
 ^^^^^^^^^^^^^^^^^^^^
@@ -26,7 +26,7 @@ First stable release, consolidating extensive correctness, performance and robus
 
 [0.1.0b2] - 2026-07-19
 ^^^^^^^^^^^^^^^^^^^^^^
-- Generalize the parser input to a single ``source`` argument (VCF, VCF-Zarr, or tree sequence), add ``JointSFS.fold``, plus bug fixes and documentation improvements.
+- Generalize the parser input to a single ``source`` argument (VCF, VCF-Zarr, or tree sequence), add :meth:`JointSFS.fold() <sfsutils.spectrum.JointSFS.fold>`, plus bug fixes and documentation improvements.
 
 [0.1.0b1] - 2026-07-17
 ^^^^^^^^^^^^^^^^^^^^^^
