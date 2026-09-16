@@ -47,44 +47,52 @@ stopifnot(ann$annotations[[1]]$n_annotated > 0, file.size("genome.deg.vcf.gz") >
 
 +++
 ## Ancestral Allele Annotation
-Currently, two ancestral allele annotations are available: {class}`~sfsutils.annotation.MaximumParsimonyAncestralAnnotation` and {class}`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`. The former is error-prone and not recommended. Alternatively, if outgroups are missing, the spectra can be folded, though this discards information and yields a less informative spectrum. Ideally, we would like to use {class}`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`, which is more sophisticated and requires one or several outgroups to be specified. Its underlying model is based on [`EST-SFS`](https://doi.org/10.1534/genetics.118.301120). The maximum-likelihood model estimates branch rates from monomorphic sites, so ideally these are present in the input. When there are few or none, {attr}`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation.n_target_sites` specifies the total number of sites (segregating and monomorphic) underlying the data, and a FASTA reference supplies the monomorphic sites to sample from.
+The unfolded SFS requires the ancestral allele at each site. It is inferred with [``ancestree``](https://ancestree.readthedocs.io), which by default writes it to the `AA` field and its posterior to `AA_post`, both read by {class}`~sfsutils.parser.Parser`. Here we use its local-tree inference ({meth}`Inference.from_local_tree() <ancestree.inference.Inference.from_local_tree>`), which infers the genealogies with a pairwise-coalescent HMM rather than taking a pre-built one. The HMM samples coalescent times between each pair of haplotypes along the genome, and each draw is clustered into a dated tree per window. The ancestral allele is read at the ingroup's most recent common ancestor and averaged over the sampled trees. The suffixes `_h0` and `_h1` denote the first and second haplotype of a diploid sample. See [``ancestree``](https://ancestree.readthedocs.io)'s [local-tree inference guide](https://ancestree.readthedocs.io/en/latest/reference/Python/local_tree_inference.html) for details.
 
 ```{code-cell} python
-ann = su.Annotator(
-    source="resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
-    fasta="resources/genome/betula/genome.subset.20.fasta",
-    annotations=[su.MaximumLikelihoodAncestralAnnotation(
-        outgroups=["ERR2103730"],
-        n_ingroups=10,
-        n_target_sites=200000
-    )],
-    output="genome.aa.vcf.gz"
+import ancestree as anc
+
+inf = anc.Inference.from_local_tree(
+    "resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+    sample_names=[f"ASP{i:02d}_h{h}" for i in range(1, 21) for h in (0, 1)] + ["ERR2103730_h0", "ERR2103731_h0"],
+    outgroup_samples=["ERR2103730_h0", "ERR2103731_h0"],
+    model=anc.JC69(),
+    rec_rate=4e-8,
+    mu=8e-9
 )
 
-ann.annotate()
+inf.to_vcf("genome.aa.vcf.gz");
 ```
 
 ```{code-cell} python
 :tags: [remove-cell]
-assert ann.annotations[0].n_annotated > 0 and os.path.getsize("genome.aa.vcf.gz") > 0
+import gzip
+import re
+
+with gzip.open("genome.aa.vcf.gz", "rt") as f:
+    records = [line for line in f if not line.startswith("#")]
+
+assert records and sum(bool(re.search(r"[\t;]AA=", r)) for r in records) > 0.9 * len(records)
 ```
 
 ```{code-cell} r
-ann <- su$Annotator(
-  source = "resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
-  fasta = "resources/genome/betula/genome.subset.20.fasta",
-  annotations = list(su$MaximumLikelihoodAncestralAnnotation(
-    outgroups = list("ERR2103730"),
-    n_ingroups = 10,
-    n_target_sites = 200000
-  )),
-  output = "genome.aa.vcf.gz"
+anc <- reticulate::import("ancestree")
+
+inf <- anc$Inference$from_local_tree(
+  "resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz",
+  sample_names = c(paste0(rep(sprintf("ASP%02d", 1:20), each = 2), "_h", 0:1), "ERR2103730_h0", "ERR2103731_h0"),
+  outgroup_samples = c("ERR2103730_h0", "ERR2103731_h0"),
+  model = anc$JC69(),
+  rec_rate = 4e-8,
+  mu = 8e-9
 )
 
-ann$annotate()
+invisible(inf$to_vcf("genome.aa.vcf.gz"))
 ```
 
 ```{code-cell} r
 :tags: [remove-cell]
-stopifnot(ann$annotations[[1]]$n_annotated > 0, file.size("genome.aa.vcf.gz") > 0)
+lines <- readLines(gzfile("genome.aa.vcf.gz"))
+records <- lines[!startsWith(lines, "#")]
+stopifnot(length(records) > 0, mean(grepl("[\t;]AA=", records)) > 0.9)
 ```

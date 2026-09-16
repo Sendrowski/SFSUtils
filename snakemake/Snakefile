@@ -539,19 +539,14 @@ rule split_page:
     script:
         "../docs/split_page.py"
 
-# install the repository's Python package with its input backends into the User Guide env in editable mode, and link
-# the example resources next to the notebooks of both languages, which every execution waits for
-rule install_python_package:
-    input:
-        "../pyproject.toml",
-        [str(p) for p in Path("../sfsutils").rglob("*.py")]
+# link the example resources next to the notebooks of both languages, which every execution waits for
+rule link_resources:
     output:
-        touch("results/docs/Python/sfsutils.installed")
+        touch("results/docs/Python/resources.linked")
     conda:
         "envs/docs.yaml"
     shell:
         """
-        python -m pip install -e '..[vcf,zarr,arg]' > /dev/null
         mkdir -p results/docs/R
         ln -sfn ../../../../resources results/docs/Python/resources
         ln -sfn ../../../../resources results/docs/R/resources
@@ -578,7 +573,7 @@ rule install_r_package:
 rule execute_python_page:
     input:
         notebook="results/docs/Python/{page}.ipynb",
-        python_installed="results/docs/Python/sfsutils.installed"
+        resources_linked="results/docs/Python/resources.linked"
     output:
         "results/docs/Python/{page}.executed.ipynb"
     conda:
@@ -594,7 +589,7 @@ rule execute_python_page:
 rule execute_r_page:
     input:
         notebook="results/docs/R/{page}.ipynb",
-        python_installed="results/docs/Python/sfsutils.installed",
+        resources_linked="results/docs/Python/resources.linked",
         r_installed="results/docs/R/sfsutils.installed"
     output:
         "results/docs/R/{page}.executed.ipynb"

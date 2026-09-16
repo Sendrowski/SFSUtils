@@ -52,6 +52,7 @@ intersphinx_mapping = {
     'tskit': ('https://tskit.dev/tskit/docs/stable', None),
     'zarr': ('https://zarr.readthedocs.io/en/stable', None),
     'cyvcf2': ('https://brentp.github.io/cyvcf2', None),
+    'ancestree': ('https://ancestree.readthedocs.io/en/latest', None),
 }
 
 bibtex_bibfiles = ['refs.bib']
