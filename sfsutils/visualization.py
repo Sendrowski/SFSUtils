@@ -111,11 +111,11 @@ class Visualization:
             return
 
         # determine unique prefixes
-        prefixes = set([label.split('.')[0] for label in labels if '.' in label])
+        prefixes = list(dict.fromkeys(label.split('.')[0] for label in labels if '.' in label))
         hatch_styles = ['/////', '\\\\\\\\\\', '***', 'ooo', 'xxx', '...']
 
         prefix = labels[i].split('.')[0]
-        prefix_index = list(prefixes).index(prefix)
+        prefix_index = prefixes.index(prefix)
 
         return hatch_styles[prefix_index % len(hatch_styles)]
 

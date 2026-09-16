@@ -6,6 +6,10 @@ numpy matrices), so nothing here touches a VCF/FASTA/GFF fixture and every test 
 tier under the Agg backend.
 """
 import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -324,6 +328,34 @@ def test_existing_outgroup_filtration_keeps_dummy():
     from sfsutils.io_handlers import DummyVariant
     f = su.ExistingOutgroupFiltration(outgroups=["o1"])
     assert f.filter_site(DummyVariant("A", 1, "chr1")) is True
+
+
+def test_hatch_styles_identical_across_hash_seeds():
+    """
+    Regression: ``Visualization.get_hatch`` indexed hatch styles by the position of a label prefix in a set of
+    prefixes, so whether the bars of one prefix were drawn with ``/`` or ``\\`` depended on ``PYTHONHASHSEED``
+    and stratified spectra plots differed between otherwise identical sessions.
+    """
+    script = (
+        "from sfsutils.visualization import Visualization\n"
+        "labels = ['neutral.A', 'neutral.C', 'selected.A', 'selected.C', 'other.A']\n"
+        "print([Visualization.get_hatch(i, labels) for i in range(len(labels))])\n"
+    )
+
+    outputs = set()
+
+    for hash_seed in ('0', '1', '2', '3'):
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            cwd=Path(__file__).parents[1],
+            env=os.environ | dict(PYTHONHASHSEED=hash_seed, MPLBACKEND='Agg'),
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        outputs.add(result.stdout.strip().splitlines()[-1])
+
+    assert len(outputs) == 1
 
 
 # --- io_handlers utility ----------------------------------------------------------------------
