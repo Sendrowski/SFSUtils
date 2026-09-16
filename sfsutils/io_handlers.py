@@ -135,6 +135,16 @@ def get_distinct_called_alleles(genotypes: Sequence[str]) -> set:
     }
 
 
+def get_site_alleles(variant: Site) -> List[str]:
+    """
+    Get the site's allele strings, the reference first, dropping duplicates and empty entries.
+
+    :param variant: The site.
+    :return: The site's alleles, in the order the record lists them.
+    """
+    return [a for a in dict.fromkeys([variant.REF, *(getattr(variant, 'ALT', None) or [])]) if a]
+
+
 def get_called_alleles(genotypes: Sequence[str]) -> np.ndarray:
     """
     Get the distinct called alleles from a list of calls. Multi-character alleles stay intact, so an MNP

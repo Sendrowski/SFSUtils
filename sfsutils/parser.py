@@ -24,7 +24,7 @@ from tqdm import tqdm
 
 from .annotation import Annotation, SynonymyAnnotation, DegeneracyAnnotation, AncestralAlleleAnnotation
 from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
-from .io_handlers import bases, get_called_bases, FASTAHandler, NoTypeException, \
+from .io_handlers import bases, get_called_bases, get_site_alleles, FASTAHandler, NoTypeException, \
     DummyVariant, Site, MultiHandler, VCFHandler, VariantReader, is_monomorphic_snp, SiteAlleles
 from .settings import Settings
 from .spectrum import Spectra, TwoSFS, TwoSpectra, JointSFS, JointSpectra
@@ -1429,6 +1429,7 @@ class Parser(MultiHandler):
             fasta: str | None = None,
             info_ancestral: str = 'AA',
             info_ancestral_prob: str = 'AA_prob',
+            info_ancestral_post: str = 'AA_post',
             skip_non_polarized: bool = True,
             stratifications: List[Stratification] = [],
             annotations: List[Annotation] = [],
@@ -1479,6 +1480,11 @@ class Parser(MultiHandler):
             an ancestral allele annotation if this information is not available yet.
         :param info_ancestral_prob: The tag in the INFO field that holds the per-site probability that
             ``info_ancestral`` names the true ancestral allele, used when ``polarize_probabilistically`` is set.
+        :param info_ancestral_post: The tag in the INFO field that holds the per-site posterior over the ancestral
+            allele as one probability for each of A, C, G and T, as written by
+            Ancestree. Used in place of
+            ``info_ancestral`` and ``info_ancestral_prob`` when ``polarize_probabilistically`` is set and a site
+            carries it.
         :param skip_non_polarized: Whether to skip poly-morphic sites that are not polarized, i.e., without a valid
             info tag providing the ancestral allele. If ``False``, we use the reference allele as ancestral allele
             (only recommended if working with folded spectra).
@@ -1508,7 +1514,10 @@ class Parser(MultiHandler):
             probabilistically. For example, if the ancestral allele is ``A`` with a probability of 0.8 and
             the derived allele is ``G``, we assign 0.8 probability mass to the ancestral allele and 0.2 to the
             derived allele. This should enhance accuracy, especially for small datasets. Whenever the ancestral
-            probability tag is not present, we assume a probability of 1 for the ancestral allele.
+            probability tag is not present, we assume a probability of 1 for the ancestral allele. A site carrying
+            the posterior tag (see ``info_ancestral_post``) is instead polarized by its posterior renormalised over
+            the site's own alleles: the most probable of them is the ancestral allele and its renormalised
+            probability is used, so that mass on bases absent from the site does not enter the SFS.
         :param two_sfs: Whether to parse the two-dimensional (two-site) SFS instead of the ordinary SFS. When
             ``True``, :meth:`parse` returns a square :class:`~sfsutils.spectrum.TwoSFS` whose entry ``(i, j)`` counts
             pairs of sites, on the same contig and within the distance window of one another, where one site has ``i``
@@ -1666,6 +1675,9 @@ class Parser(MultiHandler):
         #: The tag in the INFO field that contains the ancestral allele probability
         self.info_ancestral_prob: str = info_ancestral_prob
 
+        #: The tag in the INFO field that contains the posterior over A, C, G and T
+        self.info_ancestral_post: str = info_ancestral_post
+
         #: Whether to probabilistically polarize sites
         self.polarize_probabilistically: bool = polarize_probabilistically
 
@@ -1754,6 +1766,11 @@ class Parser(MultiHandler):
             the ancestral allele or reference allele (in case of monomorphic sites) is not a valid base.
         """
         if variant.is_snp:
+            posterior = self._get_ancestral_posterior(variant)
+
+            if posterior is not None:
+                return posterior[0]
+
             # obtain ancestral allele
             aa = variant.INFO.get(self.info_ancestral)
 
@@ -1781,6 +1798,12 @@ class Parser(MultiHandler):
         :return: The probability of the ancestral allele being the true ancestral allele
         """
         if self.polarize_probabilistically:
+            posterior = self._get_ancestral_posterior(variant)
+
+            if posterior is not None:
+                self.n_aa_prob += 1
+                return posterior[1]
+
             raw = variant.INFO.get(self.info_ancestral_prob)
 
             # INFO comes through typed from cyvcf2 but as a plain string from the VCF-Zarr backend, so
@@ -1811,9 +1834,51 @@ class Parser(MultiHandler):
         :param variant: The site.
         :return: Whether the site is fixed for the derived allele.
         """
-        aa = variant.INFO.get(self.info_ancestral)
+        posterior = self._get_ancestral_posterior(variant)
+
+        aa = variant.INFO.get(self.info_ancestral) if posterior is None else posterior[0]
 
         return aa in bases and aa != variant.REF
+
+    def _get_ancestral_posterior(self, variant: Site) -> Optional[Tuple[str, float]]:
+        """
+        The ancestral allele and its probability from the posterior over A, C, G and T (see
+        ``info_ancestral_post``), renormalised over the site's own alleles.
+
+        :param variant: The site.
+        :return: The most probable of the site's alleles and its renormalised probability, or ``None`` if
+            ``polarize_probabilistically`` is not set, the site carries no posterior, or the posterior puts no
+            mass on the site's alleles.
+        :raises ValueError: If the posterior does not hold one probability in [0, 1] for each base.
+        """
+        if not self.polarize_probabilistically:
+            return None
+
+        raw = variant.INFO.get(self.info_ancestral_post)
+
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+
+        if raw is None or (isinstance(raw, str) and raw in ('', '.')):
+            return None
+
+        # cyvcf2 hands out a tuple, the VCF-Zarr backend and a text value the comma-separated string
+        values = np.array(raw.split(','), dtype=float) if isinstance(raw, str) else np.asarray(raw, dtype=float)
+
+        if values.shape != (len(bases),) or not np.all(np.isfinite(values)) or np.any((values < 0) | (values > 1)):
+            raise ValueError(f"The ancestral allele posterior at {variant.CHROM}:{variant.POS} is {raw}, which is "
+                             f"not one probability for each of {', '.join(bases)}.")
+
+        alleles = [a for a in get_site_alleles(variant) if a in bases]
+        probs = values[[bases.index(a) for a in alleles]]
+        total = probs.sum()
+
+        if total <= 0:
+            return None
+
+        i = int(np.argmax(probs))
+
+        return alleles[i], float(probs[i] / total)
 
     def _parse_site(self, variant: Site) -> bool:
         """

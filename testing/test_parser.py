@@ -2341,6 +2341,7 @@ def test_ancestral_prob_sentinels_treated_as_unpolarized():
     parser = su.Parser.__new__(su.Parser)
     parser.polarize_probabilistically = True
     parser.info_ancestral_prob = "AA_prob"
+    parser.info_ancestral_post = "AA_post"
     parser.n_aa_prob = 0
     for sentinel in ("", ".", None):
         v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True,
@@ -2349,6 +2350,43 @@ def test_ancestral_prob_sentinels_treated_as_unpolarized():
     # a real string value is cast to float
     v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True, info={"AA_prob": "0.75"})
     assert parser._get_ancestral_prob(v) == 0.75
+
+
+def test_ancestral_posterior_is_renormalised_over_the_site_alleles():
+    """A four-state AA_post polarizes over the record's own alleles: mass on bases absent from the site does not leak
+    into the other allele, and AA / AA_prob are ignored where the posterior is present."""
+    from sfsutils.io_handlers import Variant as V
+
+    parser = su.Parser.__new__(su.Parser)
+    parser.polarize_probabilistically = True
+    parser.skip_non_polarized = True
+    parser.info_ancestral = "AA"
+    parser.info_ancestral_prob = "AA_prob"
+    parser.info_ancestral_post = "AA_post"
+    parser.n_aa_prob = 0
+
+    # the four-state MAP is C, which the site does not carry. Over A and G the posterior is 0.2 / 0.5 and 0.3 / 0.5
+    for post in ("0.2,0.4,0.3,0.1", (0.2, 0.4, 0.3, 0.1)):
+        v = V(ref="A", pos=1, chrom="1", alt=["G"], is_snp=True, info={"AA": "C", "AA_prob": 0.4, "AA_post": post})
+
+        assert parser._get_ancestral(v) == "G"
+        assert parser._get_ancestral_prob(v) == pytest.approx(0.6)
+        assert parser._is_fixed_derived(v)
+
+    # a monomorphic record carries only its reference allele, which is then certain
+    v = V(ref="A", pos=1, chrom="1", alt=[], info={"AA": "C", "AA_post": "0.2,0.4,0.3,0.1"})
+    assert parser._get_ancestral_prob(v) == 1.0
+    assert not parser._is_fixed_derived(v)
+
+    # without the posterior the two-allele AA_prob applies as before
+    v = V(ref="A", pos=1, chrom="1", alt=["G"], is_snp=True, info={"AA": "A", "AA_prob": 0.7})
+    assert parser._get_ancestral(v) == "A"
+    assert parser._get_ancestral_prob(v) == pytest.approx(0.7)
+
+    # a posterior that is not four probabilities is refused
+    v = V(ref="A", pos=1, chrom="1", alt=["G"], is_snp=True, info={"AA_post": "0.5,0.5"})
+    with pytest.raises(ValueError, match="not one probability"):
+        parser._get_ancestral_prob(v)
 
 
 def test_zarr_degeneracy_stratification_end_to_end(tmp_path):

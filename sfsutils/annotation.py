@@ -2357,6 +2357,12 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
     This class can also be used independently, see the :meth:`from_dataframe`, :meth:`from_data` and
     :meth:`from_est_sfs` methods.
 
+    .. deprecated:: 1.1.0
+        Use `Ancestree <https://ancestree.readthedocs.io>`_ (``ancestree-popgen``) instead, which infers
+        ancestral alleles by Felsenstein likelihood on ancestral recombination graphs and on local trees inferred
+        from the genotypes, with or without outgroups. It writes them to the ``AA`` and ``AA_post`` info fields,
+        which :class:`~sfsutils.parser.Parser` reads.
+
     Initially, the branch rates are determined using MLE. Similar to :class:`~sfsutils.parser.Parser`, we can also specify the number of
     mutational target sites (see the ``n_target_sites`` argument) in case our input does not contain the full set of
     monomorphic sites. This is necessary to obtain realistic branch rate estimates. You can also choose a prior for the
@@ -2532,6 +2538,9 @@ class MaximumLikelihoodAncestralAnnotation(_OutgroupAncestralAlleleAnnotation):
             seed=seed,
             subsample_mode=subsample_mode
         )
+
+        self._logger.warning("MaximumLikelihoodAncestralAnnotation is deprecated and will be removed in a future "
+                             "release. Use Ancestree (https://ancestree.readthedocs.io) instead.")
 
         # check that we have at least one outgroup
         if len(outgroups) < 1:

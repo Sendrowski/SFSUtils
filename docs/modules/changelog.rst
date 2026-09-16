@@ -3,6 +3,11 @@
 Changelog
 =========
 
+[1.1.0] - Unreleased
+^^^^^^^^^^^^^^^^^^^^
+- ``Parser`` polarizes by the ``AA_post`` posterior over A, C, G and T, renormalised over the site's own alleles, where a record carries it.
+- ``MaximumLikelihoodAncestralAnnotation`` is deprecated in favour of `Ancestree <https://ancestree.readthedocs.io>`_.
+
 [1.0.1] - 2026-09-09
 ^^^^^^^^^^^^^^^^^^^^
 - ``include_samples`` / ``exclude_samples`` of the filtrations accept a sample table again.
