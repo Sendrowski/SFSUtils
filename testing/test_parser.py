@@ -1126,6 +1126,35 @@ def test_probabilistic_polarization_applies_to_fixed_derived_sites_joint(tmp_pat
     assert sfs[0, 0] == pytest.approx(0.3)
 
 
+def test_probabilistic_polarization_two_sfs(tmp_path):
+    """Each site of a pair enters the two-SFS as its probabilistically polarized vector, so the pair's
+    mass is the symmetrized outer product of the two mixtures."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf(tmp_path / "two_sfs.vcf", [
+        ["1", "10", ".", "A", "T", ".", ".", "AA=A;AA_prob=0.7", "GT", "0|1", "0|0"],
+        ["1", "20", ".", "A", "T", ".", ".", "AA=A;AA_prob=0.6", "GT", "1|1", "1|1"],
+    ])
+
+    # the singleton splits over derived counts 1 and 3, the fixed-derived site over 4 and 0
+    first = np.array([0.0, 0.7, 0.0, 0.3, 0.0])
+    second = np.array([0.4, 0.0, 0.0, 0.0, 0.6])
+    pair = np.multiply.outer(first, second)
+    expected = (pair + pair.T) / 2
+
+    for mode in ["random", "probabilistic"]:
+        two_sfs = np.asarray(su.Parser(
+            source=vcf,
+            n=4,
+            two_sfs=True,
+            d=100,
+            polarize_probabilistically=True,
+            subsample_mode=mode,
+        ).parse()["all"])
+
+        np.testing.assert_allclose(two_sfs, expected, atol=1e-7)
+
+
 def test_subsample_modes_agree_at_fixed_derived_site(tmp_path):
     """Both subsample modes must place the same mass at a site with a single observed base, as the
     down-projection there is deterministic."""
