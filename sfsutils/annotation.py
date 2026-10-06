@@ -1596,7 +1596,7 @@ class SiteInfo:
         import matplotlib.pyplot as plt
 
         if ax is None:
-            ax = plt.gca()
+            _, ax = plt.subplots()
 
         if 'K' in self.rate_params:
             branch_lengths = {f'K{i}': self.rate_params['K'] for i in range(len(self.outgroup_bases) * 2 - 1)}

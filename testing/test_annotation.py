@@ -2454,6 +2454,31 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         ).plot_tree()
 
     @staticmethod
+    def test_plot_tree_creates_new_axes():
+        """
+        Without ``ax``, plot_tree() opens its own figure. Drawing on the current axes instead
+        hides the y-axis and spines of any axes left open and adds the tree to it.
+        """
+        plt.close('all')
+
+        _, existing = plt.subplots()
+        existing.plot([0, 1], [0, 1])
+
+        SiteInfo(
+            n_major=15,
+            major_base='T',
+            minor_base='C',
+            outgroup_bases=['C'],
+            rate_params=dict(K0=0.05, K1=0.3)
+        ).plot_tree(show=False)
+
+        assert len(plt.get_fignums()) == 2
+        assert len(existing.lines) == 1
+        assert existing.get_yaxis().get_visible()
+
+        plt.close('all')
+
+    @staticmethod
     def test_plot_tree_one_outgroup():
         """
         Test the plot_tree function.

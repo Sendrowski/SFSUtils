@@ -154,6 +154,29 @@ def test_twosfs_plot():
     _two_sfs(n=6).plot(title="t", log_scale=True, show=True)
 
 
+def test_twosfs_plot_creates_new_axes():
+    """
+    Without ``ax``, plot() opens its own figure. Drawing on the current axes instead fails after
+    plot_surface(), whose 3-D axes reject the heatmap, and overdraws any 2-D axes left open.
+    """
+    import matplotlib.pyplot as plt
+
+    plt.close("all")
+    s = _two_sfs(n=6)
+
+    surface = s.plot_surface(show=False)
+    after_surface = s.plot(show=False)
+    assert after_surface is not surface
+    assert after_surface.name == "rectilinear"
+
+    _, existing = plt.subplots()
+    existing.plot([0, 1], [0, 1])
+    assert s.plot(show=False) is not existing
+    assert len(existing.collections) == 0
+
+    plt.close("all")
+
+
 def test_twosfs_plot_surface():
     _two_sfs(n=6).plot_surface(title="t", show=True)
 

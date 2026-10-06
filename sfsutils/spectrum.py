@@ -1979,6 +1979,9 @@ class TwoSFS(AbstractSpectrum):
             m = max_abs if max_abs is not None else (np.nanmax(np.abs(data)) or 1)
             norm, cmap = SymLogNorm(linthresh=m / 10, vmin=-m, vmax=m), 'PuOr_r'
 
+        if ax is None:
+            _, ax = plt.subplots()
+
         ax = sns.heatmap(data, norm=norm, cmap=cmap, cbar_kws=cbar_kws, ax=ax)
 
         # invert y-axis and remove ticks
