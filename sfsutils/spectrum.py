@@ -710,7 +710,7 @@ class Spectrum(AbstractSpectrum):
 
         :param theta: Population mutation rate
         :param n_sites: Number of total sites
-        :param n: Number of frequency classes
+        :param n: Sample size, giving ``n + 1`` frequency classes
         :param r: Nuisance parameters that account for demography. An array of length ``n-1`` whose elements are
             multiplied element-wise with the polymorphic counts of the Kingman SFS. By default, no demography effects
             are considered which is equivalent to ``r = [1] * (n-1)``. Note that non-default values of ``r`` will also
