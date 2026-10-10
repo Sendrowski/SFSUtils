@@ -34,6 +34,7 @@ dependencies:
   - sphinx-autodoc-typehints
   - sphinx-copybutton
   - sphinxcontrib-bibtex
+  - sphinx-design
   - autodocsumm
   # --- PyPI-only deps: cyvcf2 (VCF backend), bio2zarr (VCF->VCZ), vcztools (reads VCZ back, for the
   #     writer interop test), and the phasegen two-locus ground truth. All are on zarr>=3.1. ---
@@ -42,3 +43,5 @@ dependencies:
     - bio2zarr
     - vcztools
     - phasegen
+    # PyPI-only, absent from conda-forge
+    - sphinx-paramlinks>=0.6
