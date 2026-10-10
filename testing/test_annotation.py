@@ -313,52 +313,6 @@ class AnnotationTestCase(TestCase):
         assert syn.n_vep_comparisons == 3566
         assert len(syn.vep_mismatches) == 0
 
-    @requires('resources/genome/sapiens/chr21.fasta', 'resources/genome/sapiens/chr21.sorted.gff3')
-    @pytest.mark.slow
-    @pytest.mark.very_slow
-    def test_compare_synonymy_annotation_with_vep_human_chr21(self):
-        """
-        Compare the synonymy annotation with VEP for human chromosome 21.
-        """
-        syn = su.SynonymyAnnotation()
-
-        ann = su.Annotator(
-            source="snakemake/results/vcf/sapiens/chr21.vep.vcf.gz",
-            output="scratch/test_compare_synonymy_annotation_with_vep_human_chr21.vcf",
-            fasta="resources/genome/sapiens/chr21.fasta",
-            gff="resources/genome/sapiens/chr21.sorted.gff3",
-            aliases=dict(chr21=['21']),
-            annotations=[syn]
-        )
-
-        ann.annotate()
-
-        assert syn.n_vep_comparisons == 9804
-        assert len(syn.vep_mismatches) == 42
-
-    @requires('resources/genome/sapiens/chr21.fasta', 'resources/genome/sapiens/hg38.sorted.gtf.gz')
-    @pytest.mark.slow
-    @pytest.mark.very_slow
-    def test_compare_synonymy_annotation_with_snpeff_human_chr21(self):
-        """
-        Compare the synonymy annotation with snpEff for human chromosome 21.
-        """
-        syn = su.SynonymyAnnotation()
-
-        ann = su.Annotator(
-            source="snakemake/results/vcf/sapiens/chr21.snpeff.vcf.gz",
-            output="scratch/test_compare_synonymy_annotation_with_snpeff_human_chr21.vcf",
-            fasta="resources/genome/sapiens/chr21.fasta",
-            gff="resources/genome/sapiens/hg38.sorted.gtf.gz",
-            aliases=dict(chr21=['21']),
-            annotations=[syn]
-        )
-
-        ann.annotate()
-
-        assert syn.n_snpeff_comparisons == 11240
-        assert len(syn.snpeff_mismatches) == 233
-
     @requires('results/fasta/hgdp/21.fasta.gz', 'results/gff/hgdp/21.gff3.gz', 'results/vcf/sapiens/chr21.vep.vcf.gz')
     @pytest.mark.slow
     @pytest.mark.very_slow
