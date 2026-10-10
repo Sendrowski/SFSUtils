@@ -31,13 +31,13 @@ PLAIN_FIXTURE = "resources/msprime/two_epoch.vcf"
 
 
 def _vcztools_bin():
-    """Locate the vcztools console script (VCZTOOLS_BIN overrides), or None if it is not installed. The
-    script sits next to this interpreter even when the env's bin is not on PATH."""
+    """Locate the vcztools console script (VCZTOOLS_BIN overrides). The script sits next to this
+    interpreter even when the env's bin is not on PATH."""
     override = os.environ.get("VCZTOOLS_BIN")
     if override:
         return override
     local = os.path.join(os.path.dirname(sys.executable), "vcztools")
-    return local if os.path.exists(local) else shutil.which("vcztools")
+    return local if os.path.exists(local) else "vcztools"
 
 
 class SmallChunkWriter(ZarrVariantWriter):
@@ -187,7 +187,6 @@ def test_memory_stays_bounded_by_a_chunk(tmp_path):
     assert peak < 25e6, f"peak of {peak / 1e6:.1f} MB while writing 40000 variants"
 
 
-@pytest.mark.skipif(_vcztools_bin() is None, reason="no vcztools binary reachable")
 def test_vcztools_reads_a_streamed_ragged_store(tmp_path):
     """vcztools reads back a store whose ragged axes were widened mid-stream, so the rebuilt arrays keep
     the chunk grid the reference reader requires."""

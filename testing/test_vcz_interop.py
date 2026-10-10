@@ -6,12 +6,10 @@ VCF-Zarr interoperability, both directions:
   * a store written by our own writer is spec-compliant VCF-Zarr: it carries the vcf_zarr_version and
     an ``_ARRAY_DIMENSIONS`` on every array, and ``vcztools`` reads it back to the expected VCF.
 
-``vcztools`` is a dev dependency (it shares the zarr>=3 requirement with bio2zarr), so the live check
-runs in this environment; it is skipped only where the binary is absent (a bare install). The
-structural compliance assertions run everywhere and cover the metadata vcztools needs.
+``vcztools`` is a test dependency (it shares the zarr>=3 requirement with bio2zarr). The structural
+compliance assertions cover the metadata vcztools needs.
 """
 import os
-import shutil
 import subprocess
 import sys
 
@@ -24,13 +22,13 @@ BIO2ZARR_FIXTURE = "resources/msprime/typed_info.vcz"
 
 
 def _vcztools_bin():
-    """Locate the vcztools console script (VCZTOOLS_BIN overrides), or None if it is not installed. The
-    script sits next to this interpreter even when the env's bin is not on PATH."""
+    """Locate the vcztools console script (VCZTOOLS_BIN overrides). The script sits next to this
+    interpreter even when the env's bin is not on PATH."""
     override = os.environ.get("VCZTOOLS_BIN")
     if override:
         return override
     local = os.path.join(os.path.dirname(sys.executable), "vcztools")
-    return local if os.path.exists(local) else shutil.which("vcztools")
+    return local if os.path.exists(local) else "vcztools"
 
 
 # --- direction 1: we read bio2zarr output, with INFO typed from the VCF header ----------------------
@@ -78,8 +76,6 @@ def test_writer_output_is_spec_compliant_vcz(tmp_path):
     assert list(root["variant_allele"].attrs["_ARRAY_DIMENSIONS"]) == ["variants", "alleles"]
 
 
-@pytest.mark.skipif(_vcztools_bin() is None,
-                    reason="no vcztools binary reachable (needs a zarr-3 env; set VCZTOOLS_BIN)")
 def test_vcztools_reads_writer_output(tmp_path):
     """vcztools (the reference VCF-Zarr reader, from a zarr-3 env) reconstructs the expected VCF from a
     store our writer produced."""
@@ -99,7 +95,6 @@ def test_vcztools_reads_writer_output(tmp_path):
 VCF_FIXTURE = "resources/msprime/two_epoch.vcf"
 
 
-@pytest.mark.skipif(_vcztools_bin() is None, reason="no vcztools binary reachable")
 @pytest.mark.skipif(not os.path.exists(VCF_FIXTURE), reason="the VCF fixture is absent")
 def test_vcztools_reads_filterer_vcf_to_vcz_output(tmp_path):
     """The real VCF-in -> vcz-out pipeline (Filterer, no template) produces a store vcztools reads back
@@ -118,7 +113,6 @@ def test_vcztools_reads_filterer_vcf_to_vcz_output(tmp_path):
     assert any("##contig" in ln for ln in result.stdout.splitlines())
 
 
-@pytest.mark.skipif(_vcztools_bin() is None, reason="no vcztools binary reachable")
 def test_vcztools_exports_missing_float_as_missing(tmp_path):
     """A float INFO field absent on some sites must export as a missing token ('.'), not the literal
     'nan': the writer uses the VCF-Zarr float-missing sentinel, which vcztools recognises."""

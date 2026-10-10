@@ -5,7 +5,6 @@ from unittest.mock import patch, MagicMock
 
 from sfsutils.io_handlers import FileHandler, download_if_url
 from testing import TestCase
-import shutil
 import subprocess
 import sys
 import pytest
@@ -138,13 +137,13 @@ class IOHandlerURLTestCase(TestCase):
 
 
 def _vcztools_bin():
-    """Locate the vcztools console script (VCZTOOLS_BIN overrides), or None if it is not installed. The
-    script sits next to this interpreter even when the env's bin is not on PATH."""
+    """Locate the vcztools console script (VCZTOOLS_BIN overrides). The script sits next to this
+    interpreter even when the env's bin is not on PATH."""
     override = os.environ.get("VCZTOOLS_BIN")
     if override:
         return override
     local = os.path.join(os.path.dirname(sys.executable), "vcztools")
-    return local if os.path.exists(local) else shutil.which("vcztools")
+    return local if os.path.exists(local) else "vcztools"
 
 
 def _write_store(path, n_variants, n_samples):
@@ -194,8 +193,6 @@ def test_chunks_do_not_exceed_the_array(tmp_path):
     assert root["call_genotype_phased"].chunks == (50, 4)
 
 
-@pytest.mark.skipif(_vcztools_bin() is None,
-                    reason="no vcztools binary reachable (needs a zarr-3 env; set VCZTOOLS_BIN)")
 def test_vcztools_reads_a_store_larger_than_one_chunk(tmp_path):
     """vcztools reconstructs the VCF from a store spanning several chunks along the variants axis, which
     it rejects unless the chunk grids line up."""
@@ -237,13 +234,6 @@ def _roundtrip(path, store):
     return ZarrVariantReader(str(store))
 
 
-def _vcztools():
-    """The vcztools console script, which sits next to this interpreter, or None where it is absent."""
-    local = os.path.join(os.path.dirname(sys.executable), 'vcztools')
-
-    return local if os.path.exists(local) else shutil.which('vcztools')
-
-
 def test_haploid_call_of_a_third_allele_survives_the_store(tmp_path):
     """A haploid call of an allele beyond the second is one cyvcf2 cannot render as a genotype string,
     so the store must take it from the numeric calls: all six haplotypes stay called."""
@@ -283,12 +273,7 @@ def test_a_shorter_call_is_padded_with_the_fill_sentinel(tmp_path):
 
     assert genotype.tolist() == [[0, 1], [0, -2], [0, 0], [1, 1], [-1, -1]]
 
-    binary = _vcztools()
-
-    if binary is None:
-        pytest.skip('vcztools is not installed')
-
-    exported = subprocess.run([binary, 'view', store], capture_output=True, text=True, check=True)
+    exported = subprocess.run([_vcztools_bin(), 'view', store], capture_output=True, text=True, check=True)
     calls = [line.split('\t')[9:] for line in exported.stdout.splitlines() if not line.startswith('#')]
 
     assert calls == [['0/1', '0', '0/0', '1|1', './.']]
@@ -312,7 +297,7 @@ def test_phase_follows_the_call_rather_than_its_rendering(tmp_path):
 def test_an_empty_reference_allele_keeps_its_position(tmp_path):
     """A tree sequence may carry an empty ancestral state, which occupies allele zero: dropping it would
     shift every genotype code onto the following allele."""
-    tskit = pytest.importorskip('tskit')
+    import tskit
 
     tables = tskit.TableCollection(sequence_length=10)
     for _ in range(4):
@@ -376,8 +361,6 @@ def test_site_types_agree_with_cyvcf2(tmp_path, ref, alt):
 def test_a_sites_only_store_streams(tmp_path):
     """A VCF without samples converts to a store without any call arrays, which streams as the sites it
     holds rather than raising."""
-    pytest.importorskip('bio2zarr')
-
     path = str(tmp_path / 'sites.vcf')
     with open(path, 'w') as f:
         f.write(HEADER + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
@@ -469,7 +452,7 @@ def test_contigs_are_found_in_any_order(tmp_path):
 def test_the_tskit_positions_are_those_of_the_sites():
     """The site positions come from the table column, and a continuous genome keeps its exact
     (non-integer) position alongside the rounded VCF one."""
-    msprime = pytest.importorskip('msprime')
+    import msprime
 
     ts = msprime.sim_mutations(msprime.sim_ancestry(5, sequence_length=1e4, random_seed=1),
                                rate=1e-4, random_seed=2)
@@ -1065,8 +1048,8 @@ def test_a_row_of_nothing_but_markers_carries_no_field(tmp_path):
 
 def test_multivalued_info_matches_cyvcf2(tmp_path):
     """The reference: the same records read through cyvcf2, which keeps the two apart."""
-    cyvcf2 = pytest.importorskip('cyvcf2')
-    bio2zarr = pytest.importorskip('bio2zarr.vcf')
+    import cyvcf2
+    import bio2zarr.vcf as bio2zarr
 
     header = (
         "##fileformat=VCFv4.2\n"
@@ -1247,8 +1230,6 @@ def test_a_late_info_field_is_written_out_in_full(tmp_path, monkeypatch):
 def test_vcf_contig_lengths_come_from_the_header(tmp_path):
     """The observed variants span a fraction of a sparsely covered contig, where the header declares the
     whole of it."""
-    pytest.importorskip('cyvcf2')
-
     handler = VCFHandler(_write_vcf(tmp_path / 'lengths.vcf',
                                     ["1\t10\t.\tA\tT\t.\tPASS\t.\tGT\t0|1"]))
 
@@ -1257,8 +1238,6 @@ def test_vcf_contig_lengths_come_from_the_header(tmp_path):
 
 def test_a_vcf_declaring_no_lengths_has_none(tmp_path):
     """A header without a length is no length at all rather than a length of zero."""
-    pytest.importorskip('cyvcf2')
-
     path = str(tmp_path / 'nolengths.vcf')
     with open(path, 'w') as f:
         f.write("##fileformat=VCFv4.2\n##contig=<ID=1>\n"
@@ -1279,7 +1258,7 @@ def test_zarr_contig_lengths_come_from_the_store(tmp_path):
 
 def test_tskit_contig_length_is_the_genome_length():
     """A tree sequence knows the region its sites are distributed over exactly."""
-    tskit = pytest.importorskip('tskit')
+    import tskit
 
     reader = TskitVariantReader(tskit.load('resources/msprime/two_epoch.trees'))
 
@@ -1374,8 +1353,6 @@ def test_undeclared_contig_length_falls_back_to_the_observed_span(tmp_path):
 
 def test_declared_length_reaches_the_store_through_a_vcf_source(tmp_path):
     """The ##contig header of a VCF input reaches the output store."""
-    pytest.importorskip("cyvcf2")
-
     from sfsutils.filtration import Filterer, SNPFiltration
 
     vcf = tmp_path / "in.vcf"

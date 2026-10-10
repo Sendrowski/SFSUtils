@@ -58,6 +58,9 @@ autodocsumm = "^0.2.15"
 cyvcf2 = ">=0.31,<1"
 zarr = ">=3.1"
 tskit = ">=0.5"
+# VCF to VCF-Zarr conversion and the reader of the written stores, for the interop tests
+bio2zarr = "*"
+vcztools = "*"
 # coalescent simulation for the msprime-based validation fixtures and tests
 msprime = ">=1.3"
 # analytic two-locus SFS ground truth for the (slow) two-SFS validation test

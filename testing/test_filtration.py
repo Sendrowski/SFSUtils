@@ -689,9 +689,6 @@ class TestHaploidLaterAlleleOutgroups:
 
     def test_verdicts_agree_across_encodings(self, tmp_path):
         """A mixed-ploidy input reaches the same verdicts read as a VCF and as a VCF-Zarr store."""
-        pytest.importorskip("bio2zarr")
-        pytest.importorskip("zarr")
-
         from bio2zarr import vcf as bio2zarr_vcf
 
         Settings.disable_pbar = True
@@ -985,8 +982,6 @@ def to_vcz(vcf, store):
     :param store: The path to write the store to.
     :return: The path to the store.
     """
-    pytest.importorskip("bio2zarr")
-
     subprocess.run([sys.executable, "-m", "bio2zarr", "vcf2zarr", "convert", vcf, store],
                    capture_output=True, check=True)
 
