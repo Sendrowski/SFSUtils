@@ -2271,19 +2271,36 @@ class JointSFS(AbstractSpectrum):
         """
         return JointSFS(self.data ** power, self.pop_names)
 
-    def marginalize(self, pops: Sequence[int]) -> 'JointSFS':
+    def _pop_indices(self, pops: Sequence[int | str]) -> Tuple[int, ...]:
+        """
+        The axis indices of the given populations.
+
+        :param pops: The populations, each an axis index or a population name.
+        :return: The axis indices.
+        :raises ValueError: If a population index is out of range or a population name is unknown.
+        """
+        names = self._names()
+
+        if any(isinstance(p, str) and p not in names for p in pops):
+            raise ValueError(f'Population names must be among {names}, got {list(pops)}.')
+
+        indices = tuple(names.index(p) if isinstance(p, str) else int(p) for p in pops)
+
+        if any(p < 0 or p >= self.n_pops for p in indices):
+            raise ValueError(f'Population indices must be in [0, {self.n_pops - 1}].')
+
+        return indices
+
+    def marginalize(self, pops: Sequence[int | str]) -> 'JointSFS':
         """
         Marginalize the joint SFS onto a subset of populations by summing over the other populations. This is useful
         for example to obtain a 2-dimensional view of a higher-dimensional joint SFS.
 
-        :param pops: The population indices to keep, in the desired axis order.
+        :param pops: The populations to keep, each an axis index or a population name, in the desired axis order.
         :return: A joint SFS over the specified populations.
-        :raises ValueError: If any population index is out of range.
+        :raises ValueError: If a population index is out of range or a population name is unknown.
         """
-        keep = tuple(int(p) for p in pops)
-
-        if any(p < 0 or p >= self.n_pops for p in keep):
-            raise ValueError(f'Population indices must be in [0, {self.n_pops - 1}].')
+        keep = self._pop_indices(pops)
 
         drop = tuple(i for i in range(self.n_pops) if i not in keep)
 
@@ -2328,7 +2345,7 @@ class JointSFS(AbstractSpectrum):
 
     def plot(
             self,
-            pops: Tuple[int, int] = (0, 1),
+            pops: Tuple[int | str, int | str] = (0, 1),
             ax: 'plt.Axes' = None,
             title: str = None,
             log_scale: bool = True,
@@ -2341,7 +2358,7 @@ class JointSFS(AbstractSpectrum):
         marginalized onto the two requested populations (summing over the others). The colour scale is
         logarithmic by default, since the joint SFS is heavily skewed toward the low-frequency corner.
 
-        :param pops: The two population indices to plot (y-axis, x-axis).
+        :param pops: The two populations to plot (y-axis, x-axis), each an axis index or a population name.
         :param ax: Axes to plot on.
         :param title: Title of the plot.
         :param log_scale: Whether to use a logarithmic color scale (default ``True``).
@@ -2361,6 +2378,7 @@ class JointSFS(AbstractSpectrum):
         # reduce to the two requested populations
         # marginalize onto the requested populations; for exactly two this still applies the requested
         # axis order (transposing when pops=(1, 0)), which drawing self untransposed would ignore
+        pops = self._pop_indices(pops)
         data = self.marginalize(pops).data.astype(float).copy()
 
         if data.ndim != 2:
@@ -2407,7 +2425,7 @@ class JointSFS(AbstractSpectrum):
 
     def plot_surface(
             self,
-            pops: Tuple[int, int] = (0, 1),
+            pops: Tuple[int | str, int | str] = (0, 1),
             ax: 'plt.Axes' = None,
             title: str = None,
             log_scale: bool = False,
@@ -2420,7 +2438,7 @@ class JointSFS(AbstractSpectrum):
         plane and the number of sites as height. For more than two populations, the joint SFS is first
         marginalized onto the two requested populations (summing over the others).
 
-        :param pops: The two population indices to plot (y-axis, x-axis).
+        :param pops: The two populations to plot (y-axis, x-axis), each an axis index or a population name.
         :param ax: Axes to plot on.
         :param title: Title of the plot.
         :param log_scale: Whether to use a logarithmic color scale.
@@ -2439,6 +2457,7 @@ class JointSFS(AbstractSpectrum):
         # reduce to the two requested populations
         # marginalize onto the requested populations; for exactly two this still applies the requested
         # axis order (transposing when pops=(1, 0)), which drawing self untransposed would ignore
+        pops = self._pop_indices(pops)
         data = self.marginalize(pops).data.astype(float).copy()
 
         if data.ndim != 2:
@@ -2613,11 +2632,11 @@ class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
 
         return JointSFS(sum(s.data for s in spectra), spectra[0].pop_names)
 
-    def marginalize(self, pops: Sequence[int]) -> 'JointSpectra':
+    def marginalize(self, pops: Sequence[int | str]) -> 'JointSpectra':
         """
         Marginalize every joint SFS onto a subset of populations (see :meth:`JointSFS.marginalize`).
 
-        :param pops: The population indices to keep, in the desired axis order.
+        :param pops: The populations to keep, each an axis index or a population name, in the desired axis order.
         :return: Marginalized joint spectra.
         """
         return JointSpectra({t: s.marginalize(pops) for t, s in self.data.items()})

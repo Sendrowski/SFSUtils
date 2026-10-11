@@ -5,6 +5,9 @@ library(sfsutils)
 # Both call styles are checked: the explicit `su$Class$plot(obj)` form (as in the fastdfe wrapper) and
 # the implicit `obj$plot()` form, which relies on reticulate binding the instance as `self`.
 
+# bind the Python interpreter, which sfsutils_is_installed() does not do on its own
+invisible(reticulate::py_available(initialize = TRUE))
+
 if (sfsutils_is_installed()) {
 
   su <- load_sfsutils()
@@ -41,6 +44,18 @@ if (sfsutils_is_installed()) {
     expect_equal(p01$labels$y, p10$labels$x)
 
     expect_error(su$JointSFS$plot(j, pops = c(0), show = FALSE), "two populations")
+  })
+
+  test_that("JointSFS plots populations given by name", {
+    j <- su$JointSFS(matrix(as.double(1:9), 3, 3), pop_names = c("A", "B"))
+
+    by_name <- su$JointSFS$plot(j, pops = c("B", "A"), show = FALSE)
+    by_index <- su$JointSFS$plot(j, pops = c(1, 0), show = FALSE)
+
+    expect_equal(by_name$data$value, by_index$data$value)
+    expect_equal(by_name$labels, by_index$labels)
+
+    expect_error(su$JointSFS$plot(j, pops = c("A", "C"), show = FALSE), "Population names")
   })
 
   test_that("Parser derives a spectrum that plots", {

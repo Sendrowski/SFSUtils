@@ -486,8 +486,8 @@ load_sfsutils <- function(install = FALSE) {
   # shown on both axes with the origin at the bottom left.
   #
   # @param self The JointSFS object (passed implicitly as the instance).
-  # @param pops Numeric vector of length two. The (0-based) population indices to
-  #             plot as (y-axis, x-axis). Default is c(0, 1).
+  # @param pops Vector of length two. The populations to plot as (y-axis, x-axis),
+  #             as (0-based) population indices or population names. Default is c(0, 1).
   # @param title Character. Title of the plot. Default is NULL.
   # @param log_scale Logical. Whether to use a logarithmic colour scale.
   #                  Default is TRUE, since the joint SFS is heavily skewed
@@ -513,10 +513,18 @@ load_sfsutils <- function(install = FALSE) {
       stop("Exactly two populations must be specified for a 2-dimensional plot.")
     }
 
+    all_names <- unlist(self$`_names`())
+    if (is.character(pops)) {
+      if (!all(pops %in% all_names)) {
+        stop("Population names must be among ", paste(all_names, collapse = ", "), ".")
+      }
+      pops <- match(pops, all_names) - 1
+    }
+
     # for pops = c(1, 0) the marginalized spectrum is transposed
     mat <- as.matrix(self$marginalize(as.integer(pops))$data)
     storage.mode(mat) <- "double"
-    pop_names <- unlist(self$`_names`())[pops + 1]
+    pop_names <- all_names[pops + 1]
 
     # mask the monomorphic corners (all-ancestral and all-derived)
     if (mask_monomorphic) {

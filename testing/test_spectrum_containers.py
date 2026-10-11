@@ -211,6 +211,30 @@ def test_jointsfs_marginalize():
         j.marginalize([5])
 
 
+def test_jointsfs_marginalize_by_name():
+    data = np.arange(24).reshape(2, 3, 4)
+    j = su.JointSFS(data, pop_names=["A", "B", "C"])
+
+    # names select the same axes as their indices, alone or mixed with indices
+    for by_name, by_index in ((["C", "A"], [2, 0]), (["B"], [1]), (["C", 0], [2, 0])):
+        assert np.array_equal(j.marginalize(by_name).data, j.marginalize(by_index).data)
+        assert j.marginalize(by_name).pop_names == j.marginalize(by_index).pop_names
+
+    assert np.array_equal(su.JointSpectra({"all": j}).marginalize(["C", "A"])["all"].data, data.sum(axis=1).T)
+
+    with pytest.raises(ValueError, match="Population names"):
+        j.marginalize(["A", "D"])
+
+
+def test_jointsfs_plot_by_name():
+    j = su.JointSFS(np.arange(1, 25).reshape(2, 3, 4), pop_names=["A", "B", "C"])
+
+    for plot in (j.plot, j.plot_surface):
+        ax = plot(pops=("C", "A"), show=False)
+        assert ax.get_xlabel() == "allele count A"
+        assert ax.get_ylabel() == "allele count C"
+
+
 def test_jointsfs_fold_matches_per_site_ground_truth():
     """Ground truth: fold each simulated SITE into its minor configuration by the total derived count, bin the
     result, and compare. This is the definition of folding, computed per site and so wholly independent of the
