@@ -1,7 +1,7 @@
 # SFSUtils  <img align="right" width="100" src="https://raw.githubusercontent.com/Sendrowski/SFSUtils/master/docs/logo.png">
 [![Tests](https://github.com/Sendrowski/SFSUtils/actions/workflows/run-tests.yml/badge.svg?branch=master)](https://github.com/Sendrowski/SFSUtils/actions/workflows/run-tests.yml)
 [![codecov](https://codecov.io/gh/Sendrowski/SFSUtils/branch/master/graph/badge.svg)](https://codecov.io/gh/Sendrowski/SFSUtils)
-[![Documentation Status](https://readthedocs.org/projects/sfsutils/badge/?version=latest)](https://sfsutils.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://img.shields.io/readthedocs/sfsutils/latest)](https://sfsutils.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/sfsutils-popgen.svg)](https://badge.fury.io/py/sfsutils-popgen)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/sfsutils.svg)](https://anaconda.org/conda-forge/sfsutils)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
