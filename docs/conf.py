@@ -59,6 +59,8 @@ intersphinx_mapping = {
 bibtex_bibfiles = ['refs.bib']
 
 typehints_use_signature = True
+typehints_use_signature_return = True
+typehints_document_rtype = False
 typehints_fully_qualified = False
 
 # The plotting methods return the lazily-imported ``plt.Axes`` (matplotlib is imported inside the
