@@ -645,6 +645,26 @@ class SpectraTestCase(TestCase):
 
         self.assertTrue(np.all(np.abs(truth.data[1:] - sub.data[1:]) < 1e-12))
 
+    def test_subsample_folded_spectrum_with_divergence(self):
+        """
+        Subsampling a spectrum whose polymorphic part is folded and which carries a divergence count gives a
+        folded spectrum with the same divergence count. The divergence count made the spectrum count as
+        unfolded, so the subsample was not folded.
+        """
+        data = (Spectrum.standard_kingman(30) * 10000).fold().data
+        data[-1] = 500
+
+        for mode in ['probabilistic', 'random']:
+            sub = Spectrum(data).subsample(10, mode=mode, seed=0)
+
+            self.assertEqual(sub.n_div, 500)
+            self.assertTrue(Spectrum.from_polymorphic(sub.polymorphic).is_folded())
+
+        sub = Spectrum(data).subsample(10, mode='probabilistic')
+        truth = (Spectrum.standard_kingman(10) * 10000).fold()
+
+        np.testing.assert_allclose(sub.polymorphic, truth.polymorphic, atol=1e-12)
+
     def test_subsample_spectrum_probabilistic_vs_random_folded(self):
         """
         Test random vs probabilistic subsampling.

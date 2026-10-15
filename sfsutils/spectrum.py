@@ -411,9 +411,13 @@ class Spectrum(AbstractSpectrum):
 
         sfs = Spectrum(subsample)
 
-        # fold if original spectrum was folded
-        if self.is_folded():
-            sfs = sfs.fold()
+        # fold if the polymorphic part of the original spectrum was folded, keeping its divergence count
+        if Spectrum.from_polymorphic(self.polymorphic).is_folded():
+            data = sfs.data.copy()
+            data[-1] -= self.n_div
+            data = Spectrum(data).fold().data
+            data[-1] += self.n_div
+            sfs = Spectrum(data)
 
         return sfs
 
