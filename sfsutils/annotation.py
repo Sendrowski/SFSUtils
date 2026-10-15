@@ -1805,13 +1805,13 @@ class KingmanPolarizationPrior(PolarizationPrior):
 
 class AdaptivePolarizationPrior(PolarizationPrior):
     """
-    Adaptive prior. To be used with :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`. This is the
-    same prior as used in the EST-SFS paper. This prior is adaptive in the sense that the most likely polarization
-    probabilities given the site configurations are found. This is the most accurate prior, but requires a lot of
-    sites in order to work properly. You can check that the polarization probabilities are smooth enough across
-    frequency counts by calling :meth:`~sfsutils.annotation.PolarizationPrior.plot`. If they are not
-    smooth enough, you can increase the number of sites, decrease the number of ingroups, or
-    use :class:`~sfsutils.annotation.KingmanPolarizationPrior` instead.
+    Adaptive prior. To be used with :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation`. This is the same
+    prior as used in the EST-SFS paper. This prior is adaptive in the sense that the most likely polarization
+    probabilities given the site configurations are found. This is the most accurate prior, but requires a lot of sites
+    in order to work properly. You can check that the polarization probabilities are smooth enough across frequency
+    counts by calling :meth:`PolarizationPrior.plot() <sfsutils.annotation.PolarizationPrior.plot>`. If they are not
+    smooth enough, you can increase the number of sites, decrease the number of ingroups, or use
+    :class:`~sfsutils.annotation.KingmanPolarizationPrior` instead.
 
     .. note:: In practice, this prior provides very similar results to :class:`KingmanPolarizationPrior` in most cases.
     """

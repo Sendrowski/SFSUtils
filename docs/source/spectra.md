@@ -151,7 +151,7 @@ For a complete reference of the available methods and properties, see {class}`~s
 
 +++
 ## Folded spectra
-{class}`~sfsutils.spectrum.Spectrum` and {class}`~sfsutils.spectrum.Spectra` objects can also be folded by collapsing the bins corresponding to the derived allele counts onto the bins corresponding to the ancestral allele counts. Folding discards information, which is particularly noticeable when beneficial mutations are present. However, folded spectra are easier to obtain, and are robust to misspecification of the ancestral state, which is often unknown. A spectrum reports whether it has been folded through its {meth}`~sfsutils.spectrum.Spectrum.is_folded` method.
+{class}`~sfsutils.spectrum.Spectrum` and {class}`~sfsutils.spectrum.Spectra` objects can also be folded by collapsing the bins corresponding to the derived allele counts onto the bins corresponding to the ancestral allele counts. Folding discards information, which is particularly noticeable when beneficial mutations are present. However, folded spectra are easier to obtain, and are robust to misspecification of the ancestral state, which is often unknown. A spectrum reports whether it has been folded through its {meth}`Spectrum.is_folded() <sfsutils.spectrum.Spectrum.is_folded>` method.
 
 ```{code-cell} python
 :tags: [full-width]

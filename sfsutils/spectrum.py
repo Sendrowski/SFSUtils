@@ -2561,9 +2561,9 @@ class _DictSpectraSerialization:
 class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of joint (multi-population) site-frequency spectra keyed by type, the multi-population analogue of
-    :class:`~sfsutils.spectrum.Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the parser is given
-    populations, with one :class:`JointSFS` per stratification type (or a single ``all`` type when no stratifications
-    are used).
+    :class:`~sfsutils.spectrum.Spectra`. This is the return type of
+    :meth:`Parser.parse() <sfsutils.parser.Parser.parse>` when the parser is given populations, with one
+    :class:`JointSFS` per stratification type (or a single ``all`` type when no stratifications are used).
     """
 
     def __init__(self, data: Dict[str, Union['JointSFS', np.ndarray]], pop_names: List[str] = None) -> None:
@@ -2682,10 +2682,11 @@ class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
 class TwoSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of two-site (two-locus) site-frequency spectra keyed by type, the two-dimensional analogue of
-    :class:`~sfsutils.spectrum.Spectra`. This is the return type of :meth:`~sfsutils.parser.Parser.parse` when the two-SFS is parsed
-    with stratifications, holding one :class:`TwoSFS` per stratification type. Because the two-SFS pairs sites,
-    stratified parsing counts only within-stratum pairs, so summing the per-type spectra does not in general recover
-    the unstratified two-SFS (cross-stratum pairs are not counted).
+    :class:`~sfsutils.spectrum.Spectra`. This is the return type of
+    :meth:`Parser.parse() <sfsutils.parser.Parser.parse>` when the two-SFS is parsed with stratifications, holding one
+    :class:`TwoSFS` per stratification type. Because the two-SFS pairs sites, stratified parsing counts only
+    within-stratum pairs, so summing the per-type spectra does not in general recover the unstratified two-SFS
+    (cross-stratum pairs are not counted).
     """
 
     def __init__(self, data: Dict[str, Union['TwoSFS', np.ndarray]]) -> None:

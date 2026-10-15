@@ -843,11 +843,11 @@ class TargetSiteCounter:
         also for monomorphic sites sampled from the FASTA file.
 
     .. note::
-        With the unstratified two-SFS (``two_sfs=True``) this counter extrapolates the monomorphic-involving pairs
-        from the target-site count. That anchors the marginal only approximately, so the resulting
-        :meth:`~sfsutils.spectrum.TwoSFS.cov` / ``corr`` are approximate (a real all-sites input is preferred);
-        :meth:`~sfsutils.spectrum.TwoSFS.fpmi` needs no monomorphic sites. The stratified two-SFS with a counter is
-        not supported.
+        With the unstratified two-SFS (``two_sfs=True``) this counter extrapolates the monomorphic-involving pairs from
+        the target-site count. That anchors the marginal only approximately, so the resulting
+        :meth:`TwoSFS.cov() <sfsutils.spectrum.TwoSFS.cov>` / ``corr`` are approximate (a real all-sites input is
+        preferred); :meth:`TwoSFS.fpmi() <sfsutils.spectrum.TwoSFS.fpmi>` needs no monomorphic sites. The stratified
+        two-SFS with a counter is not supported.
     """
 
     def __init__(
@@ -1289,10 +1289,11 @@ class TargetSiteCounter:
         divergence row and column are populated too. The window offset drops out: a band of width ``distance`` holds the same
         expected number of sites regardless of where it starts.
 
-        Only the sites that are truly missing are extrapolated, so passing an all-sites input (where the
-        monomorphic sites are observed and their pairs already counted) does not double-count them. This anchors
-        the marginal for :meth:`~sfsutils.spectrum.TwoSFS.cov` / ``corr`` only approximately;
-        :meth:`~sfsutils.spectrum.TwoSFS.fpmi` needs no monomorphic sites and is preferred for SNP-only input.
+        Only the sites that are truly missing are extrapolated, so passing an all-sites input (where the monomorphic
+        sites are observed and their pairs already counted) does not double-count them. This anchors the marginal for
+        :meth:`TwoSFS.cov() <sfsutils.spectrum.TwoSFS.cov>` / ``corr`` only approximately;
+        :meth:`TwoSFS.fpmi() <sfsutils.spectrum.TwoSFS.fpmi>` needs no monomorphic sites and is preferred for SNP-only
+        input.
 
         :param two_sfs: The symmetrized two-SFS of the observed sites.
         :param marginal: The one-dimensional marginal of the observed sites.
@@ -1528,10 +1529,11 @@ class Parser(MultiHandler):
             ``subsample_mode='random'`` at the full sample size and smoother under ``'probabilistic'``. The matrix is
             symmetrized. Not compatible with ``pops``. Stratifications are supported (counting only within-stratum
             pairs, into a :class:`~sfsutils.spectrum.TwoSpectra`). The unstratified two-SFS accepts a
-            ``target_site_counter``, which extrapolates the monomorphic-involving pairs from the target-site count;
-            the resulting :meth:`~sfsutils.spectrum.TwoSFS.cov` / :meth:`~sfsutils.spectrum.TwoSFS.corr` are then only
-            approximate, so a real all-sites input (monomorphic sites retained) is preferred for an accurate
-            covariance, while :meth:`~sfsutils.spectrum.TwoSFS.fpmi` needs no monomorphic sites.
+            ``target_site_counter``, which extrapolates the monomorphic-involving pairs from the target-site count; the
+            resulting :meth:`TwoSFS.cov() <sfsutils.spectrum.TwoSFS.cov>` /
+            :meth:`TwoSFS.corr() <sfsutils.spectrum.TwoSFS.corr>` are then only approximate, so a real all-sites input
+            (monomorphic sites retained) is preferred for an accurate covariance, while
+            :meth:`TwoSFS.fpmi() <sfsutils.spectrum.TwoSFS.fpmi>` needs no monomorphic sites.
         :param d: The width (in base pairs) of the distance window over which the two sites of a pair
             are separated when ``two_sfs=True``. Together with ``two_sfs_offset`` it defines the window
             ``(two_sfs_offset, two_sfs_offset + d]``; with the default ``two_sfs_offset=0`` this is
@@ -2284,8 +2286,9 @@ class Parser(MultiHandler):
     def _warn_if_monomorphic_missing(self):
         """
         Warn when the parsed two-SFS appears to carry (almost) no monomorphic sites. The two-SFS covariance and
-        correlation (:meth:`~sfsutils.spectrum.TwoSFS.cov` / :meth:`~sfsutils.spectrum.TwoSFS.corr`) require the
-        monomorphic sites to anchor the marginal to the site-frequency spectrum, so an all-sites input is needed.
+        correlation (:meth:`TwoSFS.cov() <sfsutils.spectrum.TwoSFS.cov>` /
+        :meth:`TwoSFS.corr() <sfsutils.spectrum.TwoSFS.corr>`) require the monomorphic sites to anchor the marginal to
+        the site-frequency spectrum, so an all-sites input is needed.
         """
         marginal = sum(self._two_sfs_marginal.values(), np.zeros(self.n + 1))
         n_sites = float(marginal.sum())
