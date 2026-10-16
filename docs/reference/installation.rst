@@ -18,7 +18,7 @@ Installation
 
          pip install sfsutils-popgen
 
-      ``sfsutils`` is compatible with Python 3.11 through 3.13.
+      ``sfsutils`` is compatible with Python 3.11 through 3.14.
 
       The backends for the different input sources are optional extras: ``vcf`` (the :mod:`cyvcf2 <cyvcf2.cyvcf2>` dependency, for VCF files), ``zarr`` (the :mod:`zarr` dependency, for VCF-Zarr stores) and ``arg`` (the :mod:`tskit` dependency, for tree sequences). All of them are installed with:
 
@@ -89,7 +89,7 @@ Installation
 
          su <- load_sfsutils()
 
-      ``sfsutils`` is compatible with Python 3.11 through 3.13, and the declared requirement resolves against Python 3.11.
+      ``sfsutils`` is compatible with Python 3.11 through 3.14, and the declared requirement resolves against Python 3.11.
 
       The backends for the different input sources are optional extras: ``vcf`` (the :mod:`cyvcf2 <cyvcf2.cyvcf2>` dependency, for VCF files), ``zarr`` (the :mod:`zarr` dependency, for VCF-Zarr stores) and ``arg`` (the :mod:`tskit` dependency, for tree sequences). Only ``vcf`` is declared by default. Additional backends are declared by calling ``install_sfsutils()`` before the module is loaded:
 

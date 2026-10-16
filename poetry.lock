@@ -193,6 +193,7 @@ files = [
     {file = "biopython-1.87-cp314-cp314t-win_amd64.whl", hash = "sha256:331c4151608a1d8406eff0d3c52a0ff1fa3e82604fc85f11c696c562919fb161"},
     {file = "biopython-1.87.tar.gz", hash = "sha256:8456c803459b679a9712422e5a7fd9809f2f089bf69bb085f3b077946ac9bdbf"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.dependencies]
 numpy = "*"
@@ -570,6 +571,7 @@ files = [
     {file = "contourpy-1.3.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:3d1a3799d62d45c18bafd41c5fa05120b96a28079f2393af559b843d1a966a77"},
     {file = "contourpy-1.3.3.tar.gz", hash = "sha256:083e12155b210502d0bca491432bb04d56dc3432f95a979b429f2848c3dbe880"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.dependencies]
 numpy = ">=1.25"
@@ -592,6 +594,7 @@ files = [
     {file = "cycler-0.12.1-py3-none-any.whl", hash = "sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30"},
     {file = "cycler-0.12.1.tar.gz", hash = "sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.extras]
 docs = ["ipython", "matplotlib", "numpydoc", "sphinx"]
@@ -730,6 +733,7 @@ files = [
     {file = "dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d"},
     {file = "dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.extras]
 graph = ["objgraph (>=1.7.2)"]
@@ -804,6 +808,7 @@ description = "Fast and flexible inference of the distribution of fitness effect
 optional = false
 python-versions = "<3.14,>=3.10"
 groups = ["dev"]
+markers = "python_version < \"3.14\""
 files = [
     {file = "fastdfe-1.3.3-py3-none-any.whl", hash = "sha256:2924546a2eeb7935394db575401471c8a60a6f46e82ce33067937c885550104d"},
     {file = "fastdfe-1.3.3.tar.gz", hash = "sha256:1519078bbf146d79fce033ee42c26190bdf3c347120310b4b8583635091b1a61"},
@@ -901,6 +906,7 @@ files = [
     {file = "fonttools-4.63.0-py3-none-any.whl", hash = "sha256:445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d"},
     {file = "fonttools-4.63.0.tar.gz", hash = "sha256:caeb583deeb5168e694b65cda8b4ee62abedfa66cf88488734466f2366b9c4e0"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.extras]
 all = ["brotli (>=1.0.1) ; platform_python_implementation == \"CPython\"", "brotlicffi (>=0.8.0) ; platform_python_implementation != \"CPython\"", "lxml (>=4.0)", "lz4 (>=1.7.4.2)", "matplotlib", "munkres ; platform_python_implementation == \"PyPy\"", "pycairo", "scipy ; platform_python_implementation != \"PyPy\"", "skia-pathops (>=0.5.0)", "sympy", "uharfbuzz (>=0.45.0)", "unicodedata2 (>=17.0.0) ; python_version <= \"3.14\"", "xattr ; sys_platform == \"darwin\"", "zopfli (>=0.1.4)"]
@@ -1263,6 +1269,7 @@ files = [
     {file = "jsonpickle-3.4.2-py3-none-any.whl", hash = "sha256:fd6c273278a02b3b66e3405db3dd2f4dbc8f4a4a3123bfcab3045177c6feb9c3"},
     {file = "jsonpickle-3.4.2.tar.gz", hash = "sha256:2efa2778859b6397d5804b0a98d52cd2a7d9a70fcb873bc5a3ca5acca8f499ba"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.extras]
 cov = ["pytest-cov"]
@@ -1509,6 +1516,7 @@ files = [
     {file = "kiwisolver-1.5.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:59cd8683f575d96df5bb48f6add94afc055012c29e28124fcae2b63661b9efb1"},
     {file = "kiwisolver-1.5.0.tar.gz", hash = "sha256:d4193f3d9dc3f6f79aaed0e5637f45d98850ebf01f7ca20e69457f3e8946b66a"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [[package]]
 name = "latexcodec"
@@ -1529,6 +1537,7 @@ description = "lightweight wrapper around basic LLVM functionality"
 optional = false
 python-versions = ">=3.10"
 groups = ["dev"]
+markers = "python_version < \"3.14\""
 files = [
     {file = "llvmlite-0.48.0-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:614aad57df707e3172efd5165f2aa7da6a0c6897e40dce590bf756396815ba76"},
     {file = "llvmlite-0.48.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:13532f248960ba888ad5ab8150494e2f3a3d20e5f59f264e63741ea5b0ba844c"},
@@ -1735,6 +1744,7 @@ files = [
     {file = "matplotlib-3.11.1-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:e4b9ac2f1f607ecda2af90a5232beee2af7582fce1cc30c4b6a1b012dc21ee99"},
     {file = "matplotlib-3.11.1.tar.gz", hash = "sha256:69647db5746941c793d6e445a4cd349323ffb87d9cc958c2ad84a659b4832d30"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.dependencies]
 contourpy = ">=1.0.1"
@@ -1804,6 +1814,7 @@ description = "Python library for arbitrary-precision floating-point arithmetic"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
+markers = "python_version < \"3.14\""
 files = [
     {file = "mpmath-1.4.1-py3-none-any.whl", hash = "sha256:dc4f0ea2304480d4a9a48a94c1020571558ade522b44a6912efac63a586e140f"},
     {file = "mpmath-1.4.1.tar.gz", hash = "sha256:efd6d1b75f09d69524a67609949812668b28e81ecbfe0ab449ced8c13e92642e"},
@@ -1876,6 +1887,7 @@ files = [
     {file = "multiprocess-0.70.19-py39-none-any.whl", hash = "sha256:0d4b4397ed669d371c81dcd1ef33fd384a44d6c3de1bd0ca7ac06d837720d3c5"},
     {file = "multiprocess-0.70.19.tar.gz", hash = "sha256:952021e0e6c55a4a9fe4cd787895b86e239a40e76802a789d6305398d3975897"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.dependencies]
 dill = ">=0.4.1"
@@ -2071,6 +2083,7 @@ description = "compiling Python code using LLVM"
 optional = false
 python-versions = ">=3.10"
 groups = ["dev"]
+markers = "python_version < \"3.14\""
 files = [
     {file = "numba-0.66.0-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:27951c47e0def9bf8afe580eb961102902e2fd23cb77924b7d9d7cc0f8b444cb"},
     {file = "numba-0.66.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:cc408c54b450f41582f4be1608f8981c1dcc44c7f40355cc150dd93015753407"},
@@ -2381,6 +2394,7 @@ description = "Computation and inference on exact solutions of coalescent distri
 optional = false
 python-versions = "<3.14,>=3.10"
 groups = ["dev"]
+markers = "python_version < \"3.14\""
 files = [
     {file = "phasegen-1.2.0-py3-none-any.whl", hash = "sha256:de9bb9130bfcd356e8ea946d72ebd756ff992ebe533053d2c8a8194ebcfa04e6"},
     {file = "phasegen-1.2.0.tar.gz", hash = "sha256:69eb7746fdc9b25c70106456b4b02f22b8a6651a935261ba370a135c11804a69"},
@@ -2496,6 +2510,7 @@ files = [
     {file = "pillow-12.3.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:04f01d28a6aaff387bf842a13be313df23ba0597a44f1a976c9feb3c6ff4711a"},
     {file = "pillow-12.3.0.tar.gz", hash = "sha256:3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.extras]
 docs = ["furo", "olefile", "sphinx (>=8.2)", "sphinx-autobuild", "sphinx-copybutton", "sphinx-inline-tabs", "sphinxext-opengraph"]
@@ -3366,7 +3381,6 @@ description = "Fundamental algorithms for scientific computing in Python"
 optional = false
 python-versions = ">=3.12"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.12\""
 files = [
     {file = "scipy-1.18.0-cp312-cp312-macosx_10_15_x86_64.whl", hash = "sha256:7bd21faaf5a1a3b2eff922d02db5f191b99a6518db9078a8fb23169f6d22259a"},
     {file = "scipy-1.18.0-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:265915e79107de9f946b855e50d7470d5893ec3f54b342e1aa6201cbdcd8bb6b"},
@@ -3410,6 +3424,7 @@ files = [
     {file = "scipy-1.18.0-cp314-cp314t-win_arm64.whl", hash = "sha256:368e0a705903c466aa5f08eefb39e6b1b6b2d659e7352a31fd9e2438365be0f8"},
     {file = "scipy-1.18.0.tar.gz", hash = "sha256:67b2ad2ad54c72ca6d04975a9b2df8c3638c34ddd5b28738e94fc2b57929d378"},
 ]
+markers = {main = "python_version >= \"3.12\"", dev = "python_version >= \"3.12\" and python_version < \"3.14\""}
 
 [package.dependencies]
 numpy = ">=2.0.0,<2.8"
@@ -3430,6 +3445,7 @@ files = [
     {file = "seaborn-0.13.2-py3-none-any.whl", hash = "sha256:636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987"},
     {file = "seaborn-0.13.2.tar.gz", hash = "sha256:93e60a40988f4d65e9f4885df477e2fdaff6b73a9ded434c1ab356dd57eefff7"},
 ]
+markers = {dev = "python_version < \"3.14\""}
 
 [package.dependencies]
 matplotlib = ">=3.4,<3.6.1 || >3.6.1"
@@ -4200,5 +4216,5 @@ zarr = ["zarr"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.11,<3.14"
-content-hash = "37bd4cc28e2fb8f0f6120ae58d507041b1e285102059ea295b404263a8af8476"
+python-versions = ">=3.11,<3.15"
+content-hash = "9de86d768a5cb2e77e12d28e2993c5c0df797578e5b19437b21ab9db36b531ec"

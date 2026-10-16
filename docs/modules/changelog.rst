@@ -3,6 +3,10 @@
 Changelog
 =========
 
+[Unreleased]
+^^^^^^^^^^^^
+- Support Python 3.14.
+
 [1.1.1] - 2026-10-16
 ^^^^^^^^^^^^^^^^^^^^
 - Installs on Windows, where the ``vcf`` extra omits cyvcf2 and VCF input is unavailable.
