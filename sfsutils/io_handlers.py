@@ -29,7 +29,6 @@ import requests
 from Bio import SeqIO
 from Bio.SeqIO.FastaIO import FastaIterator
 from Bio.SeqRecord import SeqRecord
-from pandas.errors import SettingWithCopyWarning
 from tqdm import tqdm
 
 from .settings import Settings
@@ -1108,12 +1107,12 @@ class GFFHandler(FileHandler):
         :param df: The coding sequences.
         :return: The coding sequences without overlaps.
         """
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=SettingWithCopyWarning)
+        # copy, as the coding sequences may be a slice of a larger frame
+        df = df.copy()
 
-            # shift within each contig, so the last CDS of one contig is not compared against the first
-            # CDS of the next (whose start coordinate restarts low) and spuriously dropped as overlapping
-            df['overlap'] = df.groupby('seqid')['start'].shift(-1) <= df['end']
+        # shift within each contig, so the last CDS of one contig is not compared against the first
+        # CDS of the next (whose start coordinate restarts low) and spuriously dropped as overlapping
+        df['overlap'] = df.groupby('seqid')['start'].shift(-1) <= df['end']
 
         df = df[~df['overlap']]
 
@@ -1140,12 +1139,9 @@ class GFFHandler(FileHandler):
         if remove_overlaps:
             cds = GFFHandler.remove_overlaps(cds)
 
-        # catch warning when adding a new column to a slice of a DataFrame
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=SettingWithCopyWarning)
-
-            # create a new column for the difference between 'end' and 'start'
-            cds['length'] = cds['end'] - cds['start'] + 1
+        # copy, as the filters above may leave a slice of a larger frame
+        cds = cds.copy()
+        cds['length'] = cds['end'] - cds['start'] + 1
 
         return cds
 
