@@ -3,6 +3,13 @@
 Changelog
 =========
 
+[1.1.1] - 2026-10-16
+^^^^^^^^^^^^^^^^^^^^
+- Installs on Windows, where the ``vcf`` extra omits cyvcf2 and VCF input is unavailable.
+- :meth:`JointSFS.marginalize() <sfsutils.spectrum.JointSFS.marginalize>` and :meth:`JointSFS.plot() <sfsutils.spectrum.JointSFS.plot>` accept population names.
+- :meth:`Spectrum.subsample() <sfsutils.spectrum.Spectrum.subsample>` keeps a folded spectrum with divergence counts folded.
+- :meth:`TwoSFS.plot() <sfsutils.spectrum.TwoSFS.plot>` and :meth:`SiteInfo.plot_tree() <sfsutils.annotation.SiteInfo.plot_tree>` open a new figure when no axes are given.
+
 [1.1.0] - 2026-09-16
 ^^^^^^^^^^^^^^^^^^^^
 - :class:`~sfsutils.parser.Parser` polarizes by the ``AA_post`` posterior over A, C, G and T, renormalised over the site's own alleles, where a record carries it.
