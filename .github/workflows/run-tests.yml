@@ -17,8 +17,12 @@ permissions:
 
 jobs:
   test:
-    name: run tests on ubuntu
-    runs-on: ubuntu-latest
+    name: run tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
