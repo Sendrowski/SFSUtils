@@ -10,8 +10,6 @@ first chunk has already reached disk.
 :func:`~sfsutils.io_handlers.count_indexed_sites` reads the record count of an indexed VCF from its tabix
 index instead of decompressing the file a second time, and must agree with the count a full pass gives.
 """
-import ctypes
-import glob
 import os
 import shutil
 import subprocess
@@ -26,7 +24,7 @@ from sfsutils.settings import Settings
 
 Settings.disable_pbar = True
 
-VCF_FIXTURE = "resources/genome/sapiens/chr21_test.vcf.gz"
+VCF_FIXTURE = "resources/genome/betula/biallelic.subset.10000.vcf.gz"
 PLAIN_FIXTURE = "resources/msprime/two_epoch.vcf"
 
 
@@ -201,33 +199,15 @@ def test_vcztools_reads_a_streamed_ragged_store(tmp_path):
 
 # --- the site count of an indexed VCF ---------------------------------------------------------------
 
-def _index(path):
-    """Build a tabix index next to a bgzipped VCF through the htslib that cyvcf2 links, there being no
-    tabix binary in this environment. Returns whether the index was built."""
-    import cyvcf2
-
-    libraries = glob.glob(os.path.join(os.path.dirname(cyvcf2.__file__), "*.so"))
-    if not libraries:
-        return False
-
-    library = ctypes.CDLL(libraries[0])
-    library.bcf_index_build.argtypes = [ctypes.c_char_p, ctypes.c_int]
-    library.bcf_index_build.restype = ctypes.c_int
-
-    return library.bcf_index_build(str(path).encode(), 0) == 0 and os.path.exists(f"{path}.tbi")
-
-
 @pytest.fixture
 def indexed_vcf(tmp_path):
     """A copy of the bgzipped fixture with a tabix index next to it."""
-    if not os.path.exists(VCF_FIXTURE):
-        pytest.skip("the bgzipped VCF fixture is absent")
+    import cyvcf2  # noqa: F401, the index is read through cyvcf2
+    import pysam
 
     path = tmp_path / os.path.basename(VCF_FIXTURE)
     shutil.copy(VCF_FIXTURE, path)
-
-    if not _index(path):
-        pytest.skip("no way to build a tabix index in this environment")
+    pysam.tabix_index(str(path), preset="vcf", keep_original=True, force=True)
 
     return str(path)
 
@@ -259,4 +239,4 @@ def test_count_falls_back_on_an_unreadable_index(tmp_path, indexed_vcf):
         f.write(b"not an index")
 
     assert count_indexed_sites(indexed_vcf) is None
-    assert count_sites(indexed_vcf) == 1517
+    assert count_sites(indexed_vcf) == 10000

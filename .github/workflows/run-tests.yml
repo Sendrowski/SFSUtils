@@ -31,6 +31,6 @@ jobs:
         with:
           enable-cache: true
       - name: Install sfsutils + test deps
-        run: uv pip install --system -e ".[vcf,zarr,arg]" bio2zarr vcztools msprime phasegen pytest pytest-xdist pytest-sugar
+        run: uv pip install --system -e ".[vcf,zarr,arg]" bio2zarr vcztools msprime phasegen "pysam; sys_platform != 'win32'" pytest pytest-xdist pytest-sugar
       - name: Run tests
         run: pytest -n auto -m "not very_slow" testing/

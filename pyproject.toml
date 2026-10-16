@@ -65,6 +65,8 @@ vcztools = "*"
 msprime = ">=1.3"
 # analytic two-locus SFS ground truth for the (slow) two-SFS validation test
 phasegen = ">=1.2.0"
+# tabix indexes for the indexed record-count tests (no Windows build, like cyvcf2)
+pysam = { version = ">=0.22", markers = "sys_platform != 'win32'" }
 
 [build-system]
 requires = ["poetry-core"]

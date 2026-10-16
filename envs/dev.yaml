@@ -43,5 +43,6 @@ dependencies:
     - bio2zarr
     - vcztools
     - phasegen
+    - pysam
     # PyPI-only, absent from conda-forge
     - sphinx-paramlinks>=0.6
