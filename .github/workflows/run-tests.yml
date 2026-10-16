@@ -1,7 +1,6 @@
-# Run the fast test suite on every push to master and on pull requests.
-# There is a single fast tier: tests over committed fixtures run; tests that need
-# large, uncommitted genome data are skip-guarded (they skip when the data is absent),
-# so no slow/inference marker is needed. Dependencies are installed with uv (no conda).
+# Run the test suite on Linux, macOS and Windows on every push to master and on pull requests,
+# slow tier included. The very_slow tests, whose data is not committed, run locally.
+# Dependencies are installed with uv (no conda).
 
 name: tests
 
@@ -34,4 +33,4 @@ jobs:
       - name: Install sfsutils + test deps
         run: uv pip install --system -e ".[vcf,zarr,arg]" bio2zarr vcztools msprime pytest pytest-xdist pytest-sugar
       - name: Run tests
-        run: pytest -n auto testing/
+        run: pytest -n auto -m "not very_slow" testing/
