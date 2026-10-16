@@ -668,7 +668,7 @@ class FileHandler:
                         pbar.update(len(chunk))
 
         # rename the file to the original file extension
-        os.rename(tmp.name, path)
+        os.replace(tmp.name, path)
 
         if cache:
             cls._logger.info(f'Cached file at {path}')
