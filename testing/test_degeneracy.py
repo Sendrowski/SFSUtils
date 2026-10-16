@@ -8,7 +8,6 @@ synthetic data, complementing the slow Betula/CLI degeneracy tests.
 """
 
 import pytest
-from cyvcf2 import VCF
 
 import sfsutils as su
 
@@ -64,6 +63,8 @@ def _write_inputs(tmp_path):
 
 def test_degeneracy_annotation_synthetic_codons(tmp_path):
     """Per-site degeneracy tags match the genetic code for hand-worked codon positions."""
+    from cyvcf2 import VCF
+
     vcf, fasta, gff = _write_inputs(tmp_path)
     out = tmp_path / "degeneracy.vcf"
 

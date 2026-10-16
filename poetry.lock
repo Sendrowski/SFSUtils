@@ -437,7 +437,7 @@ files = [
     {file = "click-8.4.2-py3-none-any.whl", hash = "sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76"},
     {file = "click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6"},
 ]
-markers = {main = "extra == \"vcf\""}
+markers = {main = "sys_platform != \"win32\" and extra == \"vcf\""}
 
 [package.dependencies]
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
@@ -466,7 +466,7 @@ files = [
     {file = "coloredlogs-15.0.1-py2.py3-none-any.whl", hash = "sha256:612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934"},
     {file = "coloredlogs-15.0.1.tar.gz", hash = "sha256:7c991aa71a4577af2f82600d8f8f3a89f936baeaf9b50a9c197da014e5bf16b0"},
 ]
-markers = {main = "extra == \"vcf\""}
+markers = {main = "sys_platform != \"win32\" and extra == \"vcf\""}
 
 [package.dependencies]
 humanfriendly = ">=9.1"
@@ -644,7 +644,7 @@ files = [
     {file = "cyvcf2-0.34.0-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:9128500b64eed932962954e67d99dead3d95322d5df550f121991455237b11d3"},
     {file = "cyvcf2-0.34.0.tar.gz", hash = "sha256:e9dc163719a722ce3057361a055faf0e923cbd778273881fff3ad7c1250f1ac0"},
 ]
-markers = {main = "extra == \"vcf\""}
+markers = {main = "sys_platform != \"win32\" and extra == \"vcf\""}
 
 [package.dependencies]
 click = "*"
@@ -1064,7 +1064,7 @@ files = [
     {file = "humanfriendly-10.0-py2.py3-none-any.whl", hash = "sha256:1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477"},
     {file = "humanfriendly-10.0.tar.gz", hash = "sha256:6b0b831ce8f15f7300721aa49829fc4e83921a9a301cc7f606be6686a2288ddc"},
 ]
-markers = {main = "extra == \"vcf\""}
+markers = {main = "sys_platform != \"win32\" and extra == \"vcf\""}
 
 [package.dependencies]
 pyreadline3 = {version = "*", markers = "sys_platform == \"win32\" and python_version >= \"3.8\""}
@@ -2748,7 +2748,7 @@ files = [
     {file = "pyreadline3-3.5.6-py3-none-any.whl", hash = "sha256:8449b734232e42a5dcd74048e39b60db2839a4c38cf3ae2bf7707d58b5389c0d"},
     {file = "pyreadline3-3.5.6.tar.gz", hash = "sha256:61e53218b99656091ddb077df9e71f25850e72e030b6183b39c9b7e6e4f4a9bf"},
 ]
-markers = {main = "sys_platform == \"win32\" and extra == \"vcf\"", dev = "sys_platform == \"win32\""}
+markers = {main = "<empty>", dev = "sys_platform == \"win32\""}
 
 [package.extras]
 dev = ["build", "flake8", "mypy", "pytest", "twine"]
@@ -4147,4 +4147,4 @@ zarr = ["zarr"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "103df28019b47cbc9449db8af67e7da772c5f86ffe17504086d1e9ea7b588f9c"
+content-hash = "f0b39211fc91b72fda1e4f3761da8b675082647b022b5b6be2a00aa9ac9c510f"

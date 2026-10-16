@@ -23,7 +23,6 @@ from sfsutils.settings import Settings
 from sfsutils.io_handlers import Variant, DummyVariant
 from sfsutils.json_handlers import DataframeHandler
 import shutil
-from cyvcf2 import VCF
 from testing.test_degeneracy import _write_inputs
 
 

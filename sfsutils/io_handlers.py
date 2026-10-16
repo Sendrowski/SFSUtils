@@ -13,6 +13,7 @@ import io
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import warnings
 from abc import ABC, abstractmethod
@@ -35,6 +36,15 @@ from .settings import Settings
 
 #: The DNA bases
 bases = ["A", "C", "G", "T"]
+
+#: The error message for VCF input or output without cyvcf2, which has no Windows build.
+_CYVCF2_MISSING = (
+    "VCF support in sfsutils requires the optional 'cyvcf2' package, which is not available on Windows. "
+    "Use WSL, or convert the VCF to a VCF-Zarr store on Linux or macOS and read the store instead."
+    if sys.platform == 'win32' else
+    "VCF support in sfsutils requires the optional 'cyvcf2' package. "
+    "Please install sfsutils with the 'vcf' extra: pip install \"sfsutils-popgen[vcf]\""
+)
 
 # logger
 logger = logging.getLogger('sfsutils')
@@ -1292,10 +1302,7 @@ class VCFHandler(FileHandler):
         try:
             from cyvcf2 import VCF
         except ImportError:
-            raise ImportError(
-                "VCF support in sfsutils requires the optional 'cyvcf2' package. "
-                "Please install sfsutils with the 'vcf' extra: pip install \"sfsutils-popgen[vcf]\""
-            )
+            raise ImportError(_CYVCF2_MISSING)
 
         self._logger.info("Loading VCF file")
 
@@ -2417,10 +2424,7 @@ class VCFVariantWriter(VariantWriter):
         try:
             from cyvcf2 import Writer
         except ImportError:
-            raise ImportError(
-                "VCF support in sfsutils requires the optional 'cyvcf2' package. "
-                "Please install sfsutils with the 'vcf' extra: pip install \"sfsutils-popgen[vcf]\""
-            )
+            raise ImportError(_CYVCF2_MISSING)
 
         if isinstance(template, VariantReader):
             raise ValueError(

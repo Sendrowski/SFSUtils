@@ -982,6 +982,8 @@ def to_vcz(vcf, store):
     :param store: The path to write the store to.
     :return: The path to the store.
     """
+    import cyvcf2  # noqa: F401, vcf2zarr reads the VCF through cyvcf2
+
     subprocess.run([sys.executable, "-m", "bio2zarr", "vcf2zarr", "convert", vcf, store],
                    capture_output=True, check=True)
 

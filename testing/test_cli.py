@@ -17,7 +17,6 @@ from sfsutils.io_handlers import get_called_alleles
 from sfsutils.spectrum import Spectrum, Spectra
 from sfsutils.cli import run
 import shutil
-from cyvcf2 import VCF as VCFReader
 from testing.test_degeneracy import _write_inputs
 
 VCF = "resources/msprime/two_epoch.vcf"
@@ -250,6 +249,8 @@ def _n_records(file: str) -> int:
     :param file: The VCF path.
     :return: The number of records.
     """
+    from cyvcf2 import VCF as VCFReader
+
     return sum(1 for _ in VCFReader(file))
 
 

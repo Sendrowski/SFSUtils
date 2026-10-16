@@ -26,7 +26,6 @@ from sfsutils.settings import Settings
 from sfsutils.io_handlers import Variant, DummyVariant
 from sfsutils.json_handlers import DataframeHandler
 import shutil
-from cyvcf2 import VCF
 from sfsutils.cli import run
 from testing.test_degeneracy import _write_inputs
 
@@ -4133,6 +4132,8 @@ def _n_records(file: str) -> int:
     :param file: The VCF path.
     :return: The number of records.
     """
+    from cyvcf2 import VCF
+
     return sum(1 for _ in VCF(file))
 
 

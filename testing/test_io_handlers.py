@@ -10,7 +10,6 @@ import sys
 import pytest
 from sfsutils.io_handlers import Variant
 import numpy as np
-from cyvcf2 import VCF
 from sfsutils.io_handlers import (FASTAHandler, SiteAlleles, TskitVariantReader, Variant,
                                   ZarrVariantReader, ZarrVariantWriter)
 from sfsutils.io_handlers import (GFFHandler, SiteAlleles, Variant, ZarrVariantReader,
@@ -223,6 +222,8 @@ def _vcf(path, records, samples):
 
 def _roundtrip(path, store):
     """Write every record of a VCF to a store and return the reader over it."""
+    from cyvcf2 import VCF
+
     reader = VCF(path)
     writer = ZarrVariantWriter(str(store), samples=reader.samples, seqnames=reader.seqnames)
 
@@ -237,6 +238,8 @@ def _roundtrip(path, store):
 def test_haploid_call_of_a_third_allele_survives_the_store(tmp_path):
     """A haploid call of an allele beyond the second is one cyvcf2 cannot render as a genotype string,
     so the store must take it from the numeric calls: all six haplotypes stay called."""
+    from cyvcf2 import VCF
+
     path = _vcf(tmp_path / 'multi.vcf', ["1\t20\t.\tA\tT,G\t.\t.\t.\tGT\t0/1\t2\t./.\t1|2\t0/."],
                 [f's{i}' for i in range(5)])
 
@@ -281,6 +284,8 @@ def test_a_shorter_call_is_padded_with_the_fill_sentinel(tmp_path):
 
 def test_phase_follows_the_call_rather_than_its_rendering(tmp_path):
     """The phase of each sample is the flag the record carries, which a missing call also sets."""
+    from cyvcf2 import VCF
+
     path = _vcf(tmp_path / 'phase.vcf', ["1\t30\t.\tA\tT\t.\t.\t.\tGT\t0|1\t0/1\t.|.\t./."],
                 [f's{i}' for i in range(4)])
 
@@ -349,6 +354,8 @@ def test_trailing_allele_padding_is_still_dropped(tmp_path):
 def test_site_types_agree_with_cyvcf2(tmp_path, ref, alt):
     """The site type a store reports is the one cyvcf2 reports for the same record: an ambiguity code in
     the reference is an SNP, a spanning deletion or a symbolic allele is not."""
+    from cyvcf2 import VCF
+
     path = _vcf(tmp_path / f'type_{ref}_{alt}.vcf'.replace('*', 'star').replace('<', '').replace('>', ''),
                 [f"1\t10\t.\t{ref}\t{alt}\t.\t.\t.\tGT\t0/1"], ['s0'])
 
@@ -367,6 +374,8 @@ def test_a_sites_only_store_streams(tmp_path):
         f.write("1\t10\t.\tA\tT\t.\t.\t.\n1\t11\t.\tC\tG\t.\t.\t.\n")
 
     store = str(tmp_path / 'sites.vcz')
+    import cyvcf2  # noqa: F401, vcf2zarr reads the VCF through cyvcf2
+
     subprocess.run([sys.executable, '-m', 'bio2zarr', 'vcf2zarr', 'convert', path, store],
                    capture_output=True, check=True)
 
@@ -396,6 +405,8 @@ def test_counting_covers_the_sentinels(indices, alleles, expected):
 
 def test_counting_matches_the_genotype_strings():
     """Over a real VCF and several masks the counts agree with those of the assembled genotype strings."""
+    from cyvcf2 import VCF
+
     from sfsutils.io_handlers import get_distinct_called_alleles
 
     reader = VCF('resources/genome/betula/all.polarized.subset.10000.vcf.gz')
@@ -465,6 +476,8 @@ def test_the_tskit_positions_are_those_of_the_sites():
 
 def test_the_writer_agrees_with_the_genotype_strings(tmp_path):
     """Over a diploid VCF the calls the store holds are those the genotype strings spell out."""
+    from cyvcf2 import VCF
+
     reader = VCF('resources/genome/betula/all.polarized.subset.10000.vcf.gz')
     store = str(tmp_path / 'betula.vcz')
     writer = ZarrVariantWriter(store, samples=reader.samples, seqnames=reader.seqnames)
