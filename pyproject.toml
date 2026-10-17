@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sfsutils-popgen"
-version = "1.1.2"
+version = "1.1.3"
 description = "SFS parsing with site filtration and annotation, from VCF, Zarr, or tree sequences"
 authors = ["Janek Sendrowski <sendrowski.janek@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -18,8 +18,8 @@ python = ">=3.11,<3.15"
 matplotlib = ">=3.9,<4"
 seaborn = ">=0.13.2,<1"
 numpy = ">=1.24,<3"
-pandas = ">=2.2.2,<3"
-jsonpickle = ">=3,<4"
+pandas = ">=2.2.2,<4"
+jsonpickle = ">=3,<5"
 multiprocess = ">=0.70.12,<0.71"
 tqdm = ">=4.60,<5"
 biopython = ">=1.84,<2"
