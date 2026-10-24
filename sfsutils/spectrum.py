@@ -903,7 +903,9 @@ class Spectra(AbstractSpectra):
 
         :return: Number of monomorphic sites
         """
-        return self.data.iloc[0] + self.data.iloc[-1]
+        # head and tail, unlike positional indexing, leave an empty Spectra with an empty series, and a minimum
+        # count of one keeps a missing count missing
+        return self.data.head(1).sum(min_count=1) + self.data.tail(1).sum(min_count=1)
 
     @property
     def polymorphic(self) -> np.ndarray:
@@ -960,7 +962,7 @@ class Spectra(AbstractSpectra):
 
         :return: Number of divergence counts for each type
         """
-        return self.data.iloc[-1]
+        return self.data.tail(1).sum(min_count=1)
 
     @property
     def has_div(self) -> pd.Series:
@@ -1091,7 +1093,7 @@ class Spectra(AbstractSpectra):
     def __add__(self, other: Union['Spectra', Iterable, float]) -> 'Spectra':
         """
         Merge types of two spectra objects by adding up their counts entry-wise, or add a scalar or array to
-        every type.
+        every type. An empty Spectra adds nothing.
 
         :param other: Spectra object, iterable or scalar
         :return: Spectra with merged types
@@ -1101,12 +1103,21 @@ class Spectra(AbstractSpectra):
         if not isinstance(other, Spectra):
             return Spectra.from_dataframe(self.data.add(other, axis=0))
 
+        if other.k == 0:
+            return self.copy()
+
+        if self.k == 0:
+            return other.copy()
+
         if self.n != other.n:
             raise ValueError(f'Cannot add spectra of different sample sizes ({self.n} and {other.n}): the counts '
                              f'would be aligned by position rather than by allele count.')
 
         # types present in only one operand are filled with zeros rather than left as NaN
         return Spectra.from_dataframe(self.data.add(other.data, fill_value=0).fillna(0))
+
+    # addition commutes, which lets sum() add up a list of spectra from its starting 0
+    __radd__ = __add__
 
     def __getitem__(
             self,
@@ -1236,6 +1247,9 @@ class Spectra(AbstractSpectra):
         :return: Spectra object with merged groups
         :raises ValueError: If some type has no name at one of the requested levels
         """
+        if self.k == 0:
+            return self.copy()
+
         # cast to int
         level = [int(l) for l in level] if isinstance(level, Iterable) else int(level)
 
@@ -1289,7 +1303,9 @@ class Spectra(AbstractSpectra):
         :return: Spectra object with replaced dots
         """
         other = self.copy()
-        other.data.columns = other.data.columns.str.replace('.', replacement)
+
+        if self.k > 0:
+            other.data.columns = other.data.columns.str.replace('.', replacement)
 
         return other
 

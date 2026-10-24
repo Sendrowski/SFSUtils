@@ -754,6 +754,16 @@ class SpectraTestCase(TestCase):
         np.testing.assert_allclose(sub['a'].data, Spectrum(data).subsample(8).data)
         self.assertEqual(sub['a'].data[-1], 50)
 
+    def test_add_series_per_allele_count(self):
+        """
+        A pandas Series is added to every type per allele count.
+        """
+        s = Spectra.from_dict(dict(a=[1, 2, 3], b=[4, 5, 6]))
+
+        added = s + pd.Series([10, 20, 30])
+
+        self.assertEqual(added.to_dict(), dict(a=[11, 22, 33], b=[14, 25, 36]))
+
     def test_plot_spectra_subplots_with_array_colors_and_scatter_axes(self):
         """
         Array colours work with subplots too, and a scatter plot returns the axes it was drawn on.
@@ -770,6 +780,39 @@ class SpectraTestCase(TestCase):
         self.assertIs(Visualization.plot_scatter(values=[1, 2, 3], file=None, show=False, ax=ax1), ax1)
 
         plt.close('all')
+
+    def test_empty_spectra_summaries(self):
+        """
+        The per-type summaries of an empty Spectra, which a parse returns when every site was skipped, are empty
+        rather than raising. Positional indexing of the first and last rows raised IndexError.
+        """
+        empty = Spectra({})
+
+        for name in ['n_div', 'has_div', 'n_monomorphic', 'n_sites', 'n_polymorphic']:
+            self.assertEqual(len(getattr(empty, name)), 0, name)
+
+        self.assertEqual(empty.merge_groups(0).k, 0)
+        self.assertEqual(empty.replace_dots().k, 0)
+
+        s = Spectra.from_dict(dict(a=[10, 2, 3], b=[5, 1, 4]))
+        self.assertEqual(s.n_div.to_dict(), dict(a=3, b=4))
+        self.assertEqual(s.n_monomorphic.to_dict(), dict(a=13, b=9))
+
+        # a missing count in the first or last bin stays missing, as it does for a single Spectrum
+        nan = Spectra.from_dict(dict(a=[np.nan, 1, 2, 0, np.nan], b=[1, 1, 1, 1, 3]))
+        self.assertTrue(np.isnan(nan.n_monomorphic['a']) and np.isnan(nan.n_div['a']))
+        self.assertEqual((nan.n_monomorphic['b'], nan.n_div['b']), (4, 3))
+
+    def test_add_empty_spectra_and_sum(self):
+        """
+        An empty Spectra adds nothing, and sum() adds up a list of spectra. The empty one's sample size of -1 failed
+        the sample-size check, and sum() had no right-hand addition to start from 0.
+        """
+        s = Spectra.from_dict(dict(a=[1, 2, 3], b=[4, 5, 6]))
+
+        self.assertEqual((s + Spectra({})).to_dict(), s.to_dict())
+        self.assertEqual((Spectra({}) + s).to_dict(), s.to_dict())
+        self.assertEqual(sum([s, s]).to_dict(), (s * 2).to_dict())
 
     def test_subsample_spectrum_probabilistic_vs_random_folded(self):
         """
