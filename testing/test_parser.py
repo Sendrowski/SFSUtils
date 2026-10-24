@@ -2326,6 +2326,19 @@ class TestRegionLength:
         # the reader is closed after the parse, so the spans are captured while it is open
         assert parser._region_length() == pytest.approx(n_contigs * span)
 
+    def test_a_variant_span_short_of_the_declared_length_is_warned_about(self, caplog):
+        """A regional extract keeps the full contig length in its header, which dilutes the site density, so a
+        variant span under half the declared length is warned about while the declared length is still used."""
+        parser = su.Parser(source=VCF, n=4)
+        parser._contig_bounds.update({'c0': (100, 1100), 'c1': (10, 1990)})
+        parser._declared_contig_lengths = lambda: {'c0': 200000, 'c1': 2000}
+
+        with caplog.at_level(logging.WARNING):
+            assert parser._region_length() == pytest.approx(202000)
+
+        assert "c0 (1000 of 200000 bp)" in caplog.text
+        assert "c1" not in caplog.text
+
     def test_the_observed_span_is_the_last_resort(self, tmp_path, caplog):
         """A source declaring no length falls back to the observed span, which is warned about."""
         parser = su.Parser(source=VCF, n=4)

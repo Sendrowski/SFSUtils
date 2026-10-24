@@ -2404,16 +2404,26 @@ class Parser(MultiHandler):
 
         :return: Mapping of contig name to length.
         """
-        declared, spans, undeclared = self._declared_contig_lengths(), {}, []
+        declared, spans, undeclared, partial = self._declared_contig_lengths(), {}, [], []
 
         for contig, (low, high) in self._contig_bounds.items():
             length = declared.get(contig)
+            observed = float(high - low) if np.isfinite(low) and np.isfinite(high) and high > low else 0.0
 
             if length is None:
                 undeclared.append(contig)
-                length = float(high - low) if np.isfinite(low) and np.isfinite(high) and high > low else 0.0
+                length = observed
+            elif observed < 0.5 * length:
+                partial.append(f"{contig} ({observed:.0f} of {length:.0f} bp)")
 
             spans[contig] = float(length)
+
+        if partial:
+            self._logger.warning(f"The observed variants span less than half the declared length of contig(s) "
+                                 f"{partial[:5]} ({len(partial)} in total). If the input holds only a region of "
+                                 f"these contigs, set their ##contig length to that of the region (for example "
+                                 f"with bcftools reheader), as the declared length dilutes the site density and "
+                                 f"deflates the extrapolated monomorphic pairs of the two-SFS.")
 
         if undeclared:
             self._logger.warning(f"The source declares no length for contig(s) {sorted(undeclared)[:5]} "
