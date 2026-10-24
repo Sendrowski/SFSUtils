@@ -375,15 +375,7 @@ class Spectrum(AbstractSpectrum):
         :param seed: Random state or seed. Only for 'random' mode.
         :return: Subsampled spectrum
         """
-        return self._subsample(n, mode, seed, fold=self._is_polymorphic_folded())
-
-    def _is_polymorphic_folded(self) -> bool:
-        """
-        Whether the polymorphic part of the spectrum is folded, which a subsampled spectrum then keeps.
-
-        :return: Whether the polymorphic part is folded.
-        """
-        return Spectrum.from_polymorphic(self.polymorphic).is_folded()
+        return self._subsample(n, mode, seed, fold=self.is_folded())
 
     def _subsample(
             self,
@@ -398,7 +390,7 @@ class Spectrum(AbstractSpectrum):
         :param n: Sample size
         :param mode: Subsampling mode. Either 'random' or 'probabilistic'.
         :param seed: Random state or seed. Only for 'random' mode.
-        :param fold: Whether to fold the subsampled spectrum, keeping its divergence count.
+        :param fold: Whether to fold the subsampled spectrum.
         :return: Subsampled spectrum
         """
         if n >= self.n:
@@ -437,13 +429,8 @@ class Spectrum(AbstractSpectrum):
 
         sfs = Spectrum(subsample)
 
-        # fold, keeping the divergence count
         if fold:
-            data = sfs.data.copy()
-            data[-1] -= self.n_div
-            data = Spectrum(data).fold().data
-            data[-1] += self.n_div
-            sfs = Spectrum(data)
+            sfs = sfs.fold()
 
         return sfs
 
@@ -1529,7 +1516,7 @@ class Spectra(AbstractSpectra):
         rngs = self._spawn_rngs(seed, len(spectra))
 
         # the types are folded together, so that a sparse type does not pass for folded among unfolded ones
-        fold = all(s._is_polymorphic_folded() for s in spectra.values())
+        fold = all(s.is_folded() for s in spectra.values())
 
         return Spectra.from_spectra(
             {t: s._subsample(n, mode, rng, fold) for (t, s), rng in zip(spectra.items(), rngs)}

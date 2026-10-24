@@ -707,25 +707,19 @@ class SpectraTestCase(TestCase):
 
         self.assertTrue(np.all(np.abs(truth.data[1:] - sub.data[1:]) < 1e-12))
 
-    def test_subsample_folded_spectrum_with_divergence(self):
+    def test_subsample_unfolded_spectrum_with_divergence_stays_unfolded(self):
         """
-        Subsampling a spectrum whose polymorphic part is folded and which carries a divergence count gives a
-        folded spectrum with the same divergence count. The divergence count made the spectrum count as
-        unfolded, so the subsample was not folded.
+        A divergence count marks a spectrum as unfolded, as folding zeroes it, so a spectrum with an empty
+        upper polymorphic half and fixed differences is subsampled unfolded. Judging from the polymorphic part
+        alone folded the projection, moving mass from class 5 onto class 3 and, for n = 2, derived mass into the
+        monomorphic-ancestral bin.
         """
-        data = (Spectrum.standard_kingman(30) * 10000).fold().data
-        data[-1] = 500
+        sub = Spectrum([1000, 6, 3, 2, 1, 4, 0, 0, 0, 0, 50]).subsample(8)
 
-        for mode in ['probabilistic', 'random']:
-            sub = Spectrum(data).subsample(10, mode=mode, seed=0)
+        np.testing.assert_allclose(sub.data, [1001.266667, 6, 2.933333, 2.355556, 2.555556, 0.888889, 0, 0, 50],
+                                   rtol=1e-6, atol=1e-12)
 
-            self.assertEqual(sub.n_div, 500)
-            self.assertTrue(Spectrum.from_polymorphic(sub.polymorphic).is_folded())
-
-        sub = Spectrum(data).subsample(10, mode='probabilistic')
-        truth = (Spectrum.standard_kingman(10) * 10000).fold()
-
-        np.testing.assert_allclose(sub.polymorphic, truth.polymorphic, atol=1e-12)
+        np.testing.assert_allclose(Spectrum([100, 10, 5]).subsample(1).data, [105, 10])
 
     def test_subsample_spectra_folds_types_together(self):
         """
@@ -733,13 +727,13 @@ class SpectraTestCase(TestCase):
         alongside an unfolded sibling. Deciding per type folded the sparse one alone, moving its derived
         classes above n / 2 into the minor-allele bins.
         """
-        sparse = [1000, 0, 0, 0, 0, 50, 0, 0, 0, 0, 7]
+        sparse = [1000, 0, 0, 0, 0, 50, 0, 0, 0, 0, 0]
         full = list((Spectrum.standard_kingman(10) * 1000).data)
 
         sub = Spectra.from_spectra(dict(sparse=Spectrum(sparse), full=Spectrum(full))).subsample(4)
 
         np.testing.assert_allclose(sub['sparse'].data, Spectrum(sparse)._subsample(4, 'probabilistic', None, False).data)
-        np.testing.assert_allclose(sub['sparse'].data, [1001.190476, 11.904762, 23.809524, 11.904762, 8.190476],
+        np.testing.assert_allclose(sub['sparse'].data, [1001.190476, 11.904762, 23.809524, 11.904762, 1.190476],
                                    rtol=1e-6)
 
         folded = Spectra.from_spectra(dict(
@@ -748,6 +742,17 @@ class SpectraTestCase(TestCase):
         )).subsample(4)
 
         self.assertTrue(all(folded.is_folded().values()))
+
+    def test_subsample_spectra_with_divergence_stays_unfolded(self):
+        """
+        A Spectra type with divergence counts is unfolded, so subsampling keeps its divergence counts in the last
+        bin as Spectrum.subsample does.
+        """
+        data = [1000, 6, 3, 2, 1, 4, 0, 0, 0, 0, 50]
+        sub = Spectra.from_spectra(dict(a=Spectrum(data))).subsample(8)
+
+        np.testing.assert_allclose(sub['a'].data, Spectrum(data).subsample(8).data)
+        self.assertEqual(sub['a'].data[-1], 50)
 
     def test_plot_spectra_subplots_with_array_colors_and_scatter_axes(self):
         """
