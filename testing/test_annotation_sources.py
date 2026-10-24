@@ -140,7 +140,8 @@ def test_degeneracy_vcf_and_zarr_output_agree(tmp_path):
 
 
 def test_degeneracy_trees_output(tmp_path):
-    """Annotating a tree sequence to a ``.trees`` output stores the degeneracy as site metadata."""
+    """Annotating a tree sequence to a ``.trees`` output stores the degeneracy in the sfsutils block of the site
+    metadata."""
     import tskit
 
     fasta, gff = _fasta_gff(tmp_path)
@@ -148,7 +149,7 @@ def test_degeneracy_trees_output(tmp_path):
     out = _annotate(trees, str(tmp_path / "out.trees"), fasta, gff)
 
     ts = tskit.load(out)
-    stored = {int(s.position) + 1: s.metadata.get("Degeneracy") for s in ts.sites()}
+    stored = {int(s.position) + 1: s.metadata.get("sfsutils", {}).get("Degeneracy") for s in ts.sites()}
     assert stored == EXPECTED_DEGENERACY
 
 

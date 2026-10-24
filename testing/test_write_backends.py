@@ -12,7 +12,7 @@ import pytest
 
 import sfsutils as su
 from sfsutils.settings import Settings
-from sfsutils.io_handlers import Variant
+from sfsutils.io_handlers import TskitVariantReader, Variant
 
 VCF = "resources/msprime/two_epoch.vcf"
 TREES = "resources/msprime/two_epoch.trees"
@@ -201,8 +201,16 @@ def test_tree_sequence_subset_matches_vcf_filter(tmp_path):
 
 @requires_trees
 def test_tree_sequence_output_keeps_existing_site_metadata(tmp_path):
-    """Writing a .trees merges INFO into the metadata the sites carry, so an ancestree confidence block
-    survives and AA_prob reads back. Replacing the metadata with INFO alone dropped AA_prob."""
+    """Writing a .trees with INFO added by an annotation merges it into the metadata the sites carry, so an
+    ancestree confidence block survives and AA_prob reads back. Replacing the metadata with INFO alone dropped
+    AA_prob."""
+    from sfsutils.annotation import Annotation
+
+    class Tag(Annotation):
+        def annotate_site(self, v):
+            v.INFO["Tag"] = 1
+            self.n_annotated += 1
+
     import tskit
     from sfsutils.io_handlers import TskitVariantReader
 
@@ -216,39 +224,106 @@ def test_tree_sequence_output_keeps_existing_site_metadata(tmp_path):
     source = str(tmp_path / "annotated.trees")
     tables.tree_sequence().dump(source)
 
-    out = _filter(source, str(tmp_path / "out.trees"), [su.SNPFiltration()])
+    out = str(tmp_path / "out.trees")
+    su.Annotator(source=source, output=out, annotations=[Tag()]).annotate()
 
     sub = tskit.load(out)
     assert sub.num_sites > 0
-    assert all(site.metadata["ancestree"] == {"max_prob": 0.9} and site.metadata["other"] == 1 for site in sub.sites())
+    assert all(site.metadata["ancestree"] == {"max_prob": 0.9} and site.metadata["other"] == 1
+               and site.metadata["sfsutils"] == {"Tag": 1} for site in sub.sites())
     assert all(v.INFO["AA_prob"] == 0.9 for v in TskitVariantReader(tskit.load(out)))
 
 
 @requires_trees
-def test_annotated_tree_sequence_parses_as_annotated_store(tmp_path):
-    """INFO an annotation writes into a .trees output is read back, so the output parses as the same
-    annotation written to .vcz does. Reading the ancestral state alone ignored the annotated AA and AA_prob."""
+def test_annotated_tree_sequence_reads_back_its_annotation(tmp_path):
+    """INFO an annotation writes into a .trees output is read back from the sfsutils metadata block, so the output
+    types sites as the same annotation written to .vcz does. The reader ignored the stored INFO."""
     from sfsutils.annotation import Annotation
 
-    class FlipAncestral(Annotation):
+    class Tag(Annotation):
         def annotate_site(self, v):
-            if v.ALT:
-                v.INFO["AA"] = v.ALT[0]
-                v.INFO["AA_prob"] = 0.7
+            v.INFO["Tag"] = "even" if v.POS % 2 == 0 else "odd"
             self.n_annotated += 1
+
+    class TagStratification(su.Stratification):
+        def get_type(self, variant):
+            return variant.INFO["Tag"]
+
+        def get_types(self):
+            return ["even", "odd"]
 
     Settings.disable_pbar = True
     spectra = {}
 
     for ext in ["vcz", "trees"]:
         out = str(tmp_path / f"ann.{ext}")
-        su.Annotator(source=TREES, output=out, annotations=[FlipAncestral()], max_sites=300).annotate()
+        su.Annotator(source=TREES, output=out, annotations=[Tag()], max_sites=300).annotate()
 
-        spectra[ext] = [su.Parser(source=out, n=10, polarize_probabilistically=p).parse()["all"].to_list()
-                        for p in (False, True)]
+        spectra[ext] = su.Parser(source=out, n=10, stratifications=[TagStratification()]).parse().to_dict()
 
-    np.testing.assert_allclose(spectra["trees"], spectra["vcz"])
-    assert spectra["trees"][0] != spectra["trees"][1]
+    assert spectra["trees"] == spectra["vcz"]
+
+
+@requires_trees
+def test_reinferred_tree_sequence_is_polarized_by_its_new_ancestral_state(tmp_path):
+    """A .trees written by sfsutils and then re-polarized by a tool that keeps the existing metadata parses with the
+    new ancestral states. Storing the ancestral allele in the metadata let the stale copy override them."""
+    import tskit
+
+    out = _filter(TREES, str(tmp_path / "filtered.trees"), [])
+
+    def flip(ts):
+        tables = ts.dump_tables()
+        sites = tables.sites.copy()
+        tables.sites.clear()
+        for row, site in zip(sites, ts.sites()):
+            tables.sites.add_row(position=row.position, ancestral_state="X", metadata=site.metadata)
+        return tables.tree_sequence()
+
+    flipped = flip(tskit.load(out))
+    reader = TskitVariantReader(flipped)
+
+    assert all(reader._info(v)["AA"] == "X" for v in flipped.variants())
+
+
+@requires_trees
+def test_tree_sequence_posterior_polarizes_as_vcf_posterior(tmp_path):
+    """An Ancestree posterior stored in the site metadata is read as AA_post, so a .trees polarizes as the VCF of the
+    same inference does. Reading only max_prob, unnormalised over the site's alleles, gave a different spectrum."""
+    import tskit
+
+    ts = tskit.load(TREES)
+    tables = ts.dump_tables()
+    sites = tables.sites.copy()
+    tables.sites.clear()
+    tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+    posteriors = {}
+    for row, variant in zip(sites, ts.variants()):
+        derived = variant.alleles[1]
+        posterior = {b: 0.0 for b in "ACGT"}
+        posterior[row.ancestral_state] = 0.6
+        posterior[derived] = 0.3
+        posterior[next(b for b in "ACGT" if b not in (row.ancestral_state, derived))] = 0.1
+        posteriors[row.position] = posterior
+        tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state,
+                             metadata={"ancestree": {"max_prob": 0.6, "posterior": posterior}})
+    annotated = tables.tree_sequence()
+
+    reader = TskitVariantReader(annotated)
+    info = reader._info(next(iter(annotated.variants())))
+    site = annotated.site(0)
+
+    assert info["AA_post"] == ",".join(str(posteriors[site.position][b]) for b in "ACGT")
+    assert "AA_prob" not in info
+
+
+@requires_trees
+def test_ancestral_annotation_cannot_write_tree_sequence(tmp_path):
+    """An ancestral-allele annotation has nowhere to go in a .trees output, whose ancestral allele is its own
+    ancestral state, so the combination is refused."""
+    with pytest.raises(ValueError, match="cannot be written to a tree sequence"):
+        su.Annotator(source=TREES, output=str(tmp_path / "x.trees"),
+                     annotations=[su.MaximumParsimonyAncestralAnnotation()]).annotate()
 
 
 @requires_trees
@@ -271,7 +346,7 @@ def test_tree_sequence_output_attaches_info_metadata(tmp_path):
 
     sub = tskit.load(out)
     assert sub.num_sites == 2
-    assert all(site.metadata.get("tag") == int(site.position) + 1 for site in sub.sites())
+    assert all(site.metadata["sfsutils"].get("tag") == int(site.position) + 1 for site in sub.sites())
 
 
 @requires_trees

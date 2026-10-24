@@ -4868,7 +4868,15 @@ class Annotator(MultiHandler):
     def _setup(self):
         """
         Set up the annotator.
+
+        :raises ValueError: If an ancestral-allele annotation is to be written to a tree sequence, whose ancestral
+            allele is the tree sequence's own ancestral state.
         """
+        if _output_format(self.output) == 'tskit' and any(isinstance(a, AncestralAlleleAnnotation)
+                                                          for a in self.annotations):
+            raise ValueError("An ancestral-allele annotation cannot be written to a tree sequence (.trees), whose "
+                             "ancestral allele is its own ancestral state. Use a .vcz/.zarr or VCF output instead.")
+
         for annotation in self.annotations:
             annotation._setup(self)
 

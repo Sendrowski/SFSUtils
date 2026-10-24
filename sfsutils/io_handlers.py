@@ -1828,6 +1828,7 @@ class TskitVariantReader(VariantReader):
             contig: str = '1',
             info_ancestral: str = 'AA',
             info_ancestral_prob: str = 'AA_prob',
+            info_ancestral_post: str = 'AA_post',
     ):
         """
         Initialize the reader.
@@ -1836,12 +1837,16 @@ class TskitVariantReader(VariantReader):
         :param contig: The contig name to report (tree sequences have no contig concept).
         :param info_ancestral: The INFO tag to surface the site's ancestral allele under.
         :param info_ancestral_prob: The INFO tag to surface an annotator's confidence under.
+        :param info_ancestral_post: The INFO tag to surface an annotator's posterior over A, C, G and T under.
         """
         #: The INFO tag the ancestral allele is surfaced under
         self._info_ancestral = info_ancestral
 
         #: The INFO tag the ancestral-allele probability is surfaced under
         self._info_ancestral_prob = info_ancestral_prob
+
+        #: The INFO tag the ancestral-allele posterior is surfaced under
+        self._info_ancestral_post = info_ancestral_post
 
         #: The tree sequence
         self._ts = ts
@@ -1908,6 +1913,15 @@ class TskitVariantReader(VariantReader):
         return self._ts
 
     @property
+    def derived_tags(self) -> Tuple[str, str, str]:
+        """
+        The INFO tags derived from the tree sequence's own ancestral states and Ancestree's metadata block.
+
+        :return: The ancestral allele, probability and posterior tags.
+        """
+        return self._info_ancestral, self._info_ancestral_prob, self._info_ancestral_post
+
+    @property
     def sequence_length(self) -> float:
         """
         The length of the tree-sequence genome, i.e. the region over which sites are distributed. This is the
@@ -1944,25 +1958,31 @@ class TskitVariantReader(VariantReader):
         call a site writes the empty ancestral state, which is not a valid base and so reads as
         non-polarized rather than silently falling back to the reference allele.
 
-        The scalar top-level keys of the site metadata, which is where
-        :class:`~sfsutils.io_handlers.TskitVariantWriter` stores the INFO of the sites it writes, are
-        surfaced as INFO too and take precedence over the ancestral state.
+        Each field has one source in the site metadata. Ancestree's ``ancestree`` block gives the posterior over
+        A, C, G and T, or the probability of the ancestral allele where no posterior is stored, and the ``sfsutils``
+        block holds the INFO :class:`~sfsutils.io_handlers.TskitVariantWriter` stored for the site.
 
         :param var: The tskit variant.
         :return: The INFO entries, empty where the site states nothing.
         """
         info: Dict[str, object] = {self._info_ancestral: var.alleles[0]}
 
-        # An annotator may record its confidence in the site metadata; surface it so probabilistic
-        # polarisation works from a tree sequence too.
         metadata = var.site.metadata
         if isinstance(metadata, dict):
             block = metadata.get('ancestree')
 
-            if isinstance(block, dict) and block.get('max_prob') is not None:
-                info[self._info_ancestral_prob] = float(block['max_prob'])
+            if isinstance(block, dict):
+                posterior = block.get('posterior')
 
-            info.update({k: v for k, v in metadata.items() if isinstance(v, (str, int, float, bool))})
+                if isinstance(posterior, dict):
+                    info[self._info_ancestral_post] = ','.join(str(float(posterior.get(b, 0.0))) for b in bases)
+                elif block.get('max_prob') is not None:
+                    info[self._info_ancestral_prob] = float(block['max_prob'])
+
+            stored = metadata.get(TskitVariantWriter.metadata_key)
+
+            if isinstance(stored, dict):
+                info.update(stored)
 
         return info
 
@@ -2438,7 +2458,7 @@ class VariantWriter(ABC):
                     "or VCF output instead."
                 )
 
-            return TskitVariantWriter(reader.tree_sequence, output)
+            return TskitVariantWriter(reader.tree_sequence, output, derived=reader.derived_tags)
 
         return VCFVariantWriter(output, reader)
 
@@ -3286,18 +3306,24 @@ class TskitVariantWriter(VariantWriter):
     written (i.e. survive filtering) are kept, via :meth:`tskit.TreeSequence.delete_sites`, leaving the
     genealogy untouched. This is the only well-defined ``.trees`` output: a genealogy cannot be reconstructed
     from genotype data, so a tree-sequence output requires a tree-sequence input. INFO fields added by
-    annotations are attached to the kept sites as JSON metadata on a best-effort basis.
+    annotations are stored in the ``sfsutils`` block of the kept sites' JSON metadata on a best-effort basis,
+    leaving the rest of the metadata as it is. The ancestral allele stays the tree sequence's own ancestral state.
     """
 
-    def __init__(self, ts: 'tskit.TreeSequence', output: str):
+    #: The key of the site metadata block holding the stored INFO
+    metadata_key: str = 'sfsutils'
+
+    def __init__(self, ts: 'tskit.TreeSequence', output: str, derived: Iterable[str] = ()):
         """
         Open the writer.
 
         :param ts: The source tree sequence.
         :param output: The output ``.trees`` path.
+        :param derived: The INFO tags derived from the tree sequence itself, which are not stored.
         """
         self._ts = ts
         self._output = output
+        self._derived = set(derived)
         self._logger = logger.getChild(self.__class__.__name__)
 
         #: The exact tskit positions of the sites to keep.
@@ -3328,8 +3354,10 @@ class TskitVariantWriter(VariantWriter):
         pos = self._position(variant)
         self._kept.add(pos)
 
-        if getattr(variant, 'INFO', None):
-            self._info_by_pos[pos] = dict(variant.INFO)
+        info = {k: v for k, v in dict(getattr(variant, 'INFO', None) or {}).items() if k not in self._derived}
+
+        if info:
+            self._info_by_pos[pos] = info
 
     def close(self) -> None:
         """
@@ -3346,8 +3374,8 @@ class TskitVariantWriter(VariantWriter):
 
     def _attach_site_metadata(self, ts: 'tskit.TreeSequence') -> 'tskit.TreeSequence':
         """
-        Attach the collected INFO fields to the kept sites as permissive-JSON metadata, merged into the
-        metadata the sites carry where that decodes to a dictionary.
+        Store the collected INFO fields in the ``sfsutils`` block of the kept sites' permissive-JSON metadata, keeping
+        the rest of the metadata the sites carry where that decodes to a dictionary.
 
         :param ts: The site-subset tree sequence.
         :return: The tree sequence with site metadata, or the input unchanged if metadata could not be encoded.
@@ -3364,7 +3392,13 @@ class TskitVariantWriter(VariantWriter):
             for row, prior in zip(sites, existing):
                 info = self._info_by_pos.get(row.position, {})
                 metadata = dict(prior) if isinstance(prior, dict) else {}
-                metadata.update({k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in info.items()})
+                metadata.pop(self.metadata_key, None)
+
+                if info:
+                    metadata[self.metadata_key] = {
+                        k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in info.items()
+                    }
+
                 tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state, metadata=metadata)
 
             return tables.tree_sequence()
