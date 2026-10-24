@@ -225,6 +225,33 @@ def test_tree_sequence_output_keeps_existing_site_metadata(tmp_path):
 
 
 @requires_trees
+def test_annotated_tree_sequence_parses_as_annotated_store(tmp_path):
+    """INFO an annotation writes into a .trees output is read back, so the output parses as the same
+    annotation written to .vcz does. Reading the ancestral state alone ignored the annotated AA and AA_prob."""
+    from sfsutils.annotation import Annotation
+
+    class FlipAncestral(Annotation):
+        def annotate_site(self, v):
+            if v.ALT:
+                v.INFO["AA"] = v.ALT[0]
+                v.INFO["AA_prob"] = 0.7
+            self.n_annotated += 1
+
+    Settings.disable_pbar = True
+    spectra = {}
+
+    for ext in ["vcz", "trees"]:
+        out = str(tmp_path / f"ann.{ext}")
+        su.Annotator(source=TREES, output=out, annotations=[FlipAncestral()], max_sites=300).annotate()
+
+        spectra[ext] = [su.Parser(source=out, n=10, polarize_probabilistically=p).parse()["all"].to_list()
+                        for p in (False, True)]
+
+    np.testing.assert_allclose(spectra["trees"], spectra["vcz"])
+    assert spectra["trees"][0] != spectra["trees"][1]
+
+
+@requires_trees
 def test_tree_sequence_output_attaches_info_metadata(tmp_path):
     """INFO added while writing a .trees is stored as JSON site metadata on the kept sites (best-effort)."""
     import tskit

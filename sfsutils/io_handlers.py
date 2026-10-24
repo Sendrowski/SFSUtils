@@ -1878,6 +1878,10 @@ class TskitVariantReader(VariantReader):
         call a site writes the empty ancestral state, which is not a valid base and so reads as
         non-polarized rather than silently falling back to the reference allele.
 
+        The scalar top-level keys of the site metadata, which is where
+        :class:`~sfsutils.io_handlers.TskitVariantWriter` stores the INFO of the sites it writes, are
+        surfaced as INFO too and take precedence over the ancestral state.
+
         :param var: The tskit variant.
         :return: The INFO entries, empty where the site states nothing.
         """
@@ -1891,6 +1895,8 @@ class TskitVariantReader(VariantReader):
 
             if isinstance(block, dict) and block.get('max_prob') is not None:
                 info[self._info_ancestral_prob] = float(block['max_prob'])
+
+            info.update({k: v for k, v in metadata.items() if isinstance(v, (str, int, float, bool))})
 
         return info
 
