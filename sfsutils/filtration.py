@@ -992,7 +992,7 @@ class Filterer(MultiHandler):
 
     def __init__(
             self,
-            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None,
             output: str = None,
             gff: str | None = None,
             fasta: str | None = None,
@@ -1002,15 +1002,15 @@ class Filterer(MultiHandler):
             seed: int | None = 0,
             cache: bool = True,
             aliases: Dict[str, List[str]] = {},
-            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None
     ):
         """
         Create a new filter instance.
 
         :param source: The variant source: a VCF file (gzipped or a URL), a VCF-Zarr store (a ``.vcz`` or
             ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
-            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
-            sites. Read through the same streamed site interface as all handlers.
+            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader`. Read through
+            the same streamed site interface as all handlers.
         :param output: The output file.
         :param gff: The GFF file, possibly gzipped or a URL. This argument is required for some filtrations.
         :param fasta: The FASTA reference file, possibly gzipped or a URL. This argument is required for

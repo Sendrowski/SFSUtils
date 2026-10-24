@@ -378,7 +378,7 @@ class TransitionTransversionStratification(BaseTransitionStratification):
 
 class AncestralBaseStratification(Stratification):
     """
-    Stratify the SFS by the base context of the mutation: the reference base.
+    Stratify the SFS by the ancestral base of the site.
     If ``skip_non_polarized`` is set to ``False``, we use the reference allele as
     ancestral base. By default, we use the ``AA`` tag to determine the ancestral allele.
     A site without an alternate allele whose ancestral allele differs from the reference is a fixed
@@ -390,10 +390,10 @@ class AncestralBaseStratification(Stratification):
     @_count_valid_type
     def get_type(self, variant: Site) -> str:
         """
-        Get the type which is the reference allele.
+        Get the type, which is the ancestral allele.
 
         :param variant: The site
-        :return: reference allele
+        :return: The ancestral allele
         """
         return self.parser._get_ancestral(variant)
 
@@ -651,7 +651,7 @@ class ChunkedStratification(GenomePositionDependentStratification):
         """
         Initialize the stratification.
 
-        :param n_chunks: Number of sites per window
+        :param n_chunks: Number of chunks the sites are divided into
         """
         super().__init__()
 
@@ -1543,7 +1543,8 @@ class Parser(MultiHandler):
             the site's own alleles: the most probable of them is the ancestral allele and its renormalised
             probability is used, so that mass on bases absent from the site does not enter the SFS.
         :param two_sfs: Whether to parse the two-dimensional (two-site) SFS instead of the ordinary SFS. When
-            ``True``, :meth:`parse` returns a square :class:`~sfsutils.spectrum.TwoSFS` whose entry ``(i, j)`` counts
+            ``True``, :meth:`parse` returns a :class:`~sfsutils.spectrum.TwoSpectra` keyed by type (``'all'`` without
+            stratifications), each a square :class:`~sfsutils.spectrum.TwoSFS` whose entry ``(i, j)`` counts
             pairs of sites, on the same contig and within the distance window of one another, where one site has ``i``
             and the other ``j`` derived alleles (down-projected to ``n``). As for the one-dimensional SFS, monomorphic
             sites are retained (contributing to the zero-frequency row and column); add a

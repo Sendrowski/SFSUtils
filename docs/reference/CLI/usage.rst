@@ -75,7 +75,7 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
    * - ``--filter``
      - Comma-separated filtrations (``snp``, ``snv``, ``poly-allelic``, ``coding-sequence``, ``cpg``, ``contig``, ``no``, ``all``). Default ``poly-allelic``.
    * - ``--contigs``
-     - Contigs to keep (required by the ``contig`` stratification and filtration).
+     - Contigs to keep (required by the ``contig`` filtration). The ``contig`` stratification uses all contigs of the input if omitted.
    * - ``--two-sfs`` / ``--two-sfs-distance`` / ``--two-sfs-offset``
      - Parse the two-site SFS, pairing sites separated by ``(offset, offset + distance]`` base pairs (distance default 1000, offset default 0).
    * - ``--no-skip-non-polarized``

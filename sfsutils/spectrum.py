@@ -2699,8 +2699,8 @@ class TwoSpectra(_DictSpectraSerialization, AbstractSpectra):
     """
     A collection of two-site (two-locus) site-frequency spectra keyed by type, the two-dimensional analogue of
     :class:`~sfsutils.spectrum.Spectra`. This is the return type of
-    :meth:`Parser.parse() <sfsutils.parser.Parser.parse>` when the two-SFS is parsed with stratifications, holding one
-    :class:`TwoSFS` per stratification type. Because the two-SFS pairs sites, stratified parsing counts only
+    :meth:`Parser.parse() <sfsutils.parser.Parser.parse>` when the two-SFS is parsed, holding one :class:`TwoSFS`
+    per stratification type, or a single one keyed ``'all'`` without stratifications. Because the two-SFS pairs sites, stratified parsing counts only
     within-stratum pairs, so summing the per-type spectra does not in general recover the unstratified two-SFS
     (cross-stratum pairs are not counted).
     """

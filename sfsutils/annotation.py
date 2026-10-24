@@ -1090,7 +1090,7 @@ class MaximumParsimonyAncestralAnnotation(AncestralAlleleAnnotation):
     spectra altogether. Alternatively, you can use :class:`~sfsutils.filtration.DeviantOutgroupFiltration` to
     filter out sites where the major allele among outgroups does not coincide with the major allele among ingroups.
     This annotation has the advantage of requiring no outgroup data. If outgroup data is available consider using
-    :class`MLEAncestralAlleleAnnotation` instead.
+    :class:`~sfsutils.annotation.MaximumLikelihoodAncestralAnnotation` instead.
     """
 
     def __init__(self, samples: List[str] = None):
@@ -4724,7 +4724,7 @@ class Annotator(MultiHandler):
 
     def __init__(
             self,
-            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None,
+            source: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None,
             output: str = None,
             annotations: List[Annotation] = None,
             gff: str | None = None,
@@ -4734,15 +4734,15 @@ class Annotator(MultiHandler):
             seed: int | None = 0,
             cache: bool = True,
             aliases: Dict[str, List[str]] = {},
-            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | Iterable[Site] | None" = None
+            vcf: "str | os.PathLike | 'tskit.TreeSequence' | VariantReader | None" = None
     ):
         """
         Create a new annotator instance.
 
         :param source: The variant source: a VCF file (gzipped or a URL), a VCF-Zarr store (a ``.vcz`` or
             ``.zarr`` directory), a tskit tree sequence (a ``.trees`` file or an in-memory
-            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader` / iterable of
-            sites. Read through the same streamed site interface as all handlers.
+            :class:`tskit.TreeSequence`), or a pre-built :class:`~sfsutils.io_handlers.VariantReader`. Read through
+            the same streamed site interface as all handlers.
         :param output: The path to the output file
         :param annotations: The annotations to apply.
         :param gff: The path to the GFF file, can be gzipped, urls are also supported. Required for
