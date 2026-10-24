@@ -1874,6 +1874,10 @@ class Parser(MultiHandler):
                 self.n_aa_prob += 1
                 return posterior[1]
 
+            # the probability belongs to the allele the ancestral tag names, so without one there is nothing to weight
+            if variant.INFO.get(self.info_ancestral) not in bases:
+                return 1.0
+
             raw = variant.INFO.get(self.info_ancestral_prob)
 
             # INFO comes through typed from cyvcf2 but as a plain string from the VCF-Zarr backend, so

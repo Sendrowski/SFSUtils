@@ -1646,6 +1646,14 @@ def test_invariant_site_declaring_alt_without_ancestral_allele_stays_monomorphic
                       skip_non_polarized=True).parse()
 
     assert np.asarray(joint["all"].data).sum() == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize("consequences, expected", [
+    ("G|synonymous_variant|LOW|geneA", "neutral"),
+    ("G|missense_variant|MODERATE|geneA,G|synonymous_variant|LOW|geneB", "selected"),
+    ("G|synonymous_variant|LOW|geneB,G|missense_variant|MODERATE|geneA", "selected"),
+    ("G|stop_gained|HIGH|geneA,G|synonymous_variant|LOW|geneB", None),
+])
 def test_reference_only_rule_looks_at_parsed_samples_only(tmp_path):
     """A site without AA counts as reference-only, and in bin 0, when the parsed samples carry only the reference,
     whatever excluded samples carry."""
@@ -1659,6 +1667,26 @@ def test_reference_only_rule_looks_at_parsed_samples_only(tmp_path):
     sfs = su.Parser(source=vcf, n=4, include_samples=["s0", "s1"]).parse()["all"].to_list()
 
     assert sfs == pytest.approx([1, 1, 0, 0, 0])
+
+
+def test_ancestral_probability_without_ancestral_allele_is_ignored(tmp_path):
+    """An AA_prob next to an invalid AA belongs to an allele the record does not name, so the reference fallback
+    is not weighted by it. Weighting it moved 1 - AA_prob of invariant sites into the divergence bin."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "aa_prob_no_aa.vcf", [
+        ["1", "1", ".", "A", "C", ".", ".", "AA=.;AA_prob=0.4", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+        ["1", "2", ".", "A", ".", ".", ".", "AA=.;AA_prob=0.4", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    assert su.Parser(source=vcf, n=4).parse()["all"].to_list() == pytest.approx([2, 0, 0, 0, 0])
+
+    vcf = _write_vcf_five_samples(tmp_path / "aa_prob_no_aa_seg.vcf", [
+        ["1", "1", ".", "A", "C", ".", ".", "AA=.;AA_prob=0.4", "GT", "0|1", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    sfs = su.Parser(source=vcf, n=10, skip_non_polarized=False).parse()["all"]
+    assert sfs.to_list()[1] == pytest.approx(1)
 
 
 def test_reference_only_sites_without_ancestral_allele_are_typed_by_stratifications(tmp_path):
@@ -2512,15 +2540,16 @@ def test_ancestral_prob_sentinels_treated_as_unpolarized():
     # exercise _get_ancestral_prob directly against the sentinels
     parser = su.Parser.__new__(su.Parser)
     parser.polarize_probabilistically = True
+    parser.info_ancestral = "AA"
     parser.info_ancestral_prob = "AA_prob"
     parser.info_ancestral_post = "AA_post"
     parser.n_aa_prob = 0
     for sentinel in ("", ".", None):
         v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True,
-              info={} if sentinel is None else {"AA_prob": sentinel})
+              info={"AA": "A"} if sentinel is None else {"AA": "A", "AA_prob": sentinel})
         assert parser._get_ancestral_prob(v) == 1.0
     # a real string value is cast to float
-    v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True, info={"AA_prob": "0.75"})
+    v = V(ref="A", pos=1, chrom="1", alt=["T"], is_snp=True, info={"AA": "A", "AA_prob": "0.75"})
     assert parser._get_ancestral_prob(v) == 0.75
 
 
