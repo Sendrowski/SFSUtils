@@ -24,8 +24,8 @@ from tqdm import tqdm
 
 from .annotation import Annotation, SynonymyAnnotation, DegeneracyAnnotation, AncestralAlleleAnnotation
 from .filtration import Filtration, PolyAllelicFiltration, SNPFiltration
-from .io_handlers import bases, get_called_bases, get_site_alleles, FASTAHandler, NoTypeException, \
-    DummyVariant, Site, MultiHandler, VCFHandler, VariantReader, is_monomorphic_snp, SiteAlleles
+from .io_handlers import bases, get_called_bases, get_site_alleles, FASTAHandler, \
+    NoTypeException, DummyVariant, Site, MultiHandler, VCFHandler, VariantReader, is_monomorphic_snp, SiteAlleles
 from .settings import Settings
 from .spectrum import Spectra, TwoSFS, TwoSpectra, JointSFS, JointSpectra
 
@@ -318,7 +318,8 @@ class BaseTransitionStratification(SNPStratification):
         if variant.is_snp:
             ancestral = self.parser._get_ancestral(variant)
 
-            derived = variant.REF if variant.REF != ancestral else variant.ALT[0]
+            first, second = self.parser._get_segregating_alleles(variant)
+            derived = first if first != ancestral else second
 
             if ancestral in bases and derived in bases and ancestral != derived:
                 return f"{ancestral}>{derived}"
@@ -353,11 +354,13 @@ class TransitionTransversionStratification(BaseTransitionStratification):
         :return: Mutation type
         """
         if variant.is_snp:
+            pair = self.parser._get_segregating_alleles(variant) if len(variant.ALT) > 1 else \
+                [variant.REF, variant.ALT[0]]
 
-            if variant.ALT[0] not in bases:
+            if pair[1] not in bases:
                 raise NoTypeException("Invalid alternate allele: Alternate allele must be a valid base.")
 
-            if (variant.REF, variant.ALT[0]) in [('A', 'G'), ('G', 'A'), ('C', 'T'), ('T', 'C')]:
+            if tuple(pair) in [('A', 'G'), ('G', 'A'), ('C', 'T'), ('T', 'C')]:
                 return "transition"
             else:
                 return "transversion"
@@ -1815,6 +1818,29 @@ class Parser(MultiHandler):
             return set(site.counts(self._samples_mask))
 
         return set(get_called_bases(self._select_samples(variant.gt_bases)))
+
+    def _get_segregating_alleles(self, variant: Site) -> List[str]:
+        """
+        The two alleles a SNP segregates for: the reference and first alternate allele, or for a record declaring
+        several alternate alleles, the two alleles called in the parsed samples where there are exactly two, and the
+        ancestral and called allele where the samples are fixed for a derived one.
+
+        :param variant: The site.
+        :return: The two alleles.
+        """
+        if len(variant.ALT) > 1:
+            called = sorted(self._get_called_alleles(variant))
+
+            if len(called) == 2:
+                return called
+
+            if len(called) == 1:
+                ancestral = self._get_ancestral(variant)
+
+                if ancestral != called[0]:
+                    return [ancestral, called[0]]
+
+        return [variant.REF, variant.ALT[0]]
 
     def _get_ancestral_prob(self, variant: Site) -> float:
         """

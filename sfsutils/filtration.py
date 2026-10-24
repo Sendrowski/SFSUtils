@@ -16,7 +16,7 @@ import pandas as pd
 
 from .annotation import DegeneracyAnnotation, _CDSIndex
 from .io_handlers import get_major_base, MultiHandler, get_called_bases, get_distinct_called_bases, \
-    get_distinct_called_alleles, DummyVariant, SiteAlleles, \
+    get_distinct_called_alleles, DummyVariant, SiteAlleles, _base_set, \
     Site, VariantReader, VCFHandler, \
     VariantWriter
 
@@ -780,13 +780,14 @@ class ExistingOutgroupFiltration(Filtration):
         return missing_count < self.n_missing
 
 
-class BiasedGCConversionFiltration(Filtration):
+class BiasedGCConversionFiltration(MaskedFiltration):
     """
     Only retain A<->T and G<->C substitutions (which are unaffected
     by biased gene conversion, see [CITGB]_).
 
-    Mono-allelic sites are always retained, and we assume sites are at most bi-allelic. Note that the number of
-    mutational target sites is reduced by this filtration.
+    Sites without an alternate allele are always retained, and a record declaring several alternate alleles is
+    judged by the alleles its included samples carry. Note that the number of mutational target sites is reduced by
+    this filtration.
 
     .. [CITGB] Pouyet et al., 'Background selection and biased
         gene conversion affect more than 95% of the human genome and bias demographic inferences.',
@@ -802,7 +803,20 @@ class BiasedGCConversionFiltration(Filtration):
         :return: ``True`` if the variant should be kept, ``False`` otherwise.
         """
         if variant.is_snp and len(variant.ALT) > 0:
-            return (variant.REF, variant.ALT[0]) in [('A', 'T'), ('T', 'A'), ('G', 'C'), ('C', 'G')]
+            pairs = [('A', 'T'), ('T', 'A'), ('G', 'C'), ('C', 'G')]
+
+            # a record declaring several alternate alleles is judged by the alleles called, a single one of which
+            # differs from the reference
+            if len(variant.ALT) > 1 and not self._use_declared_alleles:
+                called = SiteAlleles.called(variant, self._samples_mask)
+
+                if len(called) == 2:
+                    return tuple(sorted(called)) in pairs
+
+                if len(called) == 1 and called != {variant.REF}:
+                    return (variant.REF, *called) in pairs
+
+            return (variant.REF, variant.ALT[0]) in pairs
 
         return True
 

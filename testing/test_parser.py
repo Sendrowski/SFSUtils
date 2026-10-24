@@ -1554,6 +1554,26 @@ def test_fixed_derived_invariant_site_stratified_by_ancestral_base(tmp_path):
         assert context["GCT"].to_list() == pytest.approx([0, 0, 0, 0, 1])
 
 
+def test_multi_alt_sites_typed_by_called_alleles(tmp_path):
+    """A record declaring an alternate allele no sample carries is typed by the two alleles called, as its
+    frequency bin is. Typing by REF and ALT[0] filed A/G sites as A>C transversions."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "multi.vcf", [
+        ["1", "10", ".", "A", "C,G", ".", ".", "AA=A", "GT", "0|0", "0|2", "2|2", "0|0", "0|0"],
+        ["1", "20", ".", "A", "G", ".", ".", "AA=A", "GT", "0|0", "0|1", "1|1", "0|0", "0|0"],
+        ["1", "30", ".", "A", "C,G", ".", ".", "AA=C", "GT", "1|1", "1|2", "2|2", "1|1", "1|1"],
+    ])
+
+    def counts(stratification):
+        sfs = su.Parser(source=vcf, n=10, filtrations=[su.PolyAllelicFiltration()],
+                        stratifications=[stratification]).parse()
+        return {t: sfs[t].n_polymorphic for t in sfs.types if sfs[t].n_polymorphic > 0}
+
+    assert counts(su.BaseTransitionStratification()) == pytest.approx({"A>G": 2, "C>G": 1})
+    assert counts(su.TransitionTransversionStratification()) == pytest.approx({"transition": 2, "transversion": 1})
+
+
 def test_fixed_derived_invariant_site_polarized_probabilistically(tmp_path):
     """The ancestral allele probability splits the mass of an invariant site between the two
     monomorphic bins, as it does at a fixed-derived site carrying an alternate allele."""
@@ -1660,6 +1680,23 @@ def test_reference_only_sites_without_ancestral_allele_are_typed_by_stratificati
     for stratification in [su.AncestralBaseStratification(), su.BaseContextStratification(fasta=str(fasta))]:
         sfs = su.Parser(source=vcf, n=4, stratifications=[stratification]).parse()
         assert sum(sfs[t].data[0] for t in sfs.types) == pytest.approx(3)
+
+
+def test_multi_alt_site_fixed_for_derived_allele_typed_by_it(tmp_path):
+    """A record declaring several alternate alleles whose samples are all fixed for one of them is typed by the
+    ancestral and that allele, as its divergence bin is. Falling back to REF and ALT[0] typed A>T as A>G."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "multi_fixed.vcf", [
+        ["1", "10", ".", "A", "G,T", ".", ".", "AA=A", "GT", "2|2", "2|2", "2|2", "2|2", "2|2"],
+    ])
+
+    def types(stratification):
+        sfs = su.Parser(source=vcf, n=10, stratifications=[stratification]).parse()
+        return {t for t in sfs.types if sfs[t].data.sum() > 0}
+
+    assert types(su.BaseTransitionStratification()) == {"A>T"}
+    assert types(su.TransitionTransversionStratification()) == {"transversion"}
 
 
 def test_parse_rewinds_the_reader_after_an_interrupted_pass(tmp_path):

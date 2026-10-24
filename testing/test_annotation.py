@@ -4314,3 +4314,90 @@ def test_degeneracy_splices_from_exon_shared_with_earlier_transcript(tmp_path):
     assert info[132] == (4, '2,+,GTG')
 
 
+def test_synonymy_of_multi_alt_site_uses_called_alternate(tmp_path):
+    """A record declaring an alternate allele no sample carries is annotated by the alternate allele that is
+    carried. Mutating the codon with ALT[0] gave TTA>ATA (non-synonymous) where the samples carry TTA>CTA."""
+    import cyvcf2
+
+    (tmp_path / 'ref.fa').write_text('>chr1\nTTAAAAAAA\n')
+    (tmp_path / 'ann.gff').write_text('##gff-version 3\nchr1\tt\tCDS\t1\t9\t.\t+\t0\tParent=T1\n')
+    (tmp_path / 'in.vcf').write_text(
+        '##fileformat=VCFv4.2\n##contig=<ID=chr1,length=9>\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n'
+        'chr1\t1\t.\tT\tA,C\t.\t.\t.\tGT\t0/2\t2/2\n'
+    )
+
+    su.Annotator(
+        source=str(tmp_path / 'in.vcf'),
+        fasta=str(tmp_path / 'ref.fa'),
+        gff=str(tmp_path / 'ann.gff'),
+        output=str(tmp_path / 'out.vcf'),
+        annotations=[su.SynonymyAnnotation()]
+    ).annotate()
+
+    v = next(iter(cyvcf2.VCF(str(tmp_path / 'out.vcf'))))
+
+    assert v.INFO.get('Synonymy') == 1
+    assert v.INFO.get('Synonymy_Info').startswith('TTA/CTA')
+
+
+def test_synonymy_of_multi_alt_site_with_haploid_call_of_second_alternate(tmp_path):
+    """The carried alternate allele is read from the numeric calls, where cyvcf2 renders a haploid call of the second
+    alternate allele as missing in its genotype strings. Reading the strings fell back to ALT[0], annotating TTA>ATA
+    where the sample carries TTA>CTA."""
+    import cyvcf2
+
+    (tmp_path / 'ref.fa').write_text('>chr1\nTTAAAAAAA\n')
+    (tmp_path / 'ann.gff').write_text('##gff-version 3\nchr1\tt\tCDS\t1\t9\t.\t+\t0\tParent=T1\n')
+    (tmp_path / 'in.vcf').write_text(
+        '##fileformat=VCFv4.2\n##contig=<ID=chr1,length=9>\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\n'
+        'chr1\t1\t.\tT\tA,C\t.\t.\t.\tGT\t0/0\t0/0\t2\n'
+    )
+
+    su.Annotator(
+        source=str(tmp_path / 'in.vcf'),
+        fasta=str(tmp_path / 'ref.fa'),
+        gff=str(tmp_path / 'ann.gff'),
+        output=str(tmp_path / 'out.vcf'),
+        annotations=[su.SynonymyAnnotation()]
+    ).annotate()
+
+    v = next(iter(cyvcf2.VCF(str(tmp_path / 'out.vcf'))))
+
+    assert v.INFO.get('Synonymy_Info').startswith('TTA/CTA')
+
+
+def test_vep_check_of_multi_alt_site_uses_codon_change_of_called_alternate(tmp_path):
+    """The VEP cross-check accepts the codon change of the carried alternate allele, not only the first one listed in
+    CSQ. Comparing with the first change, which belongs to ALT[0], reported a mismatch and left the site unannotated."""
+    import cyvcf2
+
+    (tmp_path / 'ref.fa').write_text('>chr1\nTTAAAAAAA\n')
+    (tmp_path / 'ann.gff').write_text('##gff-version 3\nchr1\tt\tCDS\t1\t9\t.\t+\t0\tParent=T1\n')
+    (tmp_path / 'in.vcf').write_text(
+        '##fileformat=VCFv4.2\n##contig=<ID=chr1,length=9>\n'
+        '##INFO=<ID=CSQ,Number=.,Type=String,Description="VEP">\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n'
+        'chr1\t1\t.\tT\tA,C\t.\t.\tCSQ=A|missense_variant|Tta/Ata,C|synonymous_variant|Tta/Cta\tGT\t0/2\t2/2\n'
+    )
+
+    syn = su.SynonymyAnnotation()
+
+    su.Annotator(
+        source=str(tmp_path / 'in.vcf'),
+        fasta=str(tmp_path / 'ref.fa'),
+        gff=str(tmp_path / 'ann.gff'),
+        output=str(tmp_path / 'out.vcf'),
+        annotations=[syn]
+    ).annotate()
+
+    v = next(iter(cyvcf2.VCF(str(tmp_path / 'out.vcf'))))
+
+    assert syn.n_vep_comparisons == 1 and syn.vep_mismatches == []
+    assert v.INFO.get('Synonymy') == 1
+
+

@@ -17,7 +17,7 @@ from enum import Enum
 from functools import cached_property
 from io import StringIO
 from itertools import product
-from typing import List, Optional, Dict, Tuple, Callable, Literal, Iterable, cast, Any, Generator, Self
+from typing import List, Optional, Dict, Set, Tuple, Callable, Literal, Iterable, cast, Any, Generator, Self
 
 import Bio.Data.CodonTable
 import jsonpickle
@@ -31,7 +31,8 @@ from scipy.stats import hypergeom
 from tqdm import tqdm
 
 from .io_handlers import DummyVariant, Site, MultiHandler, FASTAHandler, VariantReader
-from .io_handlers import GFFHandler, get_major_base, get_called_bases, VariantWriter, VCFHandler
+from .io_handlers import GFFHandler, get_major_base, get_called_bases, SiteAlleles, VariantWriter, VCFHandler, \
+    _output_format
 from ._parallelization import parallelize as parallelize_func, check_bounds
 from .settings import Settings
 from .spectrum import Spectra, Spectrum, _decode_json
@@ -876,12 +877,19 @@ class SynonymyAnnotation(DegeneracyAnnotation):
         :return: The alternative allele or None if there is no alternative allele.
         """
         if len(variant.ALT) > 0:
+            alt = variant.ALT[0]
 
-            # assume there is at most one alternative allele
+            # a record declaring several alternate alleles takes the one alternate allele the samples carry
+            if len(variant.ALT) > 1:
+                called = SiteAlleles.called(variant) - {variant.REF}
+
+                if len(called) == 1:
+                    alt = called.pop()
+
             if self._cd.strand == '-':
-                return Seq(variant.ALT[0]).complement().__str__()
+                return Seq(alt).complement().__str__()
 
-            return variant.ALT[0]
+            return alt
 
     @staticmethod
     def mutate(codon: str, alt: str, pos: int) -> str:
@@ -911,23 +919,17 @@ class SynonymyAnnotation(DegeneracyAnnotation):
 
         return codon_table[codon1] == codon_table[codon2]
 
-    def _parse_codons_vep(self, variant: Site) -> List[str]:
+    @staticmethod
+    def _parse_codons_vep(variant: Site) -> List[Set[str]]:
         """
-        Parse the codons from the VEP annotation if present.
+        Parse the codon changes from the VEP annotation, one per annotated allele and transcript.
 
         :param variant: The variant.
-        :return: The codons.
+        :return: The reference and alternate codon of each change.
         """
-        # match codons
-        match = re.search("([actgACTG]{3})/([actgACTG]{3})", variant.INFO.get('CSQ'))
+        changes = re.findall("([actgACTG]{3})/([actgACTG]{3})", variant.INFO.get('CSQ'))
 
-        if match is not None:
-            if len(match.groups()) != 2:
-                self._logger.info(f'VEP annotation has more than two codons: {variant.INFO.get("CSQ")}')
-
-            return [m.upper() for m in [match[1], match[2]]]
-
-        return []
+        return [{a.upper(), b.upper()} for a, b in changes]
 
     @staticmethod
     def _parse_synonymy_snpeff(variant: Site) -> int | None:
@@ -1028,8 +1030,8 @@ class SynonymyAnnotation(DegeneracyAnnotation):
                             # increase number of comparisons
                             self.n_vep_comparisons += 1
 
-                            # make sure the codons determined by VEP are the same as our codons.
-                            if set(codons_vep) != {codon, alt_codon}:
+                            # make sure one of the codon changes determined by VEP is ours
+                            if {codon, alt_codon} not in codons_vep:
                                 self._logger.warning(f'VEP codons do not match with codons determined by '
                                                      f'codon table for {v.CHROM}:{v.POS}')
 

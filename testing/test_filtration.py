@@ -581,9 +581,10 @@ class FiltrationTestCase(TestCase):
             Mock the variant class.
             """
 
-            def __init__(self, REF: str, ALT: List[str]):
+            def __init__(self, REF: str, ALT: List[str], gt_bases: List[str] = None):
                 self.REF = REF
                 self.ALT = ALT
+                self.gt_bases = gt_bases if gt_bases is not None else [f'{REF}/{a}' for a in ALT]
 
             @cached_property
             def is_snp(self):
@@ -606,6 +607,59 @@ class FiltrationTestCase(TestCase):
         assert f.filter_site(variant=VariantMock(REF='G', ALT=['C']))
         assert f.filter_site(variant=VariantMock(REF='A', ALT=['T']))
         assert f.filter_site(variant=VariantMock(REF='T', ALT=['A']))
+
+        # a record declaring several alternate alleles is judged by the alleles called, also where the samples are
+        # fixed for one of them, whatever the order of the alternate alleles, and by its first alternate allele where
+        # the samples carry only the reference, as a record declaring one is
+        assert f.filter_site(variant=VariantMock(REF='A', ALT=['G', 'T'], gt_bases=['A/T', 'T/T']))
+        assert not f.filter_site(variant=VariantMock(REF='A', ALT=['T', 'G'], gt_bases=['A/G', 'G/G']))
+        assert not f.filter_site(variant=VariantMock(REF='A', ALT=['T', 'C'], gt_bases=['C/C', 'C/C']))
+        assert f.filter_site(variant=VariantMock(REF='A', ALT=['C', 'T'], gt_bases=['T/T', 'T/T']))
+        assert not f.filter_site(variant=VariantMock(REF='A', ALT=['C', 'T'], gt_bases=['A/A', 'A/A']))
+        assert f.filter_site(variant=VariantMock(REF='A', ALT=['T', 'C'], gt_bases=['A/A', 'A/A']))
+
+    def test_biased_gc_conversion_reads_multi_alt_calls_numerically(self):
+        """
+        The called alleles of a multi-ALT record come from the numeric calls, which keep a haploid call of the
+        second alternate allele that cyvcf2's genotype strings render as missing.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf = os.path.join(tmp, 'haploid.vcf')
+            with open(vcf, 'w') as fh:
+                fh.write('##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n'
+                         '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+                         '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\n'
+                         '1\t10\t.\tA\tT,C\t.\t.\t.\tGT\t0/0\t0/0\t2\n')
+
+            f = su.Filterer(source=vcf, output=os.path.join(tmp, 'out.vcf'),
+                            filtrations=[su.BiasedGCConversionFiltration()])
+            f.filter()
+
+            # the samples carry A and C, an A<->C mutation the filtration removes
+            self.assertEqual(f.n_filtered, 1)
+
+    def test_biased_gc_conversion_follows_the_parser_samples(self):
+        """
+        A multi-ALT record is judged by the alleles the parsed samples carry. Judging by those of every sample kept
+        an A->C fixed difference among the parsed samples as a C<->G pair.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            vcf = os.path.join(tmp, 'subset.vcf')
+            with open(vcf, 'w') as fh:
+                fh.write('##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n'
+                         '##INFO=<ID=AA,Number=1,Type=String,Description="AA">\n'
+                         '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+                         '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\n'
+                         '1\t10\t.\tA\tC,G\t.\t.\tAA=A\tGT\t1/1\t1/1\t2/2\n')
+
+            f = su.BiasedGCConversionFiltration()
+            su.Parser(source=vcf, n=4, include_samples=['s1', 's2'], filtrations=[f]).parse()
+
+            self.assertEqual(f.n_filtered, 1)
 
     def test_contig_filtration(self):
         """

@@ -230,6 +230,22 @@ class SiteAlleles:
         return view
 
     @classmethod
+    def called(cls, variant: 'Site', mask: Optional[np.ndarray] = None) -> Set[str]:
+        """
+        The distinct alleles called at a site, from the numeric calls where the backend provides them.
+
+        :param variant: The site.
+        :param mask: The boolean samples mask, or ``None`` for every sample.
+        :return: The called alleles.
+        """
+        view = cls.from_site(variant)
+
+        if view is not None:
+            return set(view.counts(mask))
+
+        return get_distinct_called_alleles(variant.gt_bases if mask is None else np.asarray(variant.gt_bases)[mask])
+
+    @classmethod
     def _build(cls, variant: 'Site') -> Optional['SiteAlleles']:
         """
         Build the view for a site.
