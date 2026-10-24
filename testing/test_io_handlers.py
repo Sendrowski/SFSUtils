@@ -1574,6 +1574,26 @@ def test_zarr_degeneracy_dot_sentinel_round_trips_numeric(tmp_path):
     assert "Degeneracy" not in variants[1].INFO          # '.' is absent, not the string "."
 
 
+def test_zarr_info_absent_in_first_chunk_stays_numeric(tmp_path, monkeypatch):
+    """A Degeneracy field whose whole first chunk is '.' (non-coding) and whose later chunks carry ints
+    must read back as a number. Pinning the all-absent first chunk to strings made every later value a
+    string, so DegeneracyStratification dropped every coding site."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    monkeypatch.setattr(ZarrVariantWriter, "_variant_chunk", 2)
+
+    out = str(tmp_path / "deg.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    for pos, deg in [(10, "."), (20, "."), (30, "."), (40, "."), (50, 4), (60, 0), (70, ".")]:
+        w.write(Variant(ref="A", pos=pos, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True,
+                        info={"Degeneracy": deg}))
+    w.close()
+
+    degeneracy = [v.INFO.get("Degeneracy") for v in ZarrVariantReader(out)]
+    assert degeneracy == [None, None, None, None, 4, 0, None]
+    assert not any(isinstance(d, str) for d in degeneracy)
+
+
 def test_zarr_reader_surfaces_multivalued_info(tmp_path):
     """A multi-valued INFO field (Number != 1, stored as a 2-D variant_<key> array by vcf2zarr) is
     surfaced in the form cyvcf2 hands out, a tuple of the values a numeric field carries at the site."""

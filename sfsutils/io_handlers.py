@@ -3127,17 +3127,20 @@ class ZarrVariantWriter(VariantWriter):
             values.extend([self._missing] * (self._row - len(values)))
 
             chunk = self._kind(values)
-            kind = self._widest(self._info_kind.get(key, 'empty'), chunk)
+            prior = self._info_kind.get(key, 'empty')
+            kind = self._widest(prior, chunk)
 
             # an integer array cannot mark a value the whole chunk is missing, so a field stored as one
             # widens to the encoding that can
             if chunk == 'empty' and kind == 'int':
                 kind = 'float'
 
-            # a field carrying no value at all so far is held as strings, whose empty string the reader
-            # reports as absent, and which a later chunk can still widen
-            if kind == 'empty':
-                kind = 'str'
+            # a field carrying no value so far is stored as empty strings, which the reader reports as
+            # absent, and is created afresh in the encoding of the first chunk that carries a value
+            if prior == 'empty' and kind != 'empty' and name in self._root:
+                del self._root[name]
+
+            encoding = 'str' if kind == 'empty' else kind
 
             integral = self._info_integral.get(key, True) and all(
                 isinstance(v, (int, np.integer)) and not self._is_bool(v)
@@ -3146,26 +3149,26 @@ class ZarrVariantWriter(VariantWriter):
             if name not in self._root:
                 # the variants before the field first appears carry no value, and an integer array cannot
                 # say so, so a field appearing late is numeric rather than integral
-                if start and kind == 'int':
-                    kind = 'float'
+                if start and encoding == 'int':
+                    encoding = 'float'
 
-                array = self._create(name, (0,), self._info_dtypes[kind], ['variants'], extent=(self._n,))
+                array = self._create(name, (0,), self._info_dtypes[encoding], ['variants'], extent=(self._n,))
 
                 # the variants written before the field first appears are marked a chunk at a time, so
                 # that the memory held stays that of one chunk rather than that of the whole input
                 for begin in range(0, start, self._variant_chunk):
                     finish = min(begin + self._variant_chunk, start)
                     array.resize((finish,))
-                    array[begin:finish] = self._encode([self._missing] * (finish - begin), kind)
-            elif kind != self._info_kind[key]:
-                self._rebuild_info(name, self._info_kind[key], kind, self._info_integral[key])
+                    array[begin:finish] = self._encode([self._missing] * (finish - begin), encoding)
+            elif prior != 'empty' and encoding != prior:
+                self._rebuild_info(name, prior, encoding, self._info_integral[key])
 
-            self._info_kind[key] = kind
+            self._info_kind[key] = 'empty' if kind == 'empty' else encoding
             self._info_integral[key] = integral
 
             array = self._root[name]
             array.resize((stop,))
-            array[start:stop] = self._encode(values[:self._row], kind)
+            array[start:stop] = self._encode(values[:self._row], encoding)
 
             values.clear()
 
