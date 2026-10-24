@@ -424,6 +424,24 @@ class AnnotationTestCase(TestCase):
 
         assert result == expected_result
 
+    @staticmethod
+    def test_count_target_sites_counts_overlapping_coding_sequences_once():
+        """
+        Coding sequences of different transcripts that overlap share their positions, which are counted once.
+        Summing their lengths counted the shared positions once per transcript.
+        """
+        mock_df = pd.DataFrame({
+            'seqid': ['chr1', 'chr1', 'chr1', 'chr1'],
+            'start': [100, 100, 150, 400],
+            'end': [200, 180, 250, 450]
+        })
+
+        with patch.object(GFFHandler, "_load_cds", return_value=mock_df):
+            assert GFFHandler("mock_file.gff")._count_target_sites() == {'chr1': (250 - 100 + 1) + (450 - 400 + 1)}
+
+            # dropping each coding sequence that overlaps the next one keeps only 150-250 and 400-450
+            assert GFFHandler("mock_file.gff")._count_target_sites(remove_overlaps=True) == {'chr1': 101 + 51}
+
     @requires('resources/genome/betula/genome.gff.gz')
     def test_count_target_sites_betula_gff_all_contigs(self):
         """
@@ -434,7 +452,7 @@ class AnnotationTestCase(TestCase):
         target_sites = su.Annotation.count_target_sites(gff)
 
         self.assertEqual(3273, len(target_sites))
-        self.assertEqual(337816, target_sites['Contig0'])
+        self.assertEqual(337588, target_sites['Contig0'])
 
     @requires('resources/genome/betula/genome.gff.gz')
     def test_count_target_sites_betula_gff_some_contigs(self):
@@ -446,7 +464,7 @@ class AnnotationTestCase(TestCase):
         target_sites = su.Annotation.count_target_sites(gff, contigs=['Contig0', 'Contig10'])
 
         self.assertEqual(2, len(target_sites))
-        self.assertEqual(337816, target_sites['Contig0'])
+        self.assertEqual(337588, target_sites['Contig0'])
         self.assertEqual(4992, target_sites['Contig10'])
 
     def test_aliases_empty_dict(self):

@@ -129,10 +129,11 @@ class Annotation(ABC):
     @staticmethod
     def count_target_sites(file: str, remove_overlaps: bool = False, contigs: List[str] = None) -> Dict[str, int]:
         """
-        Count the number of target sites in a GFF file.
+        Count the number of target sites in a GFF file, the positions covered by at least one coding sequence.
 
         :param file: The path to The GFF file path, possibly gzipped or a URL
-        :param remove_overlaps: Whether to remove overlapping target sites.
+        :param remove_overlaps: Whether to drop each coding sequence overlapping the next one, rather than count
+            the positions they share once.
         :param contigs: The contigs to count the target sites for.
         :return: The number of target sites per chromosome/contig.
         """

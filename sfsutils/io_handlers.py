@@ -1093,9 +1093,10 @@ class GFFHandler(FileHandler):
 
     def _count_target_sites(self, remove_overlaps: bool = False, contigs: List[str] = None) -> Dict[str, int]:
         """
-        Count the number of target sites in a GFF file.
+        Count the number of target sites in a GFF file, the positions covered by at least one coding sequence.
 
-        :param remove_overlaps: Whether to remove overlapping coding sequences.
+        :param remove_overlaps: Whether to drop each coding sequence overlapping the next one, rather than count the
+            positions they share once.
         :param contigs: The contigs to consider.
         :return: The number of target sites per chromosome/contig.
         """
@@ -1137,10 +1138,11 @@ class GFFHandler(FileHandler):
     @staticmethod
     def _add_lengths(cds: pd.DataFrame, remove_overlaps: bool = False, contigs: List[str] = None) -> pd.DataFrame:
         """
-        Compute coding sequences lengths.
+        Compute coding sequences lengths. Each coding sequence is credited with the positions no coding sequence of
+        the same contig starting before it covers, so that the lengths add up to the union of coding positions.
 
         :param cds: The coding sequences.
-        :param remove_overlaps: Whether to remove overlapping coding sequences.
+        :param remove_overlaps: Whether to remove coding sequences overlapping the next one instead.
         :param contigs: The contigs to consider.
         :return: The coding sequences with lengths.
         """
@@ -1148,16 +1150,18 @@ class GFFHandler(FileHandler):
         if contigs is not None:
             cds = cds[cds['seqid'].isin(contigs)]
 
-        # remove duplicates
-        cds = cds.drop_duplicates(subset=['seqid', 'start'])
-
-        # remove overlaps
+        # remove duplicates and overlaps
         if remove_overlaps:
-            cds = GFFHandler.remove_overlaps(cds)
+            cds = GFFHandler.remove_overlaps(cds.drop_duplicates(subset=['seqid', 'start']))
 
-        # copy, as the filters above may leave a slice of a larger frame
-        cds = cds.copy()
-        cds['length'] = cds['end'] - cds['start'] + 1
+        # sorting also copies, as the filters above may leave a slice of a larger frame
+        cds = cds.sort_values(by=['seqid', 'start'], kind='stable')
+
+        # the last position covered by the coding sequences of the contig starting before each one
+        reach = cds.groupby('seqid', observed=True)['end'].cummax().groupby(cds['seqid'], observed=True).shift(1)
+        begin = np.maximum(cds['start'], reach.fillna(-np.inf) + 1)
+
+        cds['length'] = (cds['end'] - begin + 1).clip(lower=0).astype(int)
 
         return cds
 
