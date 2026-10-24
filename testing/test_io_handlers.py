@@ -980,17 +980,31 @@ def test_a_gff_of_nothing_but_sequences_carries_no_coding_sequence(tmp_path):
 
 @pytest.mark.parametrize('reads', [1, 3, 7, 4096])
 def test_the_annotation_records_are_handed_out_whole(tmp_path, reads):
-    """The pragma must be found however the reads fall across it, and the last record of a file not
-    ending in a newline is a record all the same."""
+    """The pragma must be found however the reads fall across it, the comment lines are left out, and the
+    last record of a file not ending in a newline is a record all the same."""
     path = str(tmp_path / 'lines.gff3')
-    text = '##gff-version 3\nc1\tx\tCDS\t1\t9\t.\t+\t0\tID=a\nc1\tx\tCDS\t20\t29\t.\t+\t0\tID=b'
+    records = 'c1\tx\tCDS\t1\t9\t.\t+\t0\tID=a\nc1\tx\tCDS\t20\t29\t.\t+\t0\tID=b'
     with open(path, 'w') as f:
-        f.write(text + '\n##FASTA\n>c1\nACGTACGT\n')
+        f.write('##gff-version 3\n' + records + '\n##FASTA\n>c1\nACGTACGT\n')
 
     with io_handlers._GFFAnnotationLines(path) as lines:
         read = ''.join(iter(lambda: lines.read(reads), ''))
 
-    assert read == text + '\n'
+    assert read == records + '\n'
+
+
+@pytest.mark.parametrize('gz', [False, True])
+def test_gff_with_byte_order_mark(tmp_path, gz):
+    """A GFF starting with a byte-order mark keeps its first line a comment. The mark hid the comment marker, so
+    '##gff-version 3' was read as a contig."""
+    import gzip
+
+    path = str(tmp_path / ('bom.gff3.gz' if gz else 'bom.gff3'))
+    text = '\ufeff##gff-version 3\n1\tx\tCDS\t1\t30\t.\t+\t0\tID=c1;Parent=t1\n'
+    with (gzip.open if gz else open)(path, 'wt', encoding='utf-8') as f:
+        f.write(text)
+
+    assert GFFHandler(path)._count_target_sites() == {'1': 30}
 
 
 def test_gff_read_in_blocks_matches_a_single_block(tmp_path, monkeypatch):
@@ -1695,5 +1709,21 @@ def test_rewritten_gzipped_reference_is_decompressed_again(tmp_path):
 
     fasta.write_bytes(gzip.compress(b">1\nCCCCCC\n"))
     assert str(FASTAHandler(str(fasta)).get_contig(['1']).seq) == "CCCCCC"
+
+
+def test_gff_attribute_containing_hash_keeps_its_parent(tmp_path):
+    """Only lines starting with '#' are GFF comments, so a '#' within the attributes leaves the parent transcript
+    intact. Cutting every line at its first '#' dropped the Parent of such a coding sequence."""
+    gff = tmp_path / "hash.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "# a comment line\n"
+        "1\tt\tCDS\t1\t9\t.\t+\t0\tID=cds#1;Parent=tx1\n"
+        "1\tt\tCDS\t20\t29\t.\t+\t0\tID=cds2;Note=see #4;Parent=tx1\n"
+    )
+
+    cds = GFFHandler(str(gff))._load_cds()
+
+    assert list(cds['parent']) == ['tx1', 'tx1']
 
 

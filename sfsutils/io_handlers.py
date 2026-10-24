@@ -538,10 +538,11 @@ def open_file(file: str) -> TextIO:
     :param file: File to open
     :return: stream
     """
+    # utf-8-sig drops a leading byte-order mark, which would otherwise hide a comment marker on the first line
     if is_gzipped(file):
-        return gzip.open(file, "rt")
+        return gzip.open(file, "rt", encoding='utf-8-sig')
 
-    return open(file, 'r')
+    return open(file, 'r', encoding='utf-8-sig')
 
 
 class FileHandler:
@@ -900,9 +901,7 @@ class FASTAHandler(FileHandler):
 
 class _GFFAnnotationLines(io.TextIOBase):
     """
-    The annotation records of a GFF file, ending at the ``##FASTA`` pragma. GFF3 permits the sequences the
-    annotation refers to be appended after that pragma, and those lines carry a single field each, which a
-    block-wise read would otherwise hand the parser as a block of its own.
+    The annotation records of a GFF file, ending at the ``##FASTA`` pragma, without the lines starting with ``#``.
     """
 
     #: The pragma introducing the appended sequences
@@ -962,16 +961,32 @@ class _GFFAnnotationLines(io.TextIOBase):
                 self._exhausted = True
                 self._held = ''
 
-                return data if cut is None else data[:cut]
+                return self._records(data if cut is None else data[:cut])
 
             end = data.rfind('\n') + 1
             self._held = data[end:]
 
-            # a read landing inside a single line hands out nothing, so the next one is taken right away
-            if end:
-                return data[:end]
+            # a read landing inside a single line, or holding only comments, hands out nothing, which would read
+            # as the end of the stream, so the next one is taken right away
+            records = self._records(data[:end])
+
+            if records:
+                return records
 
         return ''
+
+    @staticmethod
+    def _records(data: str) -> str:
+        """
+        The lines of the text that are not comments.
+
+        :param data: Text made up of whole lines.
+        :return: The text without the lines starting with ``#``.
+        """
+        if '#' not in data or (not data.startswith('#') and '\n#' not in data):
+            return data
+
+        return ''.join(line for line in data.splitlines(keepends=True) if not line.startswith('#'))
 
     def close(self) -> None:
         """
@@ -1091,7 +1106,6 @@ class GFFHandler(FileHandler):
             blocks = pd.read_csv(
                 lines,
                 sep='\t',
-                comment='#',
                 names=col_labels,
                 dtype=dtypes,
                 usecols=used,
