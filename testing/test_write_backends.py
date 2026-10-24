@@ -200,6 +200,31 @@ def test_tree_sequence_subset_matches_vcf_filter(tmp_path):
 
 
 @requires_trees
+def test_tree_sequence_output_keeps_existing_site_metadata(tmp_path):
+    """Writing a .trees merges INFO into the metadata the sites carry, so an ancestree confidence block
+    survives and AA_prob reads back. Replacing the metadata with INFO alone dropped AA_prob."""
+    import tskit
+    from sfsutils.io_handlers import TskitVariantReader
+
+    tables = tskit.load(TREES).dump_tables()
+    sites = tables.sites.copy()
+    tables.sites.clear()
+    tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+    for row in sites:
+        tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state,
+                             metadata={"ancestree": {"max_prob": 0.9}, "other": 1})
+    source = str(tmp_path / "annotated.trees")
+    tables.tree_sequence().dump(source)
+
+    out = _filter(source, str(tmp_path / "out.trees"), [su.SNPFiltration()])
+
+    sub = tskit.load(out)
+    assert sub.num_sites > 0
+    assert all(site.metadata["ancestree"] == {"max_prob": 0.9} and site.metadata["other"] == 1 for site in sub.sites())
+    assert all(v.INFO["AA_prob"] == 0.9 for v in TskitVariantReader(tskit.load(out)))
+
+
+@requires_trees
 def test_tree_sequence_output_attaches_info_metadata(tmp_path):
     """INFO added while writing a .trees is stored as JSON site metadata on the kept sites (best-effort)."""
     import tskit

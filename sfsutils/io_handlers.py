@@ -3274,7 +3274,8 @@ class TskitVariantWriter(VariantWriter):
 
     def _attach_site_metadata(self, ts: 'tskit.TreeSequence') -> 'tskit.TreeSequence':
         """
-        Attach the collected INFO fields to the kept sites as permissive-JSON metadata.
+        Attach the collected INFO fields to the kept sites as permissive-JSON metadata, merged into the
+        metadata the sites carry where that decodes to a dictionary.
 
         :param ts: The site-subset tree sequence.
         :return: The tree sequence with site metadata, or the input unchanged if metadata could not be encoded.
@@ -3283,13 +3284,15 @@ class TskitVariantWriter(VariantWriter):
 
         try:
             tables = ts.dump_tables()
+            existing = [site.metadata for site in ts.sites()]
             sites = tables.sites.copy()
             tables.sites.clear()
             tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
 
-            for row in sites:
+            for row, prior in zip(sites, existing):
                 info = self._info_by_pos.get(row.position, {})
-                metadata = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in info.items()}
+                metadata = dict(prior) if isinstance(prior, dict) else {}
+                metadata.update({k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in info.items()})
                 tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state, metadata=metadata)
 
             return tables.tree_sequence()
