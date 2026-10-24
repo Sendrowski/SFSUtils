@@ -65,6 +65,28 @@ class FiltrationTestCase(TestCase):
         assert count_sites(f.vcf) == count_sites(f.output) + f.n_filtered
 
     @requires('resources/genome/betula/biallelic.subset.10000.vcf.gz')
+    def test_filterer_keeps_per_filtration_counts(self):
+        """
+        Each filtration reports the sites it removed once the pass is over, and a second pass counts afresh.
+        Rewinding at teardown zeroed every per-filtration count after filter().
+        """
+        filtrations = [su.SNPFiltration(), su.PolyAllelicFiltration()]
+
+        f = su.Filterer(
+            source="resources/genome/betula/biallelic.subset.10000.vcf.gz",
+            output='scratch/test_filterer_keeps_per_filtration_counts.vcf',
+            filtrations=filtrations,
+        )
+
+        f.filter()
+
+        assert [x.n_filtered for x in filtrations] == [2, 0]
+
+        f.filter()
+
+        assert [x.n_filtered for x in filtrations] == [2, 0]
+
+    @requires('resources/genome/betula/biallelic.subset.10000.vcf.gz')
     def test_snp_filtration_use_sample_mask_from_parser_if_specified(self):
         """
         Make sure the SNP filtration uses the sample mask from the parser.
@@ -1650,8 +1672,8 @@ class TestCodingSequenceFiltrationRewind:
             with caplog.at_level(logging.WARNING, logger="sfsutils"):
                 su.Filterer(source=vcf, output=out, gff=str(gff), filtrations=[filtration]).filter()
 
-            # the teardown rewinds the filtration, so the count is back at the start of the next pass
-            assert filtration.n_processed == 0
+            # the setup rewinds the filtration, so the count covers this pass alone
+            assert filtration.n_processed == 1
             assert "No subsequent coding sequence found" in caplog.text
 
 

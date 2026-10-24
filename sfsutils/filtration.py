@@ -1057,8 +1057,9 @@ class Filterer(MultiHandler):
         """
         Set up the filtrations.
         """
-        # setup filtrations
+        # restore the per-pass state of the filtrations, which otherwise carries over into a second pass
         for f in self.filtrations:
+            f._rewind()
             f._setup(self)
 
         # create the writer for the format implied by the output extension
@@ -1070,7 +1071,6 @@ class Filterer(MultiHandler):
         """
         for f in self.filtrations:
             f._teardown()
-            f._rewind()
 
         # close the writer and reader (guarded so an error mid-setup still releases what was opened).
         # _reader is a cached_property, so only close it when it was actually opened, checking the cache
