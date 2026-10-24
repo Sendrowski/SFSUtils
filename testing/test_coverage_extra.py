@@ -285,6 +285,23 @@ def test_numpy_array_handler_roundtrip():
     np.testing.assert_array_equal(back, arr)
 
 
+def test_numpy_object_array_of_sequences_roundtrip():
+    """An object array whose elements are sequences of equal length keeps its shape. Rebuilding it with np.array
+    unpacked the elements into a new axis, and reshaping to the stored shape raised."""
+    import jsonpickle
+
+    for shape in [(2,), (2, 1)]:
+        arr = np.empty(shape, dtype=object)
+
+        for i, index in enumerate(np.ndindex(*shape)):
+            arr[index] = [i, i + 1]
+
+        back = jsonpickle.decode(jsonpickle.encode(arr))
+
+        assert back.shape == shape and back.dtype == object
+        assert [list(x) for x in back.ravel()] == [list(x) for x in arr.ravel()]
+
+
 def test_dataframe_handler_roundtrip():
     """The pandas DataFrame handler flatten/restore path."""
     import jsonpickle

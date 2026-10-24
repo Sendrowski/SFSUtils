@@ -31,7 +31,7 @@ class NumpyArrayHandler(BaseHandler):
         :param data: Dictionary
         :return: Simplified dictionary
         """
-        return data | dict(data=x.tolist(), dtype=str(x.dtype))
+        return data | dict(data=x.tolist(), dtype=str(x.dtype), shape=list(x.shape))
 
     def restore(self, data: dict) -> np.ndarray:
         """
@@ -40,8 +40,25 @@ class NumpyArrayHandler(BaseHandler):
         :param data: Dictionary
         :return: Numpy array
         """
-        # fall back to inferred dtype for old-style payloads lacking the dtype field
-        return np.array(data['data'], dtype=data.get('dtype'))
+        # fall back to inferred dtype and shape for old-style payloads lacking these fields
+        if 'shape' not in data:
+            return np.array(data['data'], dtype=data.get('dtype'))
+
+        # elements of an object array may be sequences themselves, which np.array would unpack into a new axis
+        if data['dtype'] == 'object':
+            array = np.empty(data['shape'], dtype=object)
+
+            for index in np.ndindex(*data['shape']):
+                value = data['data']
+
+                for i in index:
+                    value = value[i]
+
+                array[index] = value
+
+            return array
+
+        return np.array(data['data'], dtype=data['dtype']).reshape(data['shape'])
 
 
 class SpectrumHandler(BaseHandler):

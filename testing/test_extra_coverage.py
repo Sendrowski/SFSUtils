@@ -136,6 +136,19 @@ def test_numpy_handler_old_payload_without_dtype_field():
     np.testing.assert_array_equal(back, np.array([1, 2, 3]))
 
 
+def test_numpy_handler_preserves_shape_of_empty_array():
+    # an empty multi-dimensional array restores with its shape, which tolist() alone does not carry
+    from sfsutils.json_handlers import NumpyArrayHandler
+
+    handler = NumpyArrayHandler(context=jsonpickle.pickler.Pickler())
+
+    back = handler.restore(handler.flatten(np.zeros((0, 3)), {}))
+    assert back.shape == (0, 3)
+
+    back = jsonpickle.decode(jsonpickle.encode(np.arange(6).reshape(2, 3)))
+    np.testing.assert_array_equal(back, np.arange(6).reshape(2, 3))
+
+
 def test_import_leaves_biopython_codon_table_intact():
     # the module's stop-codon entries are written into its own copy of the standard codon table
     from Bio.Data import CodonTable
