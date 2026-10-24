@@ -4272,3 +4272,43 @@ def test_annotator_releases_the_reader_when_setup_fails(tmp_path):
         ann.annotate()
 
     assert reader.closed
+
+
+def test_degeneracy_splices_from_exon_shared_with_earlier_transcript(tmp_path):
+    """T2 shares its middle exon 11-47 with T1, which the GFF lists first. Keeping only T1's copy of the
+    shared exon left T2's chain as 1-6 then 131-165, so the boundary codon of 131-165 was read from
+    positions 6, 131, 132 (ATG, 0-fold) instead of 47, 131, 132 (GTG, third position 4-fold)."""
+    import cyvcf2
+
+    seq = ['A'] * 200
+    seq[46], seq[130], seq[131] = 'G', 'T', 'G'
+    seq = ''.join(seq)
+
+    (tmp_path / 'ref.fa').write_text('>chr1\n' + seq + '\n')
+    (tmp_path / 'ann.gff').write_text(
+        '##gff-version 3\n'
+        'chr1\tt\tCDS\t1\t6\t.\t+\t0\tParent=T2\n'
+        'chr1\tt\tCDS\t11\t47\t.\t+\t0\tParent=T1\n'
+        'chr1\tt\tCDS\t11\t47\t.\t+\t0\tParent=T2\n'
+        'chr1\tt\tCDS\t71\t101\t.\t+\t2\tParent=T1\n'
+        'chr1\tt\tCDS\t131\t165\t.\t+\t2\tParent=T2\n'
+    )
+    (tmp_path / 'in.vcf').write_text(
+        '##fileformat=VCFv4.2\n##contig=<ID=chr1,length=200>\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\n'
+        + ''.join(f'chr1\t{p}\t.\t{seq[p - 1]}\t.\t.\t.\t.\tGT\t0/0\n' for p in (131, 132))
+    )
+
+    su.Annotator(
+        source=str(tmp_path / 'in.vcf'),
+        fasta=str(tmp_path / 'ref.fa'),
+        gff=str(tmp_path / 'ann.gff'),
+        output=str(tmp_path / 'out.vcf'),
+        annotations=[su.DegeneracyAnnotation()]
+    ).annotate()
+
+    info = {v.POS: (v.INFO.get('Degeneracy'), v.INFO.get('Degeneracy_Info')) for v in cyvcf2.VCF(str(tmp_path / 'out.vcf'))}
+
+    assert info[131] == (0, '1,+,GTG')
+    assert info[132] == (4, '2,+,GTG')

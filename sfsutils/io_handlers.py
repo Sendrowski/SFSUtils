@@ -998,10 +998,10 @@ class GFFHandler(FileHandler):
         # drop type and attributes columns
         cds = cds.drop(columns=['type', 'attributes'])
 
-        # the coding sequences of the transcripts of one gene repeat the same coordinates, so most of a
-        # block is already redundant; the surviving rows are deduplicated again across the blocks, which
-        # keeps the same first occurrence a single-pass read would
-        return cds.drop_duplicates(subset=['seqid', 'start', 'end'])
+        # a coding sequence is kept once per transcript, so that every transcript keeps its full chain of
+        # coding sequences to complete codons across a splice junction from. The surviving rows are
+        # deduplicated again across the blocks, which keeps the same first occurrence a single-pass read would.
+        return cds.drop_duplicates(subset=['seqid', 'start', 'end', 'parent'])
 
     def _load_cds(self) -> pd.DataFrame:
         """
@@ -1067,11 +1067,11 @@ class GFFHandler(FileHandler):
         for column in categorical:
             df[column] = pd.Categorical(df[column], categories=sorted(categories[column]))
 
-        # remove duplicates
-        df = df.drop_duplicates(subset=['seqid', 'start', 'end'])
+        # remove duplicates within a transcript
+        df = df.drop_duplicates(subset=['seqid', 'start', 'end', 'parent'])
 
-        # sort by seqid and start
-        df.sort_values(by=['seqid', 'start'], inplace=True)
+        # sort by seqid and start, keeping the first-listed transcript first among coding sequences of equal start
+        df.sort_values(by=['seqid', 'start'], inplace=True, kind='stable')
 
         return df
 
