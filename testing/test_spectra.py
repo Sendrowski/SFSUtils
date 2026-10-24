@@ -665,6 +665,28 @@ class SpectraTestCase(TestCase):
 
         np.testing.assert_allclose(sub.polymorphic, truth.polymorphic, atol=1e-12)
 
+    def test_subsample_spectra_folds_types_together(self):
+        """
+        A sparse unfolded type whose upper polymorphic half happens to be empty is subsampled unfolded
+        alongside an unfolded sibling. Deciding per type folded the sparse one alone, moving its derived
+        classes above n / 2 into the minor-allele bins.
+        """
+        sparse = [1000, 0, 0, 0, 0, 50, 0, 0, 0, 0, 7]
+        full = list((Spectrum.standard_kingman(10) * 1000).data)
+
+        sub = Spectra.from_spectra(dict(sparse=Spectrum(sparse), full=Spectrum(full))).subsample(4)
+
+        np.testing.assert_allclose(sub['sparse'].data, Spectrum(sparse)._subsample(4, 'probabilistic', None, False).data)
+        np.testing.assert_allclose(sub['sparse'].data, [1001.190476, 11.904762, 23.809524, 11.904762, 8.190476],
+                                   rtol=1e-6)
+
+        folded = Spectra.from_spectra(dict(
+            a=(Spectrum.standard_kingman(10) * 1000).fold(),
+            b=(Spectrum.standard_kingman(10) * 10).fold()
+        )).subsample(4)
+
+        self.assertTrue(all(folded.is_folded().values()))
+
     def test_subsample_spectrum_probabilistic_vs_random_folded(self):
         """
         Test random vs probabilistic subsampling.

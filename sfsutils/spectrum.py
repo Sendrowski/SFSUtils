@@ -375,6 +375,32 @@ class Spectrum(AbstractSpectrum):
         :param seed: Random state or seed. Only for 'random' mode.
         :return: Subsampled spectrum
         """
+        return self._subsample(n, mode, seed, fold=self._is_polymorphic_folded())
+
+    def _is_polymorphic_folded(self) -> bool:
+        """
+        Whether the polymorphic part of the spectrum is folded, which a subsampled spectrum then keeps.
+
+        :return: Whether the polymorphic part is folded.
+        """
+        return Spectrum.from_polymorphic(self.polymorphic).is_folded()
+
+    def _subsample(
+            self,
+            n: int,
+            mode: Literal['random', 'probabilistic'],
+            seed: int | Generator,
+            fold: bool
+    ) -> 'Spectrum':
+        """
+        Subsample spectrum to a given sample size.
+
+        :param n: Sample size
+        :param mode: Subsampling mode. Either 'random' or 'probabilistic'.
+        :param seed: Random state or seed. Only for 'random' mode.
+        :param fold: Whether to fold the subsampled spectrum, keeping its divergence count.
+        :return: Subsampled spectrum
+        """
         if n >= self.n:
             raise ValueError(f'Subsampled sample size {n} must be smaller than original sample size {self.n}.')
 
@@ -411,8 +437,8 @@ class Spectrum(AbstractSpectrum):
 
         sfs = Spectrum(subsample)
 
-        # fold if the polymorphic part of the original spectrum was folded, keeping its divergence count
-        if Spectrum.from_polymorphic(self.polymorphic).is_folded():
+        # fold, keeping the divergence count
+        if fold:
             data = sfs.data.copy()
             data[-1] -= self.n_div
             data = Spectrum(data).fold().data
@@ -1502,8 +1528,11 @@ class Spectra(AbstractSpectra):
         spectra = self.to_spectra()
         rngs = self._spawn_rngs(seed, len(spectra))
 
+        # the types are folded together, so that a sparse type does not pass for folded among unfolded ones
+        fold = all(s._is_polymorphic_folded() for s in spectra.values())
+
         return Spectra.from_spectra(
-            {t: s.subsample(n, mode, rng) for (t, s), rng in zip(spectra.items(), rngs)}
+            {t: s._subsample(n, mode, rng, fold) for (t, s), rng in zip(spectra.items(), rngs)}
         )
 
     def resample(self, seed: int | Generator = None) -> 'Spectra':
