@@ -1530,6 +1530,30 @@ def test_fixed_derived_invariant_site_matches_alt_encoding(tmp_path):
     assert left.to_list() == pytest.approx(right.to_list())
 
 
+def test_fixed_derived_invariant_site_stratified_by_ancestral_base(tmp_path):
+    """Both encodings of a fixed difference type the site by its ancestral base. Without an alternate
+    allele the site was typed by its reference, the derived base, so its divergence mass moved stratum."""
+    Settings.disable_pbar = True
+
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(">1\nGAT\n")
+
+    no_alt = _write_vcf_five_samples(tmp_path / "no_alt.vcf", [
+        ["1", "2", ".", "A", ".", ".", ".", "AA=C", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    with_alt = _write_vcf_five_samples(tmp_path / "with_alt.vcf", [
+        ["1", "2", ".", "C", "A", ".", ".", "AA=C", "GT", "1|1", "1|1", "1|1", "1|1", "1|1"],
+    ])
+
+    for vcf in (no_alt, with_alt):
+        base = su.Parser(source=vcf, n=4, stratifications=[su.AncestralBaseStratification()]).parse()
+        context = su.Parser(source=vcf, n=4, stratifications=[su.BaseContextStratification(fasta=str(fasta))]).parse()
+
+        assert base["C"].to_list() == pytest.approx([0, 0, 0, 0, 1])
+        assert context["GCT"].to_list() == pytest.approx([0, 0, 0, 0, 1])
+
+
 def test_fixed_derived_invariant_site_polarized_probabilistically(tmp_path):
     """The ancestral allele probability splits the mass of an invariant site between the two
     monomorphic bins, as it does at a fixed-derived site carrying an alternate allele."""

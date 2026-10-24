@@ -193,7 +193,8 @@ class BaseContextStratification(Stratification, FASTAHandler):
     Stratify the SFS by the base context of the mutation. The number of flanking bases
     can be configured. Note that we attempt to take the ancestral allele as the
     middle base. If ``skip_non_polarized`` is set to ``False``, we use the reference
-    allele as the middle base.
+    allele as the middle base. A site without an alternate allele whose ancestral allele differs from
+    the reference is a fixed difference and takes its ancestral allele as the middle base.
     """
 
     def __init__(
@@ -377,6 +378,8 @@ class AncestralBaseStratification(Stratification):
     Stratify the SFS by the base context of the mutation: the reference base.
     If ``skip_non_polarized`` is set to ``False``, we use the reference allele as
     ancestral base. By default, we use the ``AA`` tag to determine the ancestral allele.
+    A site without an alternate allele whose ancestral allele differs from the reference is a fixed
+    difference and is typed by its ancestral allele.
 
     Any subclass of :class:`~sfsutils.annotation.AncestralAlleleAnnotation` can be used to annotate the ancestral allele.
     """
@@ -1783,6 +1786,12 @@ class Parser(MultiHandler):
             # if we skip non-polarized sites, we raise an error here
             if self.skip_non_polarized:
                 raise NoTypeException("No valid AA tag found")
+        else:
+            # a fixed difference is typed by its ancestral allele
+            aa = self._get_fixed_ancestral(variant)
+
+            if aa is not None:
+                return aa
 
         # if we don't skip non-polarized sites, or if the site is not an SNP
         # we return the reference allele if valid
@@ -1836,11 +1845,20 @@ class Parser(MultiHandler):
         :param variant: The site.
         :return: Whether the site is fixed for the derived allele.
         """
+        return self._get_fixed_ancestral(variant) is not None
+
+    def _get_fixed_ancestral(self, variant: Site) -> Optional[str]:
+        """
+        The ancestral allele of a site without an alternate allele that is fixed for the derived allele.
+
+        :param variant: The site.
+        :return: The ancestral allele, or ``None`` if the site is not fixed for the derived allele.
+        """
         posterior = self._get_ancestral_posterior(variant)
 
         aa = variant.INFO.get(self.info_ancestral) if posterior is None else posterior[0]
 
-        return aa in bases and aa != variant.REF
+        return aa if aa in bases and aa != variant.REF else None
 
     def _get_ancestral_posterior(self, variant: Site) -> Optional[Tuple[str, float]]:
         """
