@@ -3439,7 +3439,7 @@ class MaximumLikelihoodAncestralAnnotationTestCase(TestCase):
         sfs.plot()
 
         np.testing.assert_almost_equal(
-            [860.7, 81.3, 21.4, 10.9, 6.5, 3.8, 2.5, 2.3, 2.8, 3.5, 3.3],
+            [856.8, 79.5, 20.0, 9.7, 5.7, 3.8, 3.3, 3.5, 4.1, 5.3, 7.2],
             sfs.all.data,
             decimal=1
         )

@@ -2545,9 +2545,16 @@ def test_ancestral_posterior_is_renormalised_over_the_site_alleles():
         assert parser._get_ancestral_prob(v) == pytest.approx(0.6)
         assert parser._is_fixed_derived(v)
 
-    # a monomorphic record carries only its reference allele, which is then certain
+    # a record carrying only its reference allele is fixed for the derived allele with the posterior mass off A
     v = V(ref="A", pos=1, chrom="1", alt=[], info={"AA": "C", "AA_post": "0.2,0.4,0.3,0.1"})
-    assert parser._get_ancestral_prob(v) == 1.0
+    assert parser._get_ancestral(v) == "C"
+    assert parser._get_ancestral_prob(v) == pytest.approx(0.8)
+    assert parser._is_fixed_derived(v)
+
+    # and ancestral monomorphic where the posterior favours A
+    v = V(ref="A", pos=1, chrom="1", alt=[], info={"AA_post": "0.7,0.1,0.1,0.1"})
+    assert parser._get_ancestral(v) == "A"
+    assert parser._get_ancestral_prob(v) == pytest.approx(0.7)
     assert not parser._is_fixed_derived(v)
 
     # without the posterior the two-allele AA_prob applies as before
@@ -2559,6 +2566,21 @@ def test_ancestral_posterior_is_renormalised_over_the_site_alleles():
     v = V(ref="A", pos=1, chrom="1", alt=["G"], is_snp=True, info={"AA_post": "0.5,0.5"})
     with pytest.raises(ValueError, match="not one probability"):
         parser._get_ancestral_prob(v)
+
+
+def test_fixed_difference_with_posterior_counts_as_divergence(tmp_path):
+    """A record without an alternate allele whose posterior favours another base is a fixed difference. Renormalising
+    the posterior over the reference allele alone made the reference certainly ancestral, moving the site from the
+    divergence bin to the ancestral monomorphic one."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "fixed.vcf", [
+        ["1", "1", ".", "A", ".", ".", ".", "AA=G;AA_post=0.1,0,0.9,0", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    sfs = su.Parser(source=vcf, n=4, filtrations=[]).parse()["all"].to_list()
+
+    assert sfs == pytest.approx([0.1, 0, 0, 0, 0.9])
 
 
 def test_zarr_degeneracy_stratification_end_to_end(tmp_path):
@@ -2716,3 +2738,24 @@ def test_subsample_modes_agree_on_non_biallelic_site(tmp_path):
                          subsample_mode=mode).parse()["all"].to_list()
 
     assert sfs("random") == pytest.approx(sfs("probabilistic"))
+
+
+def test_ancestral_probability_count_is_logged_only_when_present(tmp_path, caplog):
+    """The count of sites with an ancestral allele probability is logged only where some site carries one, so a
+    parse of an input without probabilities does not report zero of them."""
+    Settings.disable_pbar = True
+
+    without = _write_vcf_five_samples(tmp_path / "without.vcf", [
+        ["1", "1", ".", "A", "C", ".", ".", "AA=A", "GT", "0|1", "0|0", "0|0", "0|0", "0|0"],
+    ])
+    with_prob = _write_vcf_five_samples(tmp_path / "with.vcf", [
+        ["1", "1", ".", "A", "C", ".", ".", "AA=A;AA_prob=0.9", "GT", "0|1", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    for vcf, logged in [(without, False), (with_prob, True)]:
+        caplog.clear()
+
+        with caplog.at_level(logging.INFO, logger="sfsutils"):
+            su.Parser(source=vcf, n=4).parse()
+
+        assert any("valid ancestral allele probability" in r.message for r in caplog.records) == logged

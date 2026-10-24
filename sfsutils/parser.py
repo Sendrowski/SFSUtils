@@ -1375,9 +1375,10 @@ class Parser(MultiHandler):
     """
     Parse site-frequency spectra from VCF files, VCF-Zarr stores, or tskit tree sequences.
 
-    By default, the parser looks at the ``AA`` tag in the VCF file's info field to retrieve
-    the correct polarization. Polymorphic sites for which this tag is not well-defined are by default
-    ignored (see :attr:`skip_non_polarized`).
+    By default, a site is polarized by the posterior over its ancestral allele in the ``AA_post`` tag of the VCF
+    file's info field where present, and otherwise by the ``AA`` tag, weighted by the ``AA_prob`` tag where present
+    (see :attr:`polarize_probabilistically`). Polymorphic sites carrying neither are by default ignored (see
+    :attr:`skip_non_polarized`).
 
     This class also offers on-the-fly annotation of the sites such as site degeneracy and
     ancestral allele state. This is done by providing a list of annotations to the parser which are
@@ -1465,7 +1466,7 @@ class Parser(MultiHandler):
             aliases: Dict[str, List[str]] = {},
             target_site_counter: TargetSiteCounter = None,
             subsample_mode: Literal['random', 'probabilistic'] = 'probabilistic',
-            polarize_probabilistically: bool = False,
+            polarize_probabilistically: bool = True,
             two_sfs: bool = False,
             d: int = 1000,
             two_sfs_offset: int = 0,
@@ -1532,9 +1533,9 @@ class Parser(MultiHandler):
         :param subsample_mode: The subsampling mode. For ``random``, we draw once without replacement from the set of
             all available genotypes per site. For ``probabilistic``, we add up the hypergeometric distribution for all
             sites. This will produce a smoother SFS, especially when a small number of sites is considered.
-        :param polarize_probabilistically: Whether to probabilistically polarize sites. In addition to the ``AA`` tag
-            (see ``info_ancestral``), we use the ``AA_prob`` tag (see ``info_ancestral_prob``) to polarize sites
-            probabilistically. For example, if the ancestral allele is ``A`` with a probability of 0.8 and
+        :param polarize_probabilistically: Whether to probabilistically polarize sites, which is the default. In
+            addition to the ``AA`` tag (see ``info_ancestral``), we use the ``AA_prob`` tag (see
+            ``info_ancestral_prob``) to polarize sites probabilistically. For example, if the ancestral allele is ``A`` with a probability of 0.8 and
             the derived allele is ``G``, we assign 0.8 probability mass to the ancestral allele and 0.2 to the
             derived allele. This should enhance accuracy, especially for small datasets. Whenever the ancestral
             probability tag is not present, we assume a probability of 1 for the ancestral allele. A site carrying
@@ -1920,10 +1921,11 @@ class Parser(MultiHandler):
     def _get_ancestral_posterior(self, variant: Site) -> Optional[Tuple[str, float]]:
         """
         The ancestral allele and its probability from the posterior over A, C, G and T (see
-        ``info_ancestral_post``), renormalised over the site's own alleles.
+        ``info_ancestral_post``), renormalised over the site's own alleles. At a site with a single allele, the
+        probability that this allele is not ancestral goes to the most probable other base.
 
         :param variant: The site.
-        :return: The most probable of the site's alleles and its renormalised probability, or ``None`` if
+        :return: The ancestral allele and its probability, or ``None`` if
             ``polarize_probabilistically`` is not set, the site carries no posterior, or the posterior puts no
             mass on the site's alleles.
         :raises ValueError: If the posterior does not hold one probability in [0, 1] for each base.
@@ -1947,6 +1949,24 @@ class Parser(MultiHandler):
                              f"not one probability for each of {', '.join(bases)}.")
 
         alleles = [a for a in get_site_alleles(variant) if a in bases]
+
+        # a site with a single allele is fixed for it or for another base, so every other base counts against it
+        if len(alleles) == 1:
+            total = values.sum()
+
+            if total <= 0:
+                return None
+
+            p = float(values[bases.index(alleles[0])] / total)
+
+            if p >= 0.5:
+                return alleles[0], p
+
+            others = values.copy()
+            others[bases.index(alleles[0])] = -1
+
+            return bases[int(np.argmax(others))], 1 - p
+
         probs = values[[bases.index(a) for a in alleles]]
         total = probs.sum()
 
@@ -2640,7 +2660,7 @@ class Parser(MultiHandler):
 
             self._logger.info(f'Included {n_included} out of {self.n_sites} sites in total from the input.')
 
-            if self.polarize_probabilistically:
+            if self.polarize_probabilistically and self.n_aa_prob > 0:
                 self._logger.info(f'Considered {self.n_aa_prob} sites with valid ancestral allele probability.')
 
         # the contig lengths are read off the still-open reader, as closing it below discards the cached reader

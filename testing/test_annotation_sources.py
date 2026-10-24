@@ -168,7 +168,8 @@ def test_ml_aaa_input_sources_agree():
                            subsample_mode="random", annotations=[anc]).parse()
         return np.array(parsed.all.to_list())
 
+    # the ancestral allele probabilities weight the spectrum, so it agrees to the optimizer's tolerance
     reference = spectrum(VCF_FIX)
-    np.testing.assert_array_almost_equal(reference, spectrum(VCZ_FIX))
-    np.testing.assert_array_almost_equal(reference, spectrum(TREES_FIX))
+    np.testing.assert_allclose(reference, spectrum(VCZ_FIX), rtol=1e-5)
+    np.testing.assert_allclose(reference, spectrum(TREES_FIX), rtol=1e-5)
     assert reference.sum() > 0
