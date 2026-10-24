@@ -1247,26 +1247,39 @@ class TargetSiteCounter:
         return updated
 
     @staticmethod
-    def _window_factor(spans: Iterable[float], distance: int) -> float:
+    def _window_factor(spans: Iterable[float], distance: int, offset: int = 0) -> float:
         """
-        The mean fraction of the nominal ``2 * distance`` window that falls on the site's own contig. Pairs form
-        within a contig only, so a site on a contig of span ``s`` has on average ``2 * distance * f`` partners
-        within the window, with ``f = 1 - distance / (2 * s)`` while the window fits (``distance <= s``) and
-        ``f = s / (2 * distance)`` once it saturates at the contig's own site count. The per-contig factors are
-        averaged over the spans, which is where the sites lie under a uniform density.
+        The mean fraction of the nominal window of separations ``(offset, offset + distance]`` on either side of a
+        site that falls on the site's own contig. Pairs form within a contig only, so a site on a contig of span
+        ``s`` has on average ``2 * distance * f`` partners within the window, with
+
+        - ``f = 1 - (2 * offset + distance) / (2 * s)`` while the window fits (``offset + distance <= s``),
+        - ``f = (s - offset) ** 2 / (2 * s * distance)`` once it runs past the contig (``offset < s < offset +
+          distance``),
+        - ``f = 0`` once the offset alone exceeds the contig (``s <= offset``).
+
+        The per-contig factors are averaged over the spans, which is where the sites lie under a uniform density.
 
         :param spans: The per-contig lengths (bp).
         :param distance: The two-SFS distance window width (bp).
-        :return: The factor, in ``(0, 1]``.
+        :param offset: The minimum separation (bp, exclusive) of the two sites of a pair.
+        :return: The factor, in ``[0, 1]``.
         """
         spans = [float(s) for s in spans if s > 0]
 
         if not spans or distance <= 0:
             return 1.0
 
-        return sum(
-            s * (1 - distance / (2 * s)) if distance <= s else s * (s / (2 * distance)) for s in spans
-        ) / sum(spans)
+        def factor(s: float) -> float:
+            if offset + distance <= s:
+                return 1 - (2 * offset + distance) / (2 * s)
+
+            if offset < s:
+                return (s - offset) ** 2 / (2 * s * distance)
+
+            return 0.0
+
+        return sum(s * factor(s) for s in spans) / sum(spans)
 
     def _extrapolate_two_sfs(
             self,
@@ -1275,6 +1288,7 @@ class TargetSiteCounter:
             region_length: float,
             distance: int,
             contig_spans: Dict[str, float] | None = None,
+            offset: int = 0,
     ) -> np.ndarray:
         """
         Add the pairs involving the sites the input never showed to a two-SFS, extrapolating their number from
@@ -1292,8 +1306,9 @@ class TargetSiteCounter:
         evenly between the two slots, and the missing sites contribute the same number of pairs per site among
         themselves to ``(0, 0)``. This holds for every observed bin, the monomorphic ones included: a divergence
         site (bin ``n``, all-derived) pairs with the missing sites just as a segregating site does, so the
-        divergence row and column are populated too. The window offset drops out: a band of width ``distance`` holds the same
-        expected number of sites regardless of where it starts.
+        divergence row and column are populated too. On a single long contig the window offset drops out, as a band of
+        width ``distance`` holds the same expected number of sites wherever it starts, but it moves the band towards
+        the contig ends, which :meth:`_window_factor` accounts for.
 
         Only the sites that are truly missing are extrapolated, so passing an all-sites input (where the monomorphic
         sites are observed and their pairs already counted) does not double-count them. This anchors the marginal for
@@ -1307,6 +1322,7 @@ class TargetSiteCounter:
         :param distance: The two-SFS distance window width (bp).
         :param contig_spans: The per-contig lengths (bp), or ``None`` to leave the window uncorrected for the
             contig boundaries.
+        :param offset: The minimum separation (bp, exclusive) of the two sites of a pair.
         :return: The two-SFS with the pairs involving the missing sites added.
         """
         two_sfs = np.array(two_sfs, dtype=float)
@@ -1335,7 +1351,7 @@ class TargetSiteCounter:
         rho = n_missing / region_length
 
         # without the per-contig geometry there is nothing to correct the window against
-        factor = self._window_factor(contig_spans.values(), distance) if contig_spans else 1.0
+        factor = self._window_factor(contig_spans.values(), distance, offset) if contig_spans else 1.0
 
         if factor < 0.9:
             self._logger.info(f"The two-SFS distance ({distance} bp) is large relative to the contigs of the input, "
@@ -2640,7 +2656,7 @@ class Parser(MultiHandler):
                 if self.target_site_counter is not None:
                     matrix = self.target_site_counter._extrapolate_two_sfs(
                         matrix, self._two_sfs_marginal['all'], float(sum(contig_spans.values())), self.d,
-                        contig_spans=contig_spans
+                        contig_spans=contig_spans, offset=self.two_sfs_offset
                     )
                 return TwoSpectra({'all': TwoSFS(matrix)})
 

@@ -2349,6 +2349,16 @@ class TestTwoSFSExtrapolation:
     ])
     def test_window_factor(self, span, distance, expected):
         assert su.TargetSiteCounter._window_factor([span], distance) == pytest.approx(expected)
+
+    @pytest.mark.parametrize("span, distance, offset, expected", [
+        (1000, 200, 0, 0.9),
+        (1000, 200, 400, 0.5),  # the offset pushes the band towards the contig ends
+        (1000, 100, 950, 0.0125),  # the band runs past the contig
+        (1000, 100, 1000, 0.0),  # no pair fits on the contig
+    ])
+    def test_window_factor_with_offset(self, span, distance, offset, expected):
+        assert su.TargetSiteCounter._window_factor([span], distance, offset) == pytest.approx(expected)
+
     def test_window_factor_of_mixed_contigs_is_weighted_by_span(self):
         spans, distance = [100.0, 1000.0], 100
         mixed = su.TargetSiteCounter._window_factor(spans, distance)
@@ -2358,10 +2368,15 @@ class TestTwoSFSExtrapolation:
     def test_window_factor_degenerates_to_one(self):
         assert su.TargetSiteCounter._window_factor([], 100) == 1.0
         assert su.TargetSiteCounter._window_factor([1000.0], 0) == 1.0
-    @pytest.mark.parametrize("n_contigs, span, distance", [(20, 200, 500), (5, 1000, 200)])
-    def test_extrapolation_matches_all_sites_ground_truth_across_contigs(self, tmp_path, n_contigs, span, distance):
+
+    @pytest.mark.parametrize("n_contigs, span, distance, offset", [
+        (20, 200, 500, 0), (5, 1000, 200, 0), (5, 1000, 200, 400), (5, 1000, 100, 800)
+    ])
+    def test_extrapolation_matches_all_sites_ground_truth_across_contigs(self, tmp_path, n_contigs, span, distance,
+                                                                         offset):
         """Ground truth: the same data parsed as an all-sites input, which counts the monomorphic-involving pairs
-        for real. Before the fix the short contigs were overestimated by an order of magnitude."""
+        for real. Before the fix the short contigs were overestimated by an order of magnitude, and a window offset
+        comparable to the span inflated the extrapolated pairs up to sixfold."""
         n_hap = 4
         rng = np.random.default_rng(0)
         derived = np.where(rng.random((n_contigs, span)) < 0.05, rng.integers(1, n_hap, size=(n_contigs, span)), 0)
@@ -2370,7 +2385,8 @@ class TestTwoSFSExtrapolation:
         snps = write_sites(tmp_path / "snp.vcf", n_contigs, span, derived, n_hap, only_polymorphic=True)
 
         Settings.disable_pbar = True
-        kw = dict(n=n_hap, two_sfs=True, d=distance, skip_non_polarized=False, subsample_mode="random")
+        kw = dict(n=n_hap, two_sfs=True, d=distance, two_sfs_offset=offset, skip_non_polarized=False,
+                  subsample_mode="random")
 
         truth = np.asarray(su.Parser(source=all_sites, **kw).parse()["all"].data)
         extrapolated = np.asarray(su.Parser(
