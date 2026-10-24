@@ -4401,3 +4401,43 @@ def test_vep_check_of_multi_alt_site_uses_codon_change_of_called_alternate(tmp_p
     assert v.INFO.get('Synonymy') == 1
 
 
+def test_consequences_of_multi_alt_site_are_read_for_the_carried_alternate(tmp_path):
+    """At a record declaring several alternate alleles, only the VEP/SnpEff entries of the carried allele decide its
+    synonymy. Reading the missense entry of an uncarried allele turned a synonymous site into a SnpEff mismatch in
+    the annotation and into a selected site in the stratification."""
+    import cyvcf2
+
+    (tmp_path / 'ref.fa').write_text('>chr1\nTTAAAAAAA\n')
+    (tmp_path / 'ann.gff').write_text('##gff-version 3\nchr1\tt\tCDS\t1\t9\t.\t+\t0\tParent=T1\n')
+    (tmp_path / 'in.vcf').write_text(
+        '##fileformat=VCFv4.2\n##contig=<ID=chr1,length=9>\n'
+        '##INFO=<ID=ANN,Number=.,Type=String,Description="SnpEff">\n'
+        '##INFO=<ID=CSQ,Number=.,Type=String,Description="VEP">\n'
+        '##INFO=<ID=AA,Number=1,Type=String,Description="AA">\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n'
+        'chr1\t1\t.\tT\tA,C\t.\t.\tAA=T;ANN=A|missense_variant|x,C|synonymous_variant|x;'
+        'CSQ=A|missense_variant|x,C|synonymous_variant|x\tGT\t0/2\t0/0\n'
+    )
+
+    syn = su.SynonymyAnnotation()
+
+    su.Annotator(
+        source=str(tmp_path / 'in.vcf'),
+        fasta=str(tmp_path / 'ref.fa'),
+        gff=str(tmp_path / 'ann.gff'),
+        output=str(tmp_path / 'out.vcf'),
+        annotations=[syn]
+    ).annotate()
+
+    v = next(iter(cyvcf2.VCF(str(tmp_path / 'out.vcf'))))
+
+    assert syn.snpeff_mismatches == []
+    assert v.INFO.get('Synonymy') == 1
+
+    for strat in [su.VEPStratification(), su.SnpEffStratification()]:
+        sfs = su.Parser(source=str(tmp_path / 'in.vcf'), n=4, stratifications=[strat]).parse()
+
+        assert sfs.types == ['neutral'] and sfs['neutral'].n_polymorphic == 1
+
+

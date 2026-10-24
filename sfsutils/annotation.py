@@ -67,6 +67,12 @@ for c in stop_codons:
 # (https://en.wikipedia.org/wiki/Codon_degeneracy)
 unique_to_degeneracy = {0: 0, 1: 2, 2: 2, 3: 4}
 
+# consequences that alter the protein, any of which makes a site with several annotated transcripts non-synonymous
+protein_altering_consequences = (
+    'missense_variant', 'stop_gained', 'stop_lost', 'start_lost', 'frameshift_variant', 'inframe_insertion',
+    'inframe_deletion', 'protein_altering_variant', 'splice_acceptor_variant', 'splice_donor_variant'
+)
+
 
 class Annotation(ABC):
     """
@@ -937,15 +943,50 @@ class SynonymyAnnotation(DegeneracyAnnotation):
         Parse the synonymy from the annotation provided by SnpEff
 
         :param variant: The variant.
-        :return: The codons.
+        :return: The synonymy, or ``None`` if the annotation does not determine it.
         """
-        ann = variant.INFO.get('ANN')
+        allele = SynonymyAnnotation._carried_alt(variant, SiteAlleles.called(variant)) if len(variant.ALT) > 1 else None
 
-        if 'synonymous_variant' in ann:
+        return SynonymyAnnotation._parse_consequences(variant.INFO.get('ANN'), allele)
+
+    @staticmethod
+    def _carried_alt(variant: Site, called: set) -> str | None:
+        """
+        The one alternate allele the samples carry.
+
+        :param variant: The variant.
+        :param called: The alleles called at the site.
+        :return: The alternate allele, or ``None`` if the samples carry none or several.
+        """
+        alts = called - {variant.REF}
+
+        return next(iter(alts)) if len(alts) == 1 else None
+
+    @staticmethod
+    def _parse_consequences(consequences: str, allele: str | None = None) -> int | None:
+        """
+        The synonymy of a site from its VEP or SnpEff consequences, one per annotated allele and transcript. A
+        missense consequence in any transcript makes the site non-synonymous, and the site is synonymous only where
+        no transcript reports a protein-altering consequence.
+
+        :param consequences: The consequences, as VEP's ``CSQ`` or SnpEff's ``ANN`` field.
+        :param allele: The alternate allele whose consequences to read, named in the first field of each entry, or
+            ``None`` for those of every allele.
+        :return: ``1`` if synonymous, ``0`` if missense, or ``None`` if the consequences do not determine it.
+        """
+        if allele is not None:
+            entries = [e for e in consequences.split(',') if e.split('|', 1)[0] == allele]
+
+            if entries:
+                consequences = ','.join(entries)
+
+        if 'missense_variant' in consequences:
+            return 0
+
+        if 'synonymous_variant' in consequences and not any(c in consequences for c in protein_altering_consequences):
             return 1
 
-        if 'missense_variant' in ann:
-            return 0
+        return None
 
     def _teardown(self):
         """

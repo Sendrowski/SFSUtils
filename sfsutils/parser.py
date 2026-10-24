@@ -540,11 +540,15 @@ class VEPStratification(SynonymyStratification):
         """
         synonymy = variant.INFO.get(self.info_tag, '')
 
-        if 'synonymous_variant' in synonymy:
-            return 'neutral'
+        # a record declaring several alternate alleles is classed by the one its parsed samples carry
+        allele = None
+        if len(variant.ALT) > 1:
+            allele = SynonymyAnnotation._carried_alt(variant, self.parser._get_called_alleles(variant))
 
-        if 'missense_variant' in synonymy:
-            return 'selected'
+        parsed = SynonymyAnnotation._parse_consequences(synonymy, allele)
+
+        if parsed is not None:
+            return 'neutral' if parsed == 1 else 'selected'
 
         raise NoTypeException(f"Synonymy tag has invalid value: '{synonymy}' at {variant.CHROM}:{variant.POS}")
 

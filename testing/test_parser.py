@@ -1654,6 +1654,22 @@ def test_invariant_site_declaring_alt_without_ancestral_allele_stays_monomorphic
     ("G|synonymous_variant|LOW|geneB,G|missense_variant|MODERATE|geneA", "selected"),
     ("G|stop_gained|HIGH|geneA,G|synonymous_variant|LOW|geneB", None),
 ])
+def test_consequence_stratification_takes_the_most_severe_transcript(consequences, expected):
+    """A site synonymous in one transcript but protein-altering in another is not neutral. Testing for a synonymous
+    consequence first classed a site missense in gene A and synonymous in gene B as neutral."""
+    from sfsutils.io_handlers import Variant
+    from sfsutils.parser import NoTypeException
+
+    for stratification, tag in [(su.SnpEffStratification(), "ANN"), (su.VEPStratification(), "CSQ")]:
+        variant = Variant("A", 1, "1", alt=["G"], is_snp=True, info={tag: consequences})
+
+        if expected is None:
+            with pytest.raises(NoTypeException):
+                stratification.get_type(variant)
+        else:
+            assert stratification.get_type(variant) == expected
+
+
 def test_reference_only_rule_looks_at_parsed_samples_only(tmp_path):
     """A site without AA counts as reference-only, and in bin 0, when the parsed samples carry only the reference,
     whatever excluded samples carry."""
