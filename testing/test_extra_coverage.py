@@ -136,6 +136,15 @@ def test_numpy_handler_old_payload_without_dtype_field():
     np.testing.assert_array_equal(back, np.array([1, 2, 3]))
 
 
+def test_import_leaves_biopython_codon_table_intact():
+    # the module's stop-codon entries are written into its own copy of the standard codon table
+    from Bio.Data import CodonTable
+    import sfsutils.annotation
+
+    assert all(c not in CodonTable.standard_dna_table.forward_table for c in CodonTable.standard_dna_table.stop_codons)
+    assert sfsutils.annotation.codon_table['TAA'] == 'Σ'
+
+
 # --- parallelization helpers ------------------------------------------------------------------
 
 def test_parallelize_sequential_without_array_wrap():

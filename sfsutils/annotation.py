@@ -47,7 +47,7 @@ bases = np.array(['A', 'C', 'G', 'T'])
 base_indices = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
 
 # codon table
-codon_table = Bio.Data.CodonTable.standard_dna_table.forward_table
+codon_table = dict(Bio.Data.CodonTable.standard_dna_table.forward_table)
 
 # stop codons
 stop_codons = Bio.Data.CodonTable.standard_dna_table.stop_codons
