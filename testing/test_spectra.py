@@ -290,6 +290,68 @@ class SpectraTestCase(TestCase):
         """
         (spectrum.standard_kingman(self.n) * 4).plot()
 
+    def test_plot_spectrum_saves_figure_of_given_ax(self):
+        """
+        Plotting on an ax that is not on the current figure saves and returns that ax's figure. Saving the
+        current pyplot figure wrote an empty figure and returned its axes.
+        """
+        import matplotlib.pyplot as plt
+        from sfsutils.visualization import Visualization
+
+        fig1, ax1 = plt.subplots()
+        fig2, ax2 = plt.subplots()
+
+        saved = []
+        original = type(fig1).savefig
+        type(fig1).savefig = lambda fig, *args, **kwargs: saved.append(fig)
+
+        try:
+            ax = Spectrum([100, 10, 5, 3, 2, 0]).plot(ax=ax1, file='unused.png', show=False)
+        finally:
+            type(fig1).savefig = original
+
+        self.assertIs(ax, ax1)
+        self.assertEqual(saved, [fig1])
+        self.assertEqual(len(ax1.patches), 4)
+
+        ax = Visualization.plot_spectra(ax=None, spectra=[[1, 2, 3], [3, 2, 1]], colors=np.array(['red', 'blue']),
+                                        show=False)
+        self.assertEqual(len(ax.patches), 2)
+
+        plt.close('all')
+
+    def test_plot_spectrum_on_axes_of_a_subfigure(self):
+        """
+        Plotting on axes inside a subfigure saves the figure holding the subfigure. A subfigure cannot be laid out
+        or saved itself, so plotting on its axes raised.
+        """
+        import matplotlib.pyplot as plt
+        import tempfile
+
+        fig = plt.figure()
+        ax = fig.subfigures(1, 2)[0].subplots()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            file = os.path.join(tmp, 'sub.png')
+
+            self.assertIs(Spectrum([100, 10, 5, 3, 2, 0]).plot(ax=ax, file=file, show=False), ax)
+            self.assertTrue(os.path.exists(file))
+
+        plt.close('all')
+
+    def test_plot_spectra_with_empty_colors(self):
+        """
+        An empty colour list falls back to the default colours, as no colours do. Indexing it raised.
+        """
+        import matplotlib.pyplot as plt
+        from sfsutils.visualization import Visualization
+
+        for use_subplots in [False, True]:
+            Visualization.plot_spectra(ax=None, spectra=[[10, 3, 2, 1, 4]], labels=['a'], colors=[], show=False,
+                                       use_subplots=use_subplots)
+
+        plt.close('all')
+
     def test_plot_spectrum_log_scale(self):
         """
         Test that the plot_spectrum method works as expected when using a log scale.
@@ -686,6 +748,23 @@ class SpectraTestCase(TestCase):
         )).subsample(4)
 
         self.assertTrue(all(folded.is_folded().values()))
+
+    def test_plot_spectra_subplots_with_array_colors_and_scatter_axes(self):
+        """
+        Array colours work with subplots too, and a scatter plot returns the axes it was drawn on.
+        """
+        import matplotlib.pyplot as plt
+        from sfsutils.visualization import Visualization
+
+        Visualization.plot_spectra(ax=None, spectra=[[1, 2, 3], [3, 2, 1]], colors=np.array(['red', 'blue']),
+                                   use_subplots=True, show=False)
+
+        fig1, ax1 = plt.subplots()
+        plt.subplots()
+
+        self.assertIs(Visualization.plot_scatter(values=[1, 2, 3], file=None, show=False, ax=ax1), ax1)
+
+        plt.close('all')
 
     def test_subsample_spectrum_probabilistic_vs_random_folded(self):
         """

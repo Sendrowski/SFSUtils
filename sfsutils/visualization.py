@@ -60,41 +60,44 @@ class Visualization:
             # execute function
             func(*args, **kwargs)
 
-            # make layout tight
-            plt.tight_layout()
-
             # show or save
             # show by default here
             return Visualization.show_and_save(
                 file=kwargs['file'] if 'file' in kwargs else None,
-                show=kwargs['show'] if 'show' in kwargs else True
+                show=kwargs['show'] if 'show' in kwargs else True,
+                ax=kwargs['ax']
             )
 
         return wrapper
 
     @staticmethod
-    def show_and_save(file: str = None, show: bool = True, pad: float = 1.08) -> plt.Axes:
+    def show_and_save(file: str = None, show: bool = True, pad: float = 1.08, ax: plt.Axes = None) -> plt.Axes:
         """
         Show and save plot.
 
         :param file: File path to save plot to
         :param show: Whether to show plot
         :param pad: Padding for tight layout
+        :param ax: Axes whose figure to show and save, or ``None`` for the current axes
         :return: Axes
-
         """
-        plt.tight_layout(pad=pad)
+        if ax is None:
+            ax = plt.gca()
+
+        # the outermost figure, which differs from ax.figure where the axes sit in a subfigure
+        fig = ax.figure.figure
+
+        fig.tight_layout(pad=pad)
 
         # save figure if file path given
         if file is not None:
-            plt.savefig(file, dpi=200, bbox_inches='tight', pad_inches=0.1)
+            fig.savefig(file, dpi=200, bbox_inches='tight', pad_inches=0.1)
 
         # show figure if specified and if not in interactive mode
         if show and not plt.isinteractive():
             plt.show()
 
-        # return current axes
-        return plt.gca()
+        return ax
 
     @staticmethod
     def get_hatch(i: int, labels: List[str] = None) -> str | None:
@@ -173,7 +176,7 @@ class Visualization:
                 Visualization.plot_spectra(
                     spectra=[spectra[i]],
                     labels=[labels[i]] if len(labels) else [],
-                    colors=[colors[i]] if colors else None,
+                    colors=[colors[i]] if colors is not None and len(colors) else None,
                     ax=axes[i],
                     n_ticks=15 // min(2, n_cols),
                     log_scale=log_scale,
@@ -208,7 +211,7 @@ class Visualization:
                 height=sfs if show_monomorphic else sfs[1:-1],
                 width=width,
                 label=labels[i] if len(labels) else None,
-                color=colors[i] if colors else None,
+                color=colors[i] if colors is not None and len(colors) else None,
                 linewidth=0,
                 hatch=Visualization.get_hatch(i, labels)
             )
@@ -241,7 +244,7 @@ class Visualization:
             ax.legend(**kwargs_legend)
 
         # show and save plot
-        return Visualization.show_and_save(file, show)
+        return Visualization.show_and_save(file, show, ax=ax)
 
     @staticmethod
     def darken_edge_colors(bars: BarContainer):

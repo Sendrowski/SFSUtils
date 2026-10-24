@@ -2257,7 +2257,6 @@ class TestTwoSFSExtrapolation:
     ])
     def test_window_factor(self, span, distance, expected):
         assert su.TargetSiteCounter._window_factor([span], distance) == pytest.approx(expected)
-
     def test_window_factor_of_mixed_contigs_is_weighted_by_span(self):
         spans, distance = [100.0, 1000.0], 100
         mixed = su.TargetSiteCounter._window_factor(spans, distance)
@@ -2267,7 +2266,6 @@ class TestTwoSFSExtrapolation:
     def test_window_factor_degenerates_to_one(self):
         assert su.TargetSiteCounter._window_factor([], 100) == 1.0
         assert su.TargetSiteCounter._window_factor([1000.0], 0) == 1.0
-
     @pytest.mark.parametrize("n_contigs, span, distance", [(20, 200, 500), (5, 1000, 200)])
     def test_extrapolation_matches_all_sites_ground_truth_across_contigs(self, tmp_path, n_contigs, span, distance):
         """Ground truth: the same data parsed as an all-sites input, which counts the monomorphic-involving pairs

@@ -1649,3 +1649,5 @@ def test_zarr_out_of_int64_info_does_not_crash(tmp_path):
     w.write(Variant(ref="A", pos=10, chrom="1", gt_bases=["A|T"], alt=["T"], is_snp=True, info={"BIG": 10 ** 19}))
     w.close()
     assert next(iter(ZarrVariantReader(out))).INFO["BIG"] == "10000000000000000000"
+
+

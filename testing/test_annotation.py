@@ -4312,3 +4312,5 @@ def test_degeneracy_splices_from_exon_shared_with_earlier_transcript(tmp_path):
 
     assert info[131] == (0, '1,+,GTG')
     assert info[132] == (4, '2,+,GTG')
+
+
