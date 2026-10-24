@@ -1651,3 +1651,49 @@ def test_zarr_out_of_int64_info_does_not_crash(tmp_path):
     assert next(iter(ZarrVariantReader(out))).INFO["BIG"] == "10000000000000000000"
 
 
+def test_compressed_inputs_without_gz_suffix_are_read(tmp_path):
+    """Compression is recognised by the gzip magic bytes, so a bgzipped VCF named .vcf.bgz, a BCF and a FASTA named
+    .fa.bgz are read like their .gz counterparts. Judging by the .gz suffix opened them as text, which crashed the
+    site count and found no contigs in the FASTA."""
+    import gzip
+    import cyvcf2
+    import sfsutils as su
+    from sfsutils.settings import Settings
+
+    Settings.disable_pbar = True
+    vcf = "resources/msprime/two_epoch.vcf"
+
+    bgz = tmp_path / "x.vcf.bgz"
+    bgz.write_bytes(gzip.compress(open(vcf, 'rb').read()))
+
+    bcf = str(tmp_path / "x.bcf")
+    reader = cyvcf2.VCF(vcf)
+    writer = cyvcf2.Writer(bcf, reader, mode="wb")
+    for v in reader:
+        writer.write_record(v)
+    writer.close()
+
+    expected = su.Parser(source=vcf, n=10, skip_non_polarized=False).parse()["all"].to_list()
+
+    for source in (str(bgz), bcf):
+        assert su.Parser(source=source, n=10, skip_non_polarized=False).parse()["all"].to_list() == expected
+
+    fasta = tmp_path / "ref.fa.bgz"
+    fasta.write_bytes(gzip.compress(b">1\nACGTACGT\n"))
+
+    assert FASTAHandler(str(fasta)).get_contig_names() == ['1']
+
+
+def test_rewritten_gzipped_reference_is_decompressed_again(tmp_path):
+    """The decompressed copy of a gzipped file is reused only while the file is unchanged. Keying the cache by the
+    path alone served the old contents of a rewritten file."""
+    import gzip
+
+    fasta = tmp_path / "r.fa.gz"
+    fasta.write_bytes(gzip.compress(b">1\nAAAA\n"))
+    assert str(FASTAHandler(str(fasta)).get_contig(['1']).seq) == "AAAA"
+
+    fasta.write_bytes(gzip.compress(b">1\nCCCCCC\n"))
+    assert str(FASTAHandler(str(fasta)).get_contig(['1']).seq) == "CCCCCC"
+
+

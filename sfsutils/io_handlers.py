@@ -12,6 +12,7 @@ import hashlib
 import io
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -469,6 +470,23 @@ def count_sites(
     if indexed is not None:
         return int(min(indexed, max_sites))
 
+    # a BCF is binary once decompressed, so its records are counted through cyvcf2
+    if is_gzipped(vcf):
+        with gzip.open(vcf, 'rb') as f:
+            is_bcf = f.read(3) == b'BCF'
+
+        if is_bcf:
+            import cyvcf2
+
+            i = 0
+            for _ in cyvcf2.VCF(vcf):
+                i += 1
+
+                if i >= max_sites:
+                    break
+
+            return i
+
     i = 0
     with open_file(vcf) as f:
 
@@ -502,6 +520,17 @@ def download_if_url(path: str, cache: bool = True, desc: str = 'Downloading file
     return path
 
 
+def is_gzipped(file: str) -> bool:
+    """
+    Whether a file is gzip- or bgzip-compressed, by its gzip magic bytes.
+
+    :param file: The file.
+    :return: Whether the file starts with the gzip magic bytes.
+    """
+    with open(file, 'rb') as f:
+        return f.read(2) == b'\x1f\x8b'
+
+
 def open_file(file: str) -> TextIO:
     """
     Open a file, either gzipped or not.
@@ -509,7 +538,7 @@ def open_file(file: str) -> TextIO:
     :param file: File to open
     :return: stream
     """
-    if file.endswith('.gz'):
+    if is_gzipped(file):
         return gzip.open(file, "rt")
 
     return open(file, 'r')
@@ -524,8 +553,9 @@ class FileHandler:
     #: The logger instance
     _logger = logger.getChild(__qualname__)
 
-    #: Cache of gzipped file path -> its decompressed temporary copy, so a rewind reuses the copy
-    _unzipped: Dict[str, str] = {}
+    #: Cache of gzipped file (path, modification time, size) -> its decompressed temporary copy, so a rewind reuses
+    #: the copy while a rewritten file is decompressed again
+    _unzipped: Dict[Tuple[str, int, int], str] = {}
 
     def __init__(self, cache: bool = True, aliases: Dict[str, List[str]] = {}):
         """
@@ -592,15 +622,17 @@ class FileHandler:
         :param file: The path to the file.
         :return: The path to the unzipped file, or the original file if it was not gzipped.
         """
-        # check if the file extension is .gz
-        if file.endswith('.gz'):
+        if is_gzipped(file):
             # reuse a previous decompression of the same file: a rewind would otherwise decompress the
             # whole reference again and leak another full-size temporary copy
-            cached = FileHandler._unzipped.get(file)
+            stat = os.stat(file)
+            key = (file, stat.st_mtime_ns, stat.st_size)
+
+            cached = FileHandler._unzipped.get(key)
             if cached is not None and os.path.exists(cached):
                 return cached
 
-            suffix = os.path.splitext(file[:-3])[1] or '.tmp'
+            suffix = os.path.splitext(re.sub(r'\.b?gz$', '', file))[1] or '.tmp'
             fd, unzipped = tempfile.mkstemp(suffix=suffix)
 
             logger.info(f'Unzipping {file} to {unzipped}')
@@ -609,7 +641,7 @@ class FileHandler:
                 with os.fdopen(fd, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
 
-            FileHandler._unzipped[file] = unzipped
+            FileHandler._unzipped[key] = unzipped
             atexit.register(lambda p=unzipped: os.path.exists(p) and os.remove(p))
 
             return unzipped
