@@ -4459,3 +4459,46 @@ def test_consequences_of_multi_alt_site_are_read_for_the_carried_alternate(tmp_p
         assert sfs.types == ['neutral'] and sfs['neutral'].n_polymorphic == 1
 
 
+@pytest.mark.parametrize("strand", ["+", "-"])
+def test_degeneracy_of_codon_spanning_a_single_base_exon(tmp_path, strand):
+    """A codon whose middle base is a single-base coding sequence takes its other bases from the coding sequences on
+    either side of it. Taking both missing bases from the single-base neighbour read one from the intron."""
+    import cyvcf2
+
+    seq = ['A'] * 130
+    seq[46], seq[60], seq[80] = 'G', 'G', 'A'  # codon G-G-A (Gly) on '+', third position 4-fold
+    seq = ''.join(seq)
+
+    # on the minus strand the same layout reads as the reverse complement, so build the codon there instead
+    if strand == '-':
+        seq = list('T' * 130)
+        seq[80], seq[60], seq[46] = 'C', 'C', 'T'  # reverse complement of G-G-A read from 81 down to 47
+        seq = ''.join(seq)
+
+    (tmp_path / 'ref.fa').write_text('>chr1\n' + seq + '\n')
+    (tmp_path / 'ann.gff').write_text(
+        '##gff-version 3\n'
+        f'chr1\tt\tCDS\t11\t47\t.\t{strand}\t{0 if strand == "+" else 1}\tParent=T1\n'
+        f'chr1\tt\tCDS\t61\t61\t.\t{strand}\t2\tParent=T1\n'
+        f'chr1\tt\tCDS\t81\t120\t.\t{strand}\t{1 if strand == "+" else 0}\tParent=T1\n'
+    )
+    site = 81 if strand == '+' else 47
+    (tmp_path / 'in.vcf').write_text(
+        '##fileformat=VCFv4.2\n##contig=<ID=chr1,length=130>\n'
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\n'
+        f'chr1\t{site}\t.\t{seq[site - 1]}\t.\t.\t.\t.\tGT\t0/0\n'
+    )
+
+    su.Annotator(
+        source=str(tmp_path / 'in.vcf'),
+        fasta=str(tmp_path / 'ref.fa'),
+        gff=str(tmp_path / 'ann.gff'),
+        output=str(tmp_path / 'out.vcf'),
+        annotations=[su.DegeneracyAnnotation()]
+    ).annotate()
+
+    v = next(iter(cyvcf2.VCF(str(tmp_path / 'out.vcf'))))
+
+    assert v.INFO.get('Degeneracy_Info').endswith('GGA')
+    assert v.INFO.get('Degeneracy') == 4

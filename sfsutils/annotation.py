@@ -383,6 +383,10 @@ class DegeneracyAnnotation(Annotation):
     #: The genomic positions for coding sequences that are mocked.
     _pos_mock: int = 1e100
 
+    #: The coding sequences beyond the neighbouring ones, held at class level so a restored instance has them.
+    _cd_before_prev: Optional['_CDSRecord'] = None
+    _cd_after_next: Optional['_CDSRecord'] = None
+
     def __init__(self):
         """
         Create a new annotation instance.
@@ -397,6 +401,11 @@ class DegeneracyAnnotation(Annotation):
 
         #: The coding sequence preceding the current coding sequence.
         self._cd_prev: Optional[_CDSRecord] = None
+
+        #: The coding sequences beyond the preceding and following ones, which complete a codon across a
+        #: single-base coding sequence.
+        self._cd_before_prev: Optional[_CDSRecord] = None
+        self._cd_after_next: Optional[_CDSRecord] = None
 
         #: The current contig.
         self._contig: Optional[SeqRecord] = None
@@ -459,6 +468,8 @@ class DegeneracyAnnotation(Annotation):
         self._cd = None
         self._cd_next = None
         self._cd_prev = None
+        self._cd_before_prev = None
+        self._cd_after_next = None
         self._contig = None
 
         # the target site counter rewinds mid-parse, so these have to be reset alongside n_annotated,
@@ -498,6 +509,10 @@ class DegeneracyAnnotation(Annotation):
             codon_pos[1] = self._cd_prev.end if self._cd_prev.strand == '+' else self._cd_prev.start
             codon_pos[0] = self._cd_prev.end - 1 if self._cd_prev.strand == '+' else self._cd_prev.start + 1
 
+            # a single-base preceding coding sequence leaves the first base to the one before it
+            if self._cd_prev.start == self._cd_prev.end and self._cd_before_prev is not None:
+                codon_pos[0] = self._cd_before_prev.end
+
         if (self._cd_next is None or self._cd_next.start == self._pos_mock) and codon_pos[2] > self._cd.end:
             raise IndexError(f'Codon at site {variant.CHROM}:{variant.POS} overlaps with '
                              f'end position of current CDS and no subsequent CDS was given.')
@@ -509,6 +524,10 @@ class DegeneracyAnnotation(Annotation):
         elif codon_pos[1] == self._cd.end + 1:
             codon_pos[1] = self._cd_next.start if self._cd_next.strand == '+' else self._cd_next.end
             codon_pos[2] = self._cd_next.start + 1 if self._cd_next.strand == '+' else self._cd_next.end - 1
+
+            # a single-base following coding sequence leaves the last base to the one after it
+            if self._cd_next.start == self._cd_next.end and self._cd_after_next is not None:
+                codon_pos[2] = self._cd_after_next.start
 
         # seq uses 0-based positions
         codon = ''.join([str(self._contig[int(pos - 1)]) for pos in codon_pos]).upper()
@@ -546,6 +565,10 @@ class DegeneracyAnnotation(Annotation):
             codon_pos[1] = self._cd_prev.end if self._cd_prev.strand == '-' else self._cd_prev.start
             codon_pos[2] = self._cd_prev.end - 1 if self._cd_prev.strand == '-' else self._cd_prev.start + 1
 
+            # a single-base preceding coding sequence leaves the last base to the one before it
+            if self._cd_prev.start == self._cd_prev.end and self._cd_before_prev is not None:
+                codon_pos[2] = self._cd_before_prev.end
+
         if (self._cd_next is None or self._cd_next.start == self._pos_mock) and codon_pos[0] > self._cd.end:
             raise IndexError(f'Codon at site {variant.CHROM}:{variant.POS} overlaps with '
                              f'end position of current CDS and no subsequent CDS was given.')
@@ -557,6 +580,10 @@ class DegeneracyAnnotation(Annotation):
         elif codon_pos[1] == self._cd.end + 1:
             codon_pos[1] = self._cd_next.start if self._cd_next.strand == '-' else self._cd_next.end
             codon_pos[0] = self._cd_next.start + 1 if self._cd_next.strand == '-' else self._cd_next.end - 1
+
+            # a single-base following coding sequence leaves the first base to the one after it
+            if self._cd_next.start == self._cd_next.end and self._cd_after_next is not None:
+                codon_pos[0] = self._cd_after_next.start
 
         # we use 0-based positions here
         codon = ''.join(str(self._contig[int(pos - 1)]) for pos in codon_pos)
@@ -649,6 +676,8 @@ class DegeneracyAnnotation(Annotation):
 
             # reset coding sequences to mocking positions
             self._cd_prev = None
+            self._cd_before_prev = None
+            self._cd_after_next = None
             self._cd = _CDSRecord(seqid=v.CHROM, start=self._pos_mock, end=self._pos_mock)
             self._cd_next = _CDSRecord(seqid=v.CHROM, start=self._pos_mock, end=self._pos_mock)
 
@@ -680,11 +709,21 @@ class DegeneracyAnnotation(Annotation):
                 if row_next is not None:
                     self._cd_next = index.get(row_next)
 
+                    row_after_next = index.locate_next(row_next, parent)
+
+                    if row_after_next is not None:
+                        self._cd_after_next = index.get(row_after_next)
+
                 # the last coding sequence ending before the current one
                 row_prev = index.locate_prev(row, parent)
 
                 if row_prev is not None:
                     self._cd_prev = index.get(row_prev)
+
+                    row_before_prev = index.locate_prev(row_prev, parent)
+
+                    if row_before_prev is not None:
+                        self._cd_before_prev = index.get(row_before_prev)
 
             if self._cd.start == self._pos_mock and self.n_annotated == 0:
                 self._logger.warning(f"No coding sequence found on all of contig '{v.CHROM}' and no previous "
