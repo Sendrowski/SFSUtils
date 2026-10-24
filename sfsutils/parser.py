@@ -1783,8 +1783,9 @@ class Parser(MultiHandler):
             if aa in bases:
                 return aa
 
-            # if we skip non-polarized sites, we raise an error here
-            if self.skip_non_polarized:
+            # if we skip non-polarized sites, we raise an error here, unless the samples carry only the reference
+            # allele, which makes the site monomorphic, as one without an alternate allele is
+            if self.skip_non_polarized and self._get_called_alleles(variant) != {variant.REF}:
                 raise NoTypeException("No valid AA tag found")
         else:
             # a fixed difference is typed by its ancestral allele
@@ -1800,6 +1801,20 @@ class Parser(MultiHandler):
 
         # if the reference allele is not a valid base, we raise an error
         raise NoTypeException("Reference allele is not a valid base")
+
+    def _get_called_alleles(self, variant: Site) -> set:
+        """
+        The distinct alleles called in the parsed samples, counted as the projection counts them.
+
+        :param variant: The site.
+        :return: The called alleles.
+        """
+        site = SiteAlleles.from_site(variant)
+
+        if site is not None and site.single_character:
+            return set(site.counts(self._samples_mask))
+
+        return set(get_called_bases(self._select_samples(variant.gt_bases)))
 
     def _get_ancestral_prob(self, variant: Site) -> float:
         """

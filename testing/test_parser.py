@@ -1607,6 +1607,61 @@ def test_invariant_site_without_ancestral_allele_stays_monomorphic(tmp_path):
         assert sfs.to_list() == pytest.approx([2.0, 0.0, 0.0, 0.0, 0.0])
 
 
+def test_invariant_site_declaring_alt_without_ancestral_allele_stays_monomorphic(tmp_path):
+    """A site whose samples carry only the reference counts as a target site whether or not it declares an
+    alternate allele. With an alternate allele declared and no ancestral allele it was dropped as not polarized."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "no_aa_alt.vcf", [
+        ["1", "1", ".", "A", ".", ".", ".", ".", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+        ["1", "2", ".", "A", "G", ".", ".", ".", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+        ["1", "3", ".", "A", "G", ".", ".", ".", "GT", "0|0", "0|1", "0|0", "0|0", "0|0"],
+    ])
+
+    sfs = su.Parser(source=vcf, n=4, skip_non_polarized=True).parse()["all"]
+
+    assert sfs.to_list() == pytest.approx([2.0, 0.0, 0.0, 0.0, 0.0])
+
+    joint = su.Parser(source=vcf, n=[2, 2], pops={"a": list(SAMPLES[:2]), "b": list(SAMPLES[2:4])},
+                      skip_non_polarized=True).parse()
+
+    assert np.asarray(joint["all"].data).sum() == pytest.approx(2.0)
+def test_reference_only_rule_looks_at_parsed_samples_only(tmp_path):
+    """A site without AA counts as reference-only, and in bin 0, when the parsed samples carry only the reference,
+    whatever excluded samples carry."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "subset.vcf", [
+        ["1", "1", ".", "A", "G", ".", ".", ".", "GT", "0|0", "0|0", "1|1", "1|1", "1|1"],
+        ["1", "2", ".", "A", "G", ".", ".", "AA=A", "GT", "0|1", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    sfs = su.Parser(source=vcf, n=4, include_samples=["s0", "s1"]).parse()["all"].to_list()
+
+    assert sfs == pytest.approx([1, 1, 0, 0, 0])
+
+
+def test_reference_only_sites_without_ancestral_allele_are_typed_by_stratifications(tmp_path):
+    """Reference-only sites declaring an alternate allele and carrying no AA count as target sites in the stratified
+    spectrum as in the unstratified one. The ancestral-base stratifications dropped them."""
+    Settings.disable_pbar = True
+
+    fasta = tmp_path / "ref.fa"
+    fasta.write_text(">1\nGACAGTA\n")
+
+    vcf = _write_vcf_five_samples(tmp_path / "ref_only.vcf", [
+        ["1", "2", ".", "A", ".", ".", ".", ".", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+        ["1", "4", ".", "A", "G", ".", ".", ".", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+        ["1", "6", ".", "T", "C", ".", ".", ".", "GT", "0|0", "0|0", "0|0", "0|0", "0|0"],
+    ])
+
+    assert su.Parser(source=vcf, n=4).parse()["all"].data[0] == pytest.approx(3)
+
+    for stratification in [su.AncestralBaseStratification(), su.BaseContextStratification(fasta=str(fasta))]:
+        sfs = su.Parser(source=vcf, n=4, stratifications=[stratification]).parse()
+        assert sum(sfs[t].data[0] for t in sfs.types) == pytest.approx(3)
+
+
 def test_parse_rewinds_the_reader_after_an_interrupted_pass(tmp_path):
     """A parse that raises part-way through leaves the reader mid-input, so the next parse must rewind
     it and see every record again."""
