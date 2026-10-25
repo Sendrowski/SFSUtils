@@ -244,6 +244,7 @@ def _run_parse(args: argparse.Namespace) -> int:
         fasta=args.fasta,
         info_ancestral=args.info_ancestral,
         skip_non_polarized=args.skip_non_polarized,
+        polarize_probabilistically=args.polarize_probabilistically,
         stratifications=_build_stratifications(args.stratify, args.contigs),
         annotations=_build_annotations(args.annotate, args.outgroups, args.n_ingroups),
         filtrations=_build_filtrations(args.filter, args.contigs),
@@ -449,6 +450,10 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--skip-non-polarized", action=argparse.BooleanOptionalAction, default=True,
                    help="Skip sites without a valid ancestral tag. Pass --no-skip-non-polarized to use the "
                         "reference allele as ancestral for those sites instead. Default: enabled.")
+    p.add_argument("--polarize-probabilistically", action=argparse.BooleanOptionalAction, default=True,
+                   help="Weight each site by its ancestral-allele posterior (<tag>_post) or probability "
+                        "(<tag>_prob) where present. Pass --no-polarize-probabilistically to polarize by the "
+                        "ancestral tag alone. Default: enabled.")
     p.add_argument("--subsample-mode", choices=["random", "probabilistic"], default="probabilistic",
                    help="Down-sampling mode. Default: probabilistic.")
     p.add_argument("--two-sfs", action="store_true", help="Parse the two-site (2-D) SFS instead.")

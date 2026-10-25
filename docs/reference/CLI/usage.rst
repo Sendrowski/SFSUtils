@@ -80,6 +80,8 @@ two-site SFS as JSON. Several filters and annotations can be stacked and applied
      - Parse the two-site SFS, pairing sites separated by ``(offset, offset + distance]`` base pairs (distance default 1000, offset default 0).
    * - ``--no-skip-non-polarized``
      - Use the reference allele as ancestral where no ancestral tag is available.
+   * - ``--no-polarize-probabilistically``
+     - Polarize by the ancestral tag alone, ignoring its posterior (``<tag>_post``) and probability (``<tag>_prob``).
    * - ``--subsample-mode``
      - ``random`` or ``probabilistic`` (default) down-sampling.
    * - ``--outgroups`` / ``--n-ingroups``

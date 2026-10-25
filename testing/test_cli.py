@@ -347,3 +347,26 @@ def test_max_sites_of_one_is_accepted():
                                     "--max-sites", "1", "--output", "o.vcf"])
 
     assert ns.max_sites == 1
+
+
+def test_run_parse_polarize_probabilistically_switch(tmp_path):
+    """The CLI polarizes probabilistically by default, as the Python API does, and --no-polarize-probabilistically
+    polarizes by the ancestral tag alone. Without the switch a CLI user could not reproduce AA-only spectra."""
+    Settings.disable_pbar = True
+
+    vcf = tmp_path / "prob.vcf"
+    vcf.write_text(
+        "##fileformat=VCFv4.2\n##contig=<ID=1,length=100>\n"
+        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"GT\">\n"
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\n"
+        "1\t1\t.\tA\tG\t.\t.\tAA=A;AA_prob=0.7\tGT\t0/0\t0/1\n"
+    )
+
+    spectra = {}
+    for flag in ["--polarize-probabilistically", "--no-polarize-probabilistically"]:
+        out = tmp_path / f"{flag}.csv"
+        assert run(["-q", "parse", "--vcf", str(vcf), "--n", "4", flag, "--output", str(out)]) == 0
+        spectra[flag] = su.Spectra.from_file(str(out)).all.to_list()
+
+    assert spectra["--polarize-probabilistically"] == pytest.approx([0, 0.7, 0, 0.3, 0])
+    assert spectra["--no-polarize-probabilistically"] == pytest.approx([0, 1, 0, 0, 0])
