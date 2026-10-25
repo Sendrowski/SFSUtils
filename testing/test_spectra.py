@@ -743,6 +743,19 @@ class SpectraTestCase(TestCase):
 
         self.assertTrue(all(folded.is_folded().values()))
 
+    def test_spectra_file_round_trip_is_exact(self):
+        """
+        Non-integer counts read back from a file exactly as written. The default float parser of pandas changed
+        about one in ten of them in the last bits.
+        """
+        rng = np.random.default_rng(0)
+        s = Spectra.from_dict(dict(a=list(rng.random(2000) * 1000)))
+
+        path = "scratch/test_spectra_file_round_trip_is_exact.csv"
+        s.to_file(path)
+
+        np.testing.assert_array_equal(Spectra.from_file(path)['a'].data, s['a'].data)
+
     def test_subsample_spectra_with_divergence_stays_unfolded(self):
         """
         A Spectra type with divergence counts is unfolded, so subsampling keeps its divergence counts in the last

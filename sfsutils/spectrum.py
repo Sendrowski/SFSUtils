@@ -1362,7 +1362,7 @@ class Spectra(AbstractSpectra):
         path = download_if_url(file, desc=f'{cls.__name__}>Downloading file')
 
         try:
-            return Spectra.from_dataframe(pd.read_csv(path))
+            return Spectra.from_dataframe(pd.read_csv(path, float_precision='round_trip'))
         except pd.errors.EmptyDataError:
             # a Spectra with no types writes a header-less file, which pandas cannot parse back
             return Spectra({})
