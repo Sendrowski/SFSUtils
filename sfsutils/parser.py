@@ -220,7 +220,7 @@ class BaseContextStratification(Stratification, FASTAHandler):
         FASTAHandler.__init__(self, fasta, cache=cache, aliases=aliases)
 
         #: The number of flanking bases
-        self.n_flanking: int = n_flanking
+        self.n_flanking: int = int(n_flanking)
 
         #: The current contig
         self.contig: Optional[SeqRecord] = None
@@ -782,13 +782,13 @@ class RandomStratification(Stratification):
             raise ValueError("n_bins must be at least 1.")
 
         #: Number of bins
-        self.num_bins: int = n_bins
+        self.num_bins: int = int(n_bins)
 
         #: Random seed for reproducibility
-        self.seed: Optional[int] = seed
+        self.seed: Optional[int] = int(seed) if seed is not None else None
 
         #: Random generator instance
-        self.rng = random.Random(seed)
+        self.rng = random.Random(self.seed)
 
     def _rewind(self):
         """

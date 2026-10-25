@@ -1253,7 +1253,7 @@ class VCFHandler(FileHandler):
         self.seed: Optional[int] = int(seed) if seed is not None else None
 
         #: Random generator instance
-        self.rng = np.random.default_rng(seed=seed)
+        self.rng = np.random.default_rng(seed=self.seed)
 
     @cached_property
     def _reader(self):

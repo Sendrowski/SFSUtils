@@ -402,3 +402,23 @@ def test_hatch_styles_identical_across_hash_seeds():
 
 def test_count_sites_from_iterable():
     assert count_sites([object(), object(), object()]) == 3
+
+
+def test_integer_parameters_accept_whole_floats():
+    """R passes whole numbers as doubles, so integer parameters accept 42.0 as 42. Seeds, subsample sizes, bin and
+    flank counts given as floats crashed numpy and the range builtins."""
+    from sfsutils.settings import Settings
+
+    vcf = "resources/msprime/two_epoch.vcf"
+    Settings.disable_pbar = True
+
+    assert su.Parser(source=vcf, n=10, seed=42.0, skip_non_polarized=False, subsample_mode="random").parse()
+
+    s = su.Spectrum([10, 4, 3, 2, 1, 0, 0])
+    np.testing.assert_allclose(s.subsample(4.0).data, s.subsample(4).data)
+    np.testing.assert_allclose(s.subsample(4.0, mode="random", seed=1.0).data, s.subsample(4, mode="random", seed=1).data)
+
+    spectra = su.Spectra.from_spectra(dict(a=s, b=s))
+    assert spectra.subsample(4.0, mode="random", seed=3.0).to_dict() == spectra.subsample(4, mode="random", seed=3).to_dict()
+
+    assert su.RandomStratification(n_bins=3.0, seed=1.0).get_types() == su.RandomStratification(n_bins=3).get_types()

@@ -393,6 +393,8 @@ class Spectrum(AbstractSpectrum):
         :param fold: Whether to fold the subsampled spectrum.
         :return: Subsampled spectrum
         """
+        n = int(n)
+
         if n >= self.n:
             raise ValueError(f'Subsampled sample size {n} must be smaller than original sample size {self.n}.')
 
@@ -1566,7 +1568,8 @@ class Spectra(AbstractSpectra):
         if isinstance(seed, Generator):
             return list(seed.spawn(n))
 
-        return [np.random.default_rng(child) for child in np.random.SeedSequence(seed).spawn(n)]
+        return [np.random.default_rng(child) for child in
+                np.random.SeedSequence(None if seed is None else int(seed)).spawn(n)]
 
     def is_folded(self) -> Dict[str, bool]:
         """
