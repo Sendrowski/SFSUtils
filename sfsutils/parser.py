@@ -1522,9 +1522,11 @@ class Parser(MultiHandler):
         :param filtrations: List of filtrations to use. By default, we use
             :class:`~sfsutils.filtration.PolyAllelicFiltration`.
         :param include_samples: List of sample names to consider when determining the SFS. If ``None``, all samples
-            are used. Note that this restriction does not apply to the annotations and filtrations.
+            are used. The annotations do not follow this restriction, while the filtrations judging sites by their
+            samples, such as :class:`~sfsutils.filtration.SNPFiltration`, follow it unless created with
+            ``use_parser=False``.
         :param exclude_samples: List of sample names to exclude when determining the SFS. If ``None``, no samples
-            are excluded. Note that this restriction does not apply to the annotations and filtrations.
+            are excluded. The annotations and filtrations treat it as they do ``include_samples``.
         :param max_sites: Maximum number of sites to parse from the input, which must be positive.
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from URLs.
