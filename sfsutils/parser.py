@@ -577,16 +577,16 @@ class ContigStratification(GenomePositionDependentStratification):
     Stratify SFS by contig.
     """
 
-    def __init__(self, contigs: List[str] = None):
+    def __init__(self, contigs: List[str] | str | None = None):
         """
         Initialize the stratification.
 
-        :param contigs: List of contigs to stratify by. Defaults to all contigs in the input.
+        :param contigs: List of contigs to stratify by, or a single contig name. Defaults to all contigs in the input.
         """
         super().__init__()
 
         #: List of contigs
-        self.contigs: List[str] = contigs
+        self.contigs: List[str] = [contigs] if isinstance(contigs, str) else contigs
 
     @_count_valid_type
     def get_type(self, variant: Site) -> str:

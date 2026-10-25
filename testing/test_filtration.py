@@ -687,6 +687,20 @@ class FiltrationTestCase(TestCase):
 
             self.assertEqual(f.n_filtered, 1)
 
+    def test_contig_filtration_and_stratification_take_a_single_name(self):
+        """
+        A single contig name, as R hands over a length-one character vector, stands for itself. As a string it was
+        matched as a substring by the filtration and character by character by the stratification.
+        """
+        f = su.ContigFiltration(contigs='Contig15')
+        self.assertEqual(f.contigs, ['Contig15'])
+
+        f._handler = Mock(get_aliases=lambda c: [c])
+        self.assertTrue(f.filter_site(Mock(CHROM='Contig15')))
+        self.assertFalse(f.filter_site(Mock(CHROM='Contig1')))
+
+        self.assertEqual(su.ContigStratification(contigs='Contig1').contigs, ['Contig1'])
+
     def test_contig_filtration(self):
         """
         Test the contig filtration.

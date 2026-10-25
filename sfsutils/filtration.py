@@ -943,16 +943,16 @@ class ContigFiltration(Filtration):
     Filter out sites that are not on the specified contigs.
     """
 
-    def __init__(self, contigs: List[str]):
+    def __init__(self, contigs: List[str] | str):
         """
         Construct ContigFiltration.
 
-        :param contigs: The contigs to retain.
+        :param contigs: The contigs to retain, or a single contig name.
         """
         super().__init__()
 
         #: The contigs to retain.
-        self.contigs: List[str] = contigs
+        self.contigs: List[str] = [contigs] if isinstance(contigs, str) else contigs
 
     @_count_filtered
     def filter_site(self, variant: Site) -> bool:
