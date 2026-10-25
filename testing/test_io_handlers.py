@@ -1727,3 +1727,15 @@ def test_gff_attribute_containing_hash_keeps_its_parent(tmp_path):
     assert list(cds['parent']) == ['tx1', 'tx1']
 
 
+def test_zarr_missing_element_of_multi_value_info_written_as_dot(tmp_path):
+    """A missing element of a multi-value INFO field is written as '.', as the VCF spells it. Joining with str()
+    stored the text 'None', which exported as invalid VCF."""
+    from sfsutils.io_handlers import ZarrVariantWriter, ZarrVariantReader
+
+    out = str(tmp_path / "multi.vcz")
+    w = ZarrVariantWriter(out, samples=["s1"], seqnames=["1"], info_ancestral="AA")
+    w.write(Variant(ref="T", pos=40, chrom="1", gt_bases=["T|C"], alt=["C", "A", "G"], is_snp=True,
+                    info={"AC": (1, None, 1)}))
+    w.close()
+
+    assert next(iter(ZarrVariantReader(out))).INFO["AC"] == "1,.,1"

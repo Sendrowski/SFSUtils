@@ -2821,9 +2821,10 @@ class ZarrVariantWriter(VariantWriter):
                 values = self._info[key] = [self._missing] * self._row
 
             # cyvcf2 returns a tuple for a Number=A/R/G/. field; write the comma-separated form the VCF
-            # uses, so the value stays parseable instead of becoming a Python repr such as "(12, 3)"
+            # uses, so the value stays parseable instead of becoming a Python repr such as "(12, 3)", with a
+            # missing element spelled '.' as the VCF does
             if isinstance(value, (tuple, list, np.ndarray)):
-                value = ','.join(str(x) for x in value)
+                value = ','.join('.' if x is None else str(x) for x in value)
 
             values.append(value)
 
