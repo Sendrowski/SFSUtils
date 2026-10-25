@@ -1708,6 +1708,34 @@ def test_reference_only_rule_looks_at_parsed_samples_only(tmp_path):
     assert sfs == pytest.approx([1, 1, 0, 0, 0])
 
 
+def test_absent_sample_names_raise(tmp_path):
+    """A sample name absent from the input raises rather than silently shrinking the samples parsed."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "samples.vcf", _snp_rows(range(1, 5)))
+
+    for kw in [dict(include_samples=["s0", "typo"]), dict(exclude_samples=["typo"])]:
+        with pytest.raises(ValueError, match="not present in the input"):
+            su.Parser(source=vcf, n=2, skip_non_polarized=False, **kw).parse()
+
+
+def test_single_sample_name_as_string(tmp_path):
+    """A single sample name passed as a string, which is what reticulate makes of an R vector of length one, selects
+    that sample. The absent-sample check split the string into characters and raised."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "samples.vcf", _snp_rows(range(1, 5)))
+
+    for kw, names in [(dict(include_samples="s0"), ["s0"]), (dict(exclude_samples="s0"), ["s1", "s2", "s3", "s4"])]:
+        as_str = su.Parser(source=vcf, n=2, skip_non_polarized=False, **kw).parse()["all"].to_list()
+        key = next(iter(kw))
+        as_list = su.Parser(source=vcf, n=2, skip_non_polarized=False, **{key: [kw[key]]}).parse()["all"].to_list()
+
+        assert as_str == as_list
+
+    assert su.SNPFiltration(include_samples="s0").include_samples == ["s0"]
+
+
 def test_ancestral_probability_without_ancestral_allele_is_ignored(tmp_path):
     """An AA_prob next to an invalid AA belongs to an allele the record does not name, so the reference fallback
     is not weighted by it. Weighting it moved 1 - AA_prob of invariant sites into the divergence bin."""

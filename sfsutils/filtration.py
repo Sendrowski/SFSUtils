@@ -114,15 +114,15 @@ class MaskedFiltration(Filtration, ABC):
     def __init__(
             self,
             use_parser: bool = True,
-            include_samples: List[str] | None = None,
-            exclude_samples: List[str] | None = None
+            include_samples: List[str] | str | None = None,
+            exclude_samples: List[str] | str | None = None
     ):
         """
         Create a new filtration instance.
 
         :param use_parser: Whether to use the samples mask from the parser, if used together with parser.
-        :param include_samples: The samples to include, defaults to all samples.
-        :param exclude_samples: The samples to exclude, defaults to no samples.
+        :param include_samples: The samples to include, or a single sample name, defaults to all samples.
+        :param exclude_samples: The samples to exclude, or a single sample name, defaults to no samples.
         """
         super().__init__()
 
@@ -130,10 +130,12 @@ class MaskedFiltration(Filtration, ABC):
         self.use_parser: bool = use_parser
 
         #: The samples to include.
-        self.include_samples: List[str] | None = include_samples
+        self.include_samples: List[str] | None = (
+            [include_samples] if isinstance(include_samples, str) else include_samples)
 
         #: The samples to exclude.
-        self.exclude_samples: List[str] | None = exclude_samples
+        self.exclude_samples: List[str] | None = (
+            [exclude_samples] if isinstance(exclude_samples, str) else exclude_samples)
 
         #: The samples mask.
         self._samples_mask: np.ndarray | None = None

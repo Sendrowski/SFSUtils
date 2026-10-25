@@ -18,6 +18,7 @@ from collections import Counter, defaultdict, deque
 from typing import Any, Iterable, List, Callable, Literal, Optional, Dict, Tuple
 
 import numpy as np
+import pandas as pd
 from Bio.SeqRecord import SeqRecord
 from scipy.stats import hypergeom
 from tqdm import tqdm
@@ -1462,8 +1463,8 @@ class Parser(MultiHandler):
             stratifications: List[Stratification] = [],
             annotations: List[Annotation] = [],
             filtrations: List[Filtration] = None,
-            include_samples: List[str] = None,
-            exclude_samples: List[str] = None,
+            include_samples: List[str] | str | None = None,
+            exclude_samples: List[str] | str | None = None,
             max_sites: int = np.inf,
             seed: int | None = 0,
             cache: bool = True,
@@ -1521,12 +1522,13 @@ class Parser(MultiHandler):
         :param annotations: List of annotations to use.
         :param filtrations: List of filtrations to use. By default, we use
             :class:`~sfsutils.filtration.PolyAllelicFiltration`.
-        :param include_samples: List of sample names to consider when determining the SFS. If ``None``, all samples
-            are used. The annotations do not follow this restriction, while the filtrations judging sites by their
-            samples, such as :class:`~sfsutils.filtration.SNPFiltration`, follow it unless created with
-            ``use_parser=False``.
-        :param exclude_samples: List of sample names to exclude when determining the SFS. If ``None``, no samples
-            are excluded. The annotations and filtrations treat it as they do ``include_samples``.
+        :param include_samples: List of sample names to consider when determining the SFS, or a single sample name.
+            If ``None``, all samples are used. The annotations do not follow this restriction, while the filtrations
+            judging sites by their samples, such as :class:`~sfsutils.filtration.SNPFiltration`, follow it unless
+            created with ``use_parser=False``.
+        :param exclude_samples: List of sample names to exclude when determining the SFS, or a single sample name.
+            If ``None``, no samples are excluded. The annotations and filtrations treat it as they do
+            ``include_samples``.
         :param max_sites: Maximum number of sites to parse from the input, which must be positive.
         :param seed: Seed for the random number generator. Use ``None`` for no seed.
         :param cache: Whether to cache files downloaded from URLs.
@@ -1661,10 +1663,12 @@ class Parser(MultiHandler):
         self._pop_masks: List[np.ndarray] | None = None
 
         #: The list of samples to include
-        self.include_samples: List[str] | None = include_samples
+        self.include_samples: List[str] | None = (
+            [include_samples] if isinstance(include_samples, str) else include_samples)
 
         #: The list of samples to exclude
-        self.exclude_samples: List[str] | None = exclude_samples
+        self.exclude_samples: List[str] | None = (
+            [exclude_samples] if isinstance(exclude_samples, str) else exclude_samples)
 
         #: The mask of samples to use
         self._samples_mask: np.ndarray | None = None
@@ -2574,6 +2578,17 @@ class Parser(MultiHandler):
         if self.include_samples is None and self.exclude_samples is None:
             self._samples_mask = None
             return
+
+        # a name absent from the input would silently shrink the samples parsed; a sample table (one row per
+        # sample) is matched cell-wise by np.isin and not checked
+        for kind, names in (('included', self.include_samples), ('excluded', self.exclude_samples)):
+            if names is None or isinstance(names, pd.DataFrame):
+                continue
+
+            missing = sorted(set(names) - set(samples.tolist()))
+
+            if missing:
+                raise ValueError(f"The following {kind} samples are not present in the input: {missing}.")
 
         # determine samples to include
         if self.include_samples is None:
