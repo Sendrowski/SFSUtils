@@ -3,6 +3,13 @@
 Changelog
 =========
 
+[1.1.4] - 2026-10-27
+^^^^^^^^^^^^^^^^^^^^
+- :class:`~sfsutils.parser.Parser` polarizes probabilistically by default (see :paramref:`Parser.polarize_probabilistically <sfsutils.parser.Parser.polarize_probabilistically>`).
+- Better input validation and error messages.
+- Minor fixes to tree-sequence I/O, target-site counting, multi-allelic sites and stratifications.
+- Support pandas 3.1.
+
 [1.1.3] - 2026-10-17
 ^^^^^^^^^^^^^^^^^^^^
 - Support pandas 3 and jsonpickle 4.
