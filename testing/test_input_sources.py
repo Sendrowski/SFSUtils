@@ -122,27 +122,41 @@ def test_variant_reader_source_counted_and_parsed():
 
 
 @pytest.mark.skipif(not os.path.exists(VCF), reason="the VCF fixture is absent")
-def test_chunked_stratification_warns_under_filtration(caplog):
-    """With active filtrations, ChunkedStratification sizes its chunks from the raw record count while sites
-    are chunked only after surviving filtration/projection, so the trailing chunks can come out empty. This is
-    documented and a warning is logged at setup."""
-    import logging
-
+def test_chunked_stratification_balanced_under_filtration_and_order():
+    """Chunks are assigned by the index of each record in the input, so they span equal ranges of records whatever
+    filtrations drop and whichever stratification comes first. Counting only the sites that reached the
+    stratification left the trailing chunks empty."""
     Settings.disable_pbar = True
 
-    with caplog.at_level(logging.WARNING, logger="sfsutils"):
-        su.Parser(
-            source=VCF,
-            n=20,
-            skip_non_polarized=False,
-            stratifications=[su.ChunkedStratification(n_chunks=5)],
-            filtrations=[su.SNPFiltration()],
-        ).parse()
+    def chunks(stratifications, filtrations):
+        sfs = su.Parser(source=VCF, n=20, skip_non_polarized=False, stratifications=stratifications,
+                        filtrations=filtrations).parse()
+        totals = {}
+        for t in sfs.types:
+            chunk = [p for p in t.split('.') if p.startswith('chunk')][0]
+            totals[chunk] = totals.get(chunk, 0) + sfs[t].n_sites
+        return totals
 
-    assert any(
-        "ChunkedStratification sizes its" in r.message and "filtration" in r.message
-        for r in caplog.records
-    )
+    from sfsutils.parser import NoTypeException
+
+    class EvenPositions(su.Stratification):
+        """Types the sites at even positions only, as DegeneracyStratification types coding sites only."""
+
+        def get_type(self, variant):
+            if variant.POS % 2:
+                raise NoTypeException("odd position")
+            return "even"
+
+        def get_types(self):
+            return ["even"]
+
+    filtered = chunks([su.ChunkedStratification(n_chunks=4)], [su.SNPFiltration()])
+    first = chunks([su.ChunkedStratification(n_chunks=4), EvenPositions()], [])
+    after = chunks([EvenPositions(), su.ChunkedStratification(n_chunks=4)], [])
+
+    assert len(filtered) == len(first) == 4
+    assert min(filtered.values()) > 0.15 * sum(filtered.values())
+    assert after == pytest.approx(first)
 
 
 @requires_trees

@@ -637,19 +637,12 @@ class ChunkedStratification(GenomePositionDependentStratification):
         Since the total number of sites is not known in advance, we cannot create contiguous
         chunks of exactly equal size.
 
-    .. warning::
-        Chunk boundaries are sized from the raw input record count (``parser.n_sites``), but a site
-        is assigned to a chunk only once it has survived filtration and down-projection. When any
-        filtration or projection drops sites, all included sites fall within the first
-        ``n_included / n_sites`` fraction of the record range, so they concentrate in the leading
-        chunks and the trailing chunks come out under-filled or empty. The included count is not known
-        at setup without an extra pass over the data, so the chunks cannot be pre-balanced; a warning
-        is logged at setup when the parser carries filtrations.
+    A site is assigned to a chunk by the index of its record in the input, so the chunks span equal ranges of
+    input records whatever filtrations or other stratifications drop.
 
-    The first pass assigns sites by counting them and records the genomic position at which each chunk
-    begins. Any further pass over the same input (the :class:`TargetSiteCounter` sampling pass, which visits a
-    different number of sites) is assigned by position instead, so a sampled site lands in the same chunk as the
-    variants surrounding it.
+    The first pass records the genomic position at which each chunk begins. Any further pass over the same input
+    (the :class:`TargetSiteCounter` sampling pass, which visits a different number of sites) is assigned by position
+    instead, so a sampled site lands in the same chunk as the variants surrounding it.
     """
 
     def __init__(self, n_chunks: int):
@@ -694,18 +687,6 @@ class ChunkedStratification(GenomePositionDependentStratification):
         self._contig_order = {}
         self._chunk_starts = []
         self._positional = False
-
-        # chunk boundaries are sized from the raw record count, but sites are assigned only after
-        # surviving filtration and projection, so with active filtrations the included sites bunch into
-        # the leading chunks and the trailing chunks come out under-filled or empty. The included count
-        # is not available here without an extra pass, so warn rather than silently produce empty chunks.
-        if parser.filtrations:
-            self._logger.warning(
-                f"ChunkedStratification sizes its {self.n_chunks} chunks from the raw input record count, but "
-                f"{len(parser.filtrations)} filtration(s) are active and will drop sites before they are chunked. "
-                f"Included sites will concentrate in the leading chunks and the trailing chunks may be empty. "
-                f"To obtain balanced chunks, chunk a pre-filtered input or one whose records all pass filtration."
-            )
 
         # compute base chunk size and remainder
         base_chunk_size, remainder = divmod(parser.n_sites, self.n_chunks)
@@ -764,9 +745,12 @@ class ChunkedStratification(GenomePositionDependentStratification):
         if len(self._chunk_ends) != len(self.chunk_sizes):
             self._chunk_ends = list(itertools.accumulate(self.chunk_sizes))
 
+        # the index of the site's record in the input, or of the site among those typed without a parser
+        index = self.counter if self.parser is None else self.parser._i_site
+
         # find the index of the chunk to which the current site belongs; a pass may process more sites than
         # the chunk sizes account for (e.g. when a previous pass saw fewer), so fall back to the last chunk
-        chunk_index = min(bisect.bisect_right(self._chunk_ends, self.counter), self.n_chunks - 1)
+        chunk_index = min(bisect.bisect_right(self._chunk_ends, index), self.n_chunks - 1)
 
         # record where each chunk begins; chunks of size zero share the start of the chunk that follows them,
         # and the bisect above then resolves such a tie to the last of them, which is the non-empty one
@@ -1448,6 +1432,9 @@ class Parser(MultiHandler):
         sfs.plot()
 
     """
+
+    #: The index in the input of the record being processed.
+    _i_site: int = 0
 
     def __init__(
             self,
@@ -2645,6 +2632,7 @@ class Parser(MultiHandler):
 
         # iterate over variants
         for i, variant in enumerate(self._reader):
+            self._i_site = i
 
             # handle site
             if self._process_site(variant):
