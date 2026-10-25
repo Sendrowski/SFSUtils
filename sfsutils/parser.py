@@ -1460,8 +1460,8 @@ class Parser(MultiHandler):
             info_ancestral_prob: str | None = None,
             info_ancestral_post: str | None = None,
             skip_non_polarized: bool = True,
-            stratifications: List[Stratification] = [],
-            annotations: List[Annotation] = [],
+            stratifications: List[Stratification] = None,
+            annotations: List[Annotation] = None,
             filtrations: List[Filtration] = None,
             include_samples: List[str] | str | None = None,
             exclude_samples: List[str] | str | None = None,
@@ -1597,7 +1597,7 @@ class Parser(MultiHandler):
         )
 
         # warn if SynonymyAnnotation is used
-        if any(isinstance(a, SynonymyAnnotation) for a in annotations):
+        if any(isinstance(a, SynonymyAnnotation) for a in annotations or []):
             logger.warning("SynonymyAnnotation is not recommended to be used with the parser as "
                            "it is not possible to determine the synonymy of monomorphic sites. "
                            "Consider using DegeneracyAnnotation instead.")
@@ -1677,10 +1677,10 @@ class Parser(MultiHandler):
         self.skip_non_polarized: bool = skip_non_polarized
 
         #: List of stratifications to use
-        self.stratifications: List[Stratification] = stratifications
+        self.stratifications: List[Stratification] = list(stratifications) if stratifications is not None else []
 
         #: List of annotations to use
-        self.annotations: List[Annotation] = annotations
+        self.annotations: List[Annotation] = list(annotations) if annotations is not None else []
 
         #: List of filtrations to use
         self.filtrations: List[Filtration] = [PolyAllelicFiltration()] if filtrations is None else filtrations

@@ -998,7 +998,7 @@ class Filterer(MultiHandler):
             output: str = None,
             gff: str | None = None,
             fasta: str | None = None,
-            filtrations: List[Filtration] = [],
+            filtrations: List[Filtration] = None,
             info_ancestral: str = 'AA',
             max_sites: int = np.inf,
             seed: int | None = 0,
@@ -1043,7 +1043,7 @@ class Filterer(MultiHandler):
         )
 
         #: The filtrations.
-        self.filtrations: List[Filtration] = filtrations
+        self.filtrations: List[Filtration] = list(filtrations) if filtrations is not None else []
 
         #: The output file.
         self.output: str = output

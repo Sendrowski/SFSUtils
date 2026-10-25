@@ -1736,6 +1736,20 @@ def test_single_sample_name_as_string(tmp_path):
     assert su.SNPFiltration(include_samples="s0").include_samples == ["s0"]
 
 
+def test_default_lists_are_not_shared_between_instances():
+    """Instances created without stratifications, annotations or filtrations get lists of their own, so adding to
+    one does not change the next. A shared default list let an appended filtration leak into every later Filterer."""
+    a = su.Filterer(source="x.vcf", output="a.vcf")
+    a.filtrations.append(su.AllFiltration())
+    assert su.Filterer(source="x.vcf", output="b.vcf").filtrations == []
+
+    p = su.Parser(source="x.vcf", n=2)
+    p.stratifications.append(su.DegeneracyStratification())
+    p.annotations.append(su.DegeneracyAnnotation())
+    q = su.Parser(source="x.vcf", n=2)
+    assert q.stratifications == [] and q.annotations == []
+
+
 def test_ancestral_probability_without_ancestral_allele_is_ignored(tmp_path):
     """An AA_prob next to an invalid AA belongs to an allele the record does not name, so the reference fallback
     is not weighted by it. Weighting it moved 1 - AA_prob of invariant sites into the divergence bin."""
