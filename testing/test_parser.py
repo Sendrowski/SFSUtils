@@ -1670,6 +1670,29 @@ def test_consequence_stratification_takes_the_most_severe_transcript(consequence
             assert stratification.get_type(variant) == expected
 
 
+def test_custom_ancestral_tag_is_weighted_by_its_own_probability(tmp_path):
+    """The probability and posterior tags follow a custom ancestral tag, so the AA_prob and AA_post belonging to the
+    file's AA do not weight the chimp allele. Defaulting to AA_prob and AA_post applied another source's confidence."""
+    Settings.disable_pbar = True
+
+    vcf = _write_vcf_five_samples(tmp_path / "chimp.vcf", [
+        ["1", "1", ".", "A", "G", ".", ".", "AA=A;AA_prob=0.6;AA_post=0.6,0,0.4,0;AA_chimp=G",
+         "GT", "0|0", "0|0", "0|0", "0|0", "0|1"],
+        ["1", "2", ".", "A", "G", ".", ".", "AA=A;AA_chimp=A;AA_chimp_prob=0.8",
+         "GT", "0|0", "0|0", "0|0", "0|0", "0|1"],
+    ])
+
+    sfs = su.Parser(source=vcf, n=10, info_ancestral="AA_chimp").parse()["all"].to_list()
+
+    # site 1 is polarized by G alone, putting its 9 A haplotypes in bin 9, and site 2 splits its singleton between
+    # bins 1 and 9 by its own AA_chimp_prob
+    assert sfs[9] == pytest.approx(1 + 0.2)
+    assert sfs[1] == pytest.approx(0.8)
+
+    parser = su.Parser(source=vcf, n=10)
+    assert (parser.info_ancestral_prob, parser.info_ancestral_post) == ("AA_prob", "AA_post")
+
+
 def test_reference_only_rule_looks_at_parsed_samples_only(tmp_path):
     """A site without AA counts as reference-only, and in bin 0, when the parsed samples carry only the reference,
     whatever excluded samples carry."""

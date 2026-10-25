@@ -1311,6 +1311,8 @@ class VCFHandler(FileHandler):
         if self._is_tree_sequence(self.vcf):
             return TskitVariantReader(
                 self._load_tree_sequence(self.vcf), info_ancestral=self.info_ancestral,
+                info_ancestral_prob=getattr(self, 'info_ancestral_prob', None),
+                info_ancestral_post=getattr(self, 'info_ancestral_post', None),
             )
 
         if self._is_zarr_store(self.vcf):
@@ -1827,8 +1829,8 @@ class TskitVariantReader(VariantReader):
             ts: 'tskit.TreeSequence',
             contig: str = '1',
             info_ancestral: str = 'AA',
-            info_ancestral_prob: str = 'AA_prob',
-            info_ancestral_post: str = 'AA_post',
+            info_ancestral_prob: str | None = None,
+            info_ancestral_post: str | None = None,
     ):
         """
         Initialize the reader.
@@ -1836,17 +1838,21 @@ class TskitVariantReader(VariantReader):
         :param ts: The tree sequence.
         :param contig: The contig name to report (tree sequences have no contig concept).
         :param info_ancestral: The INFO tag to surface the site's ancestral allele under.
-        :param info_ancestral_prob: The INFO tag to surface an annotator's confidence under.
-        :param info_ancestral_post: The INFO tag to surface an annotator's posterior over A, C, G and T under.
+        :param info_ancestral_prob: The INFO tag to surface an annotator's confidence under, by default
+            ``info_ancestral`` suffixed with ``_prob``.
+        :param info_ancestral_post: The INFO tag to surface an annotator's posterior over A, C, G and T under, by
+            default ``info_ancestral`` suffixed with ``_post``.
         """
         #: The INFO tag the ancestral allele is surfaced under
         self._info_ancestral = info_ancestral
 
         #: The INFO tag the ancestral-allele probability is surfaced under
-        self._info_ancestral_prob = info_ancestral_prob
+        self._info_ancestral_prob = info_ancestral_prob if info_ancestral_prob is not None \
+            else f'{info_ancestral}_prob'
 
         #: The INFO tag the ancestral-allele posterior is surfaced under
-        self._info_ancestral_post = info_ancestral_post
+        self._info_ancestral_post = info_ancestral_post if info_ancestral_post is not None \
+            else f'{info_ancestral}_post'
 
         #: The tree sequence
         self._ts = ts

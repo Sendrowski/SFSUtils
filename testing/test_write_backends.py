@@ -318,6 +318,58 @@ def test_tree_sequence_posterior_polarizes_as_vcf_posterior(tmp_path):
 
 
 @requires_trees
+def test_tree_sequence_posterior_follows_custom_tag_names(tmp_path):
+    """The reader names the Ancestree posterior with the parser's tag, so a custom info_ancestral_post still finds
+    it. The hard-coded AA_post left the parser looking under its own name and polarizing by the ancestral state."""
+    import tskit
+
+    ts = tskit.load(TREES)
+    tables = ts.dump_tables()
+    sites = tables.sites.copy()
+    tables.sites.clear()
+    tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+    for row, variant in zip(sites, ts.variants()):
+        posterior = {b: 0.0 for b in "ACGT"}
+        posterior[row.ancestral_state] = 0.3
+        posterior[variant.alleles[1]] = 0.7
+        tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state,
+                             metadata={"ancestree": {"posterior": posterior}})
+    annotated = tables.tree_sequence()
+
+    Settings.disable_pbar = True
+    default = su.Parser(source=annotated, n=6).parse()["all"].to_list()
+    custom = su.Parser(source=annotated, n=6, info_ancestral_post="PP").parse()["all"].to_list()
+    hard = su.Parser(source=annotated, n=6, polarize_probabilistically=False).parse()["all"].to_list()
+
+    assert custom == default
+    assert custom != hard
+
+
+@requires_trees
+def test_tree_sequence_probability_follows_custom_tag_name(tmp_path):
+    """The reader names Ancestree's max_prob with the parser's probability tag, so a custom info_ancestral_prob
+    still finds it."""
+    import tskit
+
+    tables = tskit.load(TREES).dump_tables()
+    sites = tables.sites.copy()
+    tables.sites.clear()
+    tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+    for row in sites:
+        tables.sites.add_row(position=row.position, ancestral_state=row.ancestral_state,
+                             metadata={"ancestree": {"max_prob": 0.7}})
+    annotated = tables.tree_sequence()
+
+    Settings.disable_pbar = True
+    default = su.Parser(source=annotated, n=6).parse()["all"].to_list()
+    custom = su.Parser(source=annotated, n=6, info_ancestral_prob="P").parse()["all"].to_list()
+    hard = su.Parser(source=annotated, n=6, polarize_probabilistically=False).parse()["all"].to_list()
+
+    assert custom == default
+    assert custom != hard
+
+
+@requires_trees
 def test_ancestral_annotation_cannot_write_tree_sequence(tmp_path):
     """An ancestral-allele annotation has nowhere to go in a .trees output, whose ancestral allele is its own
     ancestral state, so the combination is refused."""

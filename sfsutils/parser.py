@@ -1456,8 +1456,8 @@ class Parser(MultiHandler):
             gff: str | None = None,
             fasta: str | None = None,
             info_ancestral: str = 'AA',
-            info_ancestral_prob: str = 'AA_prob',
-            info_ancestral_post: str = 'AA_post',
+            info_ancestral_prob: str | None = None,
+            info_ancestral_post: str | None = None,
             skip_non_polarized: bool = True,
             stratifications: List[Stratification] = [],
             annotations: List[Annotation] = [],
@@ -1508,9 +1508,10 @@ class Parser(MultiHandler):
             an ancestral allele annotation if this information is not available yet.
         :param info_ancestral_prob: The tag in the INFO field that holds the per-site probability that
             ``info_ancestral`` names the true ancestral allele, used when ``polarize_probabilistically`` is set.
+            Defaults to ``info_ancestral`` suffixed with ``_prob``, e.g. ``AA_prob``.
         :param info_ancestral_post: The tag in the INFO field that holds the per-site posterior over the ancestral
-            allele as one probability for each of A, C, G and T, as written by
-            Ancestree. Used in place of
+            allele as one probability for each of A, C, G and T, as written by Ancestree. Defaults to
+            ``info_ancestral`` suffixed with ``_post``, e.g. ``AA_post``. Used in place of
             ``info_ancestral`` and ``info_ancestral_prob`` when ``polarize_probabilistically`` is set and a site
             carries it.
         :param skip_non_polarized: Whether to skip poly-morphic sites that are not polarized, i.e., without a valid
@@ -1703,10 +1704,12 @@ class Parser(MultiHandler):
         self.subsample_mode: Literal['random', 'probabilistic'] = subsample_mode
 
         #: The tag in the INFO field that contains the ancestral allele probability
-        self.info_ancestral_prob: str = info_ancestral_prob
+        self.info_ancestral_prob: str = info_ancestral_prob if info_ancestral_prob is not None \
+            else f'{info_ancestral}_prob'
 
         #: The tag in the INFO field that contains the posterior over A, C, G and T
-        self.info_ancestral_post: str = info_ancestral_post
+        self.info_ancestral_post: str = info_ancestral_post if info_ancestral_post is not None \
+            else f'{info_ancestral}_post'
 
         #: Whether to probabilistically polarize sites
         self.polarize_probabilistically: bool = polarize_probabilistically
