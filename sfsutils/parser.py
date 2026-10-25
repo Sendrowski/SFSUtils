@@ -1723,6 +1723,9 @@ class Parser(MultiHandler):
             if self.d < 1:
                 raise ValueError("d must be at least 1.")
 
+            if self.two_sfs_offset < 0:
+                raise ValueError("two_sfs_offset must be at least 0.")
+
         #: The accumulating two-SFS matrices of shape ``(n + 1, n + 1)`` keyed by stratification type. Stratified
         #: parsing counts only within-stratum pairs, so each type accumulates independently (only when ``two_sfs``).
         self._two_sfs_matrices: Dict[str, np.ndarray] = defaultdict(lambda: np.zeros((self.n + 1, self.n + 1)))

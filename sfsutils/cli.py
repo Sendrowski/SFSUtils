@@ -70,6 +70,25 @@ def _parse_pops(value: str) -> Dict[str, List[str]]:
     return pops
 
 
+def _non_negative_int(value: str) -> int:
+    """
+    Parse an option value that has to be a non-negative integer.
+
+    :param value: The raw option string.
+    :return: The parsed integer.
+    :raises argparse.ArgumentTypeError: If the value is not an integer of at least zero.
+    """
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid integer value '{value}'.")
+
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"Value must be at least 0, got {parsed}.")
+
+    return parsed
+
+
 def _positive_int(value: str) -> int:
     """
     Parse an option value that has to be a positive integer.
@@ -459,7 +478,7 @@ def _add_parse_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--two-sfs", action="store_true", help="Parse the two-site (2-D) SFS instead.")
     p.add_argument("--two-sfs-distance", type=_positive_int, default=1000,
                    help="Width in bp of the distance window for pairing sites in the two-SFS. Default: 1000.")
-    p.add_argument("--two-sfs-offset", dest="two_sfs_offset", type=int, default=0,
+    p.add_argument("--two-sfs-offset", dest="two_sfs_offset", type=_non_negative_int, default=0,
                    help="Minimum bp separation (exclusive) between paired sites for the two-SFS. Default: 0.")
     p.add_argument("--outgroups", type=_split_csv, default=None,
                    help="Outgroup samples (for the maximum-likelihood-ancestral annotation).")

@@ -370,3 +370,12 @@ def test_run_parse_polarize_probabilistically_switch(tmp_path):
 
     assert spectra["--polarize-probabilistically"] == pytest.approx([0, 0.7, 0, 0.3, 0])
     assert spectra["--no-polarize-probabilistically"] == pytest.approx([0, 1, 0, 0, 0])
+
+
+def test_negative_two_sfs_offset_rejected():
+    """A negative two-SFS offset is rejected, as it would silently shrink the window to (0, d + offset]."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["parse", "--vcf", "x.vcf", "--n", "4", "--two-sfs", "--two-sfs-offset", "-5"])
+
+    with pytest.raises(ValueError, match="two_sfs_offset"):
+        su.Parser(source="x.vcf", n=4, two_sfs=True, two_sfs_offset=-5)
