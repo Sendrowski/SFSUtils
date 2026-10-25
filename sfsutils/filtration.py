@@ -640,8 +640,10 @@ class DeviantOutgroupFiltration(Filtration):
         :param variant: The variant to filter.
         :return: ``True`` if the variant should be kept, ``False`` otherwise.
         """
-        # keep monomorphic sites if requested
-        if not variant.is_snp and self.retain_monomorphic:
+        # keep monomorphic sites if requested. A single-base record listing a single-base alternate allele next to a
+        # spanning deletion or a symbolic allele is not flagged as a SNP but is polymorphic all the same
+        if not variant.is_snp and self.retain_monomorphic and not (
+                variant.REF in _base_set and any(a in _base_set for a in variant.ALT or ())):
             return True
 
         # a dummy target site is all-ancestral by construction, so its ingroup and outgroup major bases agree

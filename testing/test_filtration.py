@@ -1,6 +1,6 @@
 from functools import cached_property
 from typing import List
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -217,6 +217,7 @@ class FiltrationTestCase(TestCase):
 
         # test case 1: variant is not an SNP
         mock_variant.is_snp = False
+        mock_variant.ALT = []
         filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1'], ingroups=['ingroup1'])
         filter_obj.samples = np.array(['ingroup1', 'outgroup1'])
         filter_obj._create_masks()
@@ -274,6 +275,7 @@ class FiltrationTestCase(TestCase):
         # test case 8: make sure we retain mono-allelic sites if retain_monomorphic is True
         mock_variant = Mock(spec=Variant)
         mock_variant.is_snp = False
+        mock_variant.ALT = []
         filter_obj = su.DeviantOutgroupFiltration(outgroups=['outgroup1', 'outgroup2'],
                                                   ingroups=['ingroup1', 'ingroup2'], retain_monomorphic=True)
         filter_obj.samples = np.array(['ingroup1', 'ingroup2', 'outgroup1', 'outgroup2'])
@@ -617,6 +619,30 @@ class FiltrationTestCase(TestCase):
         assert f.filter_site(variant=VariantMock(REF='A', ALT=['C', 'T'], gt_bases=['T/T', 'T/T']))
         assert not f.filter_site(variant=VariantMock(REF='A', ALT=['C', 'T'], gt_bases=['A/A', 'A/A']))
         assert f.filter_site(variant=VariantMock(REF='A', ALT=['T', 'C'], gt_bases=['A/A', 'A/A']))
+
+    def test_deviant_outgroup_checks_snp_listed_next_to_symbolic_allele(self):
+        """
+        A record listing a single-base alternate allele next to a spanning deletion or a symbolic allele is compared
+        like a plain SNP, while a record with no plain alternate allele is kept as monomorphic. The shortcut for
+        records not flagged as SNPs kept the polymorphic ones whatever their outgroup.
+        """
+        f = su.DeviantOutgroupFiltration(outgroups=['o1'])
+        f.samples = np.array(['s1', 's2', 's3', 'o1'])
+        f._create_masks()
+
+        def variant(alt, ref='A'):
+            return Mock(REF=ref, ALT=alt, is_snp=False, gt_bases=np.array(['A/A', 'A/A', 'A/T', 'T/T']))
+
+        with patch('sfsutils.filtration.SiteAlleles.from_site', return_value=None):
+            assert not f.filter_site(variant(['T', '*']))
+            assert not f.filter_site(variant(['T', '<NON_REF>']))
+            assert f.filter_site(variant(['<NON_REF>']))
+            assert f.filter_site(variant([]))
+
+            # a deletion has a single-base alternate allele too, but no single-base reference, and is kept like an
+            # insertion
+            assert f.filter_site(variant(['A'], ref='AT'))
+            assert f.filter_site(variant(['AT']))
 
     def test_biased_gc_conversion_reads_multi_alt_calls_numerically(self):
         """
