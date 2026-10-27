@@ -1,6 +1,8 @@
 INFO:ancestree.CyVCF2Source: Reading variants from resources/genome/betula/all.with_outgroups.subset.10000.vcf.gz (758 haplotype samples)
-WARNING:ancestree.CyVCF2Source: Unphased heterozygous calls are present, so each one's alleles are assigned to haplotypes at random per site (phase_seed=0). Reading the written order instead would make the first haplotype the reference carrier throughout, which the genealogy estimators read as a clade. Phase the data to recover the linkage, or pass phased=True to take the file's order as given.
+INFO:ancestree.CyVCF2Source: Unphased heterozygous calls are present. Their alleles are assigned to haplotypes at random per site (phase_seed=0), which keeps the file's allele order from forming a spurious clade but leaves the linkage between sites unused.
 INFO:ancestree.LocalTreeInference: Inferring local trees from genotypes (42 samples, window=8snp)
+INFO:ancestree.LocalTreeInference: Using 40 ingroup sample(s): ASP01_h0, ASP01_h1, ASP02_h0, ASP02_h1, ASP03_h0, ASP03_h1, ASP04_h0, ASP04_h1, ASP05_h0, ASP05_h1, ASP06_h0, ASP06_h1, ASP07_h0, ASP07_h1, ASP08_h0, ASP08_h1, ASP09_h0, ASP09_h1, ASP10_h0, ASP10_h1, ASP11_h0, ASP11_h1, ASP12_h0, ASP12_h1, ASP13_h0, ASP13_h1, ASP14_h0, ASP14_h1, ASP15_h0, ASP15_h1, ASP16_h0, ASP16_h1, ASP17_h0, ASP17_h1, ASP18_h0, ASP18_h1, ASP19_h0, ASP19_h1, ASP20_h0, ASP20_h1
+INFO:ancestree.LocalTreeInference: Using 2 outgroup sample(s): ERR2103730_h0, ERR2103731_h0
 LocalTreeInference: 1 segments [--:--, --segments/s]
 WARNING:ancestree.LocalTreeInference: 9808 site(s) are monomorphic within the ingroup and were reported at the ingroup MRCA, where the ingroup's own allele is the answer.
 INFO:ancestree.LocalTreeInference: Focal node: reported at the ingroup_mrca
