@@ -1080,8 +1080,10 @@ class GFFHandler(FileHandler):
         # column labels for GFF file
         col_labels = ['seqid', 'source', 'type', 'start', 'end', 'score', 'strand', 'phase', 'attributes']
 
+        # the contig is read as a string and made categorical once all blocks are read, which keeps a contig
+        # named 01 the string '01'
         dtypes = dict(
-            seqid='category',
+            seqid=str,
             type='category',
             start=float,  # temporarily load as float to handle NA values
             end=float,  # temporarily load as float to handle NA values
@@ -1113,11 +1115,14 @@ class GFFHandler(FileHandler):
             )
 
             for block in blocks:
-                # a category the block does not carry is not in its own dtype, so the categories of every
-                # block are collected: a contig without any coding sequence keeps its category and thereby
-                # its (empty) group in a per-contig count, as it has when the file is read in one pass
+                # the values of every block are collected, so that a contig without any coding sequence keeps its
+                # category and thereby its (empty) group in a per-contig count
+                # a phase may be read as a number, and is kept as the string the file spells
+                block['phase'] = block['phase'].cat.rename_categories(str)
+
                 for column in categorical:
-                    categories[column].update(dict.fromkeys(block[column].cat.categories))
+                    values = block[column].dropna().unique() if column == 'seqid' else block[column].cat.categories
+                    categories[column].update(dict.fromkeys(values))
 
                 kept.append(self._cds_of_block(block))
 

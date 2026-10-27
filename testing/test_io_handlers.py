@@ -1007,6 +1007,16 @@ def test_gff_with_byte_order_mark(tmp_path, gz):
     assert GFFHandler(path)._count_target_sites() == {'1': 30}
 
 
+def test_gff_numeric_contig_names_stay_strings(tmp_path):
+    """Contigs whose names read as numbers keep their names. pandas 3.1 infers the values of a category read from
+    a file, which made contig 1 the integer 1 and merged contigs 1 and 01."""
+    path = str(tmp_path / 'numeric.gff3')
+    with open(path, 'w') as f:
+        f.write('1\tx\tCDS\t1\t30\t.\t+\t0\tParent=t1\n01\tx\tCDS\t1\t20\t.\t+\t.\tParent=t2\n')
+
+    assert GFFHandler(path)._count_target_sites() == {'01': 20, '1': 30}
+
+
 def test_gff_read_in_blocks_matches_a_single_block(tmp_path, monkeypatch):
     """The coding sequences do not depend on where the blocks fall."""
     path = _gff_with_fasta(tmp_path / 'fasta.gff3', n_cds=25, n_sequence=40)
