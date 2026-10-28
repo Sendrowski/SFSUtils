@@ -300,6 +300,98 @@ def test_jointsfs_fold_symmetric_is_noop():
     assert np.array_equal(j.fold().data, data)
 
 
+def test_jointsfs_subsample_probabilistic_factorizes_over_populations():
+    """For an outer-product joint SFS, subsampling equals the outer product of the subsampled marginal spectra,
+    since the populations are projected independently."""
+    a = su.Spectrum(np.arange(1, 9, dtype=float))
+    b = su.Spectrum(np.arange(1, 6, dtype=float) ** 2)
+    j = su.JointSFS(np.outer(a.data, b.data), pop_names=["A", "B"])
+
+    sub = j.subsample([4, 2])
+
+    assert sub.shape == (5, 3) and sub.pop_names == ["A", "B"]
+    np.testing.assert_allclose(sub.data, np.outer(a.subsample(4).data, b.subsample(2).data), rtol=1e-12)
+    assert sub.data.sum() == pytest.approx(j.data.sum())
+
+
+def test_jointsfs_subsample_commutes_with_marginalize():
+    rng = np.random.default_rng(0)
+    j = su.JointSFS(rng.random((7, 5, 4)), pop_names=["A", "B", "C"])
+
+    sub = j.subsample([3, 3, 2])
+
+    np.testing.assert_allclose(
+        sub.marginalize(["B"]).data, su.Spectrum(j.marginalize(["B"]).data).subsample(3).data, rtol=1e-12
+    )
+
+
+def test_jointsfs_subsample_full_size_is_identity_and_scalar_broadcasts():
+    rng = np.random.default_rng(1)
+    j = su.JointSFS(rng.random((5, 5)))
+
+    np.testing.assert_allclose(j.subsample(4).data, j.data, rtol=1e-12)
+    np.testing.assert_allclose(j.subsample(2).data, j.subsample([2, 2]).data)
+
+
+def test_jointsfs_subsample_random_agrees_with_probabilistic():
+    rng = np.random.default_rng(2)
+    j = su.JointSFS(rng.integers(20000, 40000, size=(6, 5)).astype(float))
+    j.data[0, 0] += 0.5  # non-integer monomorphic mass is carried over exactly
+
+    prob = j.subsample([3, 2])
+    rand = j.subsample([3, 2], mode="random", seed=0)
+
+    assert rand.data.sum() == pytest.approx(prob.data.sum())
+    np.testing.assert_allclose(rand.data, prob.data, rtol=0.03)
+    np.testing.assert_array_equal(rand.data, j.subsample([3, 2], mode="random", seed=0).data)
+
+
+def test_jointsfs_subsample_keeps_folded():
+    rng = np.random.default_rng(3)
+    unfolded = su.JointSFS(rng.random((7, 5)))
+
+    sub = unfolded.fold().subsample([4, 2])
+
+    assert sub.is_folded()
+    np.testing.assert_allclose(sub.data, unfolded.subsample([4, 2]).fold().data, rtol=1e-12)
+
+
+def test_jointsfs_subsample_by_population_name():
+    rng = np.random.default_rng(6)
+    j = su.JointSFS(rng.random((7, 5, 4)), pop_names=["A", "B", "C"])
+
+    np.testing.assert_allclose(j.subsample({"C": 2, "A": 3}).data, j.subsample([3, 4, 2]).data)
+    np.testing.assert_allclose(j.subsample({1: 2}).data, j.subsample([6, 2, 3]).data)
+
+    with pytest.raises(ValueError, match="Population names"):
+        j.subsample({"D": 2})
+
+
+@pytest.mark.parametrize("n", [[5, 2], [0, 2], [2, 2, 2], {"pop_0": 5}])
+def test_jointsfs_subsample_invalid_sizes_raise(n):
+    with pytest.raises(ValueError):
+        su.JointSFS(np.ones((5, 4))).subsample(n)
+
+
+def test_jointsfs_subsample_invalid_mode_raises():
+    with pytest.raises(ValueError, match="Unknown subsampling mode"):
+        su.JointSFS(np.ones((5, 4))).subsample(2, mode="foo")
+
+
+def test_jointspectra_subsample_per_type():
+    rng = np.random.default_rng(4)
+    spectra = su.JointSpectra({"x": rng.random((5, 4)), "y": rng.random((5, 4))}, pop_names=["A", "B"])
+
+    sub = spectra.subsample([2, 3])
+
+    assert sub.types == ["x", "y"] and sub.pop_names == ["A", "B"]
+    for t in spectra.types:
+        np.testing.assert_allclose(sub[t].data, spectra[t].subsample([2, 3]).data)
+
+    rand = spectra.subsample([2, 3], mode="random", seed=5)
+    np.testing.assert_array_equal(rand["x"].data, spectra.subsample([2, 3], mode="random", seed=5)["x"].data)
+
+
 def test_jointsfs_roundtrip_and_copy_type(tmp_path):
     j = su.JointSFS(np.arange(6).reshape(2, 3), pop_names=["A", "B"])
     f = tmp_path / "jsfs.json"

@@ -2382,6 +2382,110 @@ class JointSFS(AbstractSpectrum):
         """
         return bool(np.all(self.data == self.fold().data))
 
+    def subsample(
+            self,
+            n: int | Sequence[int] | Dict[int | str, int],
+            mode: Literal['random', 'probabilistic'] = 'probabilistic',
+            seed: int | Generator = None
+    ) -> 'JointSFS':
+        """
+        Subsample the joint SFS to smaller per-population sample sizes. Each population is down-projected
+        independently: an entry with :math:`k_p` derived alleles among :math:`n_p` haplotypes in population
+        :math:`p` maps to :math:`j_p` derived alleles among :math:`m_p` subsampled haplotypes with hypergeometric
+        probability
+
+        .. math::
+            \\Pr(j_p \\mid k_p) = \\binom{k_p}{j_p} \\binom{n_p - k_p}{m_p - j_p} \\Big/ \\binom{n_p}{m_p},
+
+        and the probability of a joint entry is the product of these over the populations. A folded joint SFS is
+        folded again after subsampling.
+
+        :param n: Subsampled sample size per population: one size for all populations, one per population in axis
+            order, or a dictionary mapping population names or axis indices to sizes, where omitted populations
+            keep their size. A size equal to the original leaves that population unchanged.
+        :param mode: Subsampling mode. Either 'random' or 'probabilistic'.
+        :param seed: Random state or seed. Only for 'random' mode.
+        :return: Subsampled joint SFS
+        :raises ValueError: If a sample size is not in ``[1, n_p]``, the number of sizes does not match the number
+            of populations, a population is unknown, or the mode is unknown.
+        """
+        return self._subsample(n, mode, seed, fold=self.is_folded())
+
+    def _subsample(
+            self,
+            n: int | Sequence[int] | Dict[int | str, int],
+            mode: Literal['random', 'probabilistic'],
+            seed: int | Generator,
+            fold: bool
+    ) -> 'JointSFS':
+        """
+        Subsample the joint SFS to smaller per-population sample sizes.
+
+        :param n: Subsampled sample size per population, one for all, one per population, or keyed by population.
+        :param mode: Subsampling mode. Either 'random' or 'probabilistic'.
+        :param seed: Random state or seed. Only for 'random' mode.
+        :param fold: Whether to fold the subsampled joint SFS.
+        :return: Subsampled joint SFS
+        """
+        n_orig = [size - 1 for size in self.data.shape]
+
+        if isinstance(n, dict):
+            n_sub = list(n_orig)
+
+            for p, m in zip(self._pop_indices(list(n)), n.values()):
+                n_sub[p] = int(m)
+        elif np.ndim(n) == 0:
+            n_sub = [int(n)] * self.n_pops
+        else:
+            n_sub = [int(m) for m in n]
+
+        if len(n_sub) != self.n_pops:
+            raise ValueError(f'Expected {self.n_pops} sample sizes (one per population), got {len(n_sub)}.')
+
+        if any(m < 1 or m > k for m, k in zip(n_sub, n_orig)):
+            raise ValueError(f'Subsampled sample sizes {n_sub} must lie in [1, n] for original sizes {n_orig}.')
+
+        if mode not in ['random', 'probabilistic']:
+            raise ValueError(f'Unknown subsampling mode {mode}.')
+
+        if mode == 'random':
+            subsample = np.zeros([m + 1 for m in n_sub], dtype=float)
+
+            if isinstance(seed, Generator):
+                rng = seed
+            else:
+                rng = np.random.default_rng(None if seed is None else int(seed))
+
+            for k in zip(*np.nonzero(self.data)):
+                # entries monomorphic in every population map deterministically, so keep their non-integer mass
+                if all(k_p in (0, n_p) for k_p, n_p in zip(k, n_orig)):
+                    subsample[tuple(m if k_p else 0 for k_p, m in zip(k, n_sub))] += self.data[k]
+                    continue
+
+                size = int(self.data[k])
+
+                # the populations are subsampled independently given the entry's derived counts
+                samples = tuple(
+                    hypergeom.rvs(M=n_p, n=k_p, N=m, size=size, random_state=rng)
+                    for k_p, n_p, m in zip(k, n_orig, n_sub)
+                )
+
+                np.add.at(subsample, samples, 1)
+        else:
+            subsample = self.data
+
+            # contract each axis with its hypergeometric projection matrix of shape (n_p + 1, m_p + 1)
+            for p, (n_p, m) in enumerate(zip(n_orig, n_sub)):
+                projection = hypergeom.pmf(k=np.arange(m + 1)[None, :], M=n_p, n=np.arange(n_p + 1)[:, None], N=m)
+                subsample = np.moveaxis(np.tensordot(subsample, projection, axes=([p], [0])), -1, p)
+
+        sfs = JointSFS(subsample, self.pop_names)
+
+        if fold:
+            sfs = sfs.fold()
+
+        return sfs
+
     def plot(
             self,
             pops: Tuple[int | str, int | str] = (0, 1),
@@ -2679,6 +2783,28 @@ class JointSpectra(_DictSpectraSerialization, AbstractSpectra):
         :return: Marginalized joint spectra.
         """
         return JointSpectra({t: s.marginalize(pops) for t, s in self.data.items()})
+
+    def subsample(
+            self,
+            n: int | Sequence[int] | Dict[int | str, int],
+            mode: Literal['random', 'probabilistic'] = 'probabilistic',
+            seed: int | Generator = None
+    ) -> 'JointSpectra':
+        """
+        Subsample every joint SFS to smaller per-population sample sizes (see :meth:`JointSFS.subsample`).
+
+        :param n: Subsampled sample size per population: one size for all populations, one per population in axis
+            order, or a dictionary mapping population names or axis indices to sizes.
+        :param mode: Subsampling mode. Either 'random' or 'probabilistic'.
+        :param seed: Random state or seed. Only for 'random' mode.
+        :return: Subsampled joint spectra
+        """
+        rngs = Spectra._spawn_rngs(seed, len(self.data))
+
+        # the types are folded together, so that a sparse type does not pass for folded among unfolded ones
+        fold = all(s.is_folded() for s in self.data.values())
+
+        return JointSpectra({t: s._subsample(n, mode, rng, fold) for (t, s), rng in zip(self.data.items(), rngs)})
 
     def __getitem__(self, key: str) -> 'JointSFS':
         """

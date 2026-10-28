@@ -225,6 +225,22 @@ def test_joint_subsample_modes_agree():
     assert rel_diff.mean() < 0.3
 
 
+@requires_joint
+def test_joint_subsample_matches_parser_projection():
+    """Subsampling the full-size parsed joint SFS equals parsing straight at the subsampled sizes, as the
+    hypergeometric projections compose."""
+    Settings.disable_pbar = True
+    pops, n = _load_joint_pops()
+    nn = {"A": 6, "B": 4}
+
+    full = su.Parser(source=JOINT_VCF, pops=pops, n=n, skip_non_polarized=False,
+                     subsample_mode="probabilistic").parse()
+    direct = su.Parser(source=JOINT_VCF, pops=pops, n=nn, skip_non_polarized=False,
+                       subsample_mode="probabilistic").parse()
+
+    np.testing.assert_allclose(full.subsample(nn)["all"].data, direct["all"].data, rtol=1e-10)
+
+
 @requires_three_pop
 def test_parser_reproduces_msprime_joint_sfs_three_pops():
     """The parsed three-population joint SFS reproduces the tskit ground truth exactly.
