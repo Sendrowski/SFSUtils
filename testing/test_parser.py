@@ -2693,6 +2693,49 @@ def test_fixed_difference_with_posterior_counts_as_divergence(tmp_path):
     assert sfs == pytest.approx([0.1, 0, 0, 0, 0.9])
 
 
+@pytest.mark.parametrize("post", ["0.5,0.1,0.4,0", "0.35,0.25,0.4,0"])
+def test_ancestral_posterior_ignores_alt_alleles_the_parsed_samples_do_not_carry(tmp_path, post):
+    """A record declaring an alternate allele that only an excluded sample carries polarizes as the record with that
+    allele trimmed. Renormalising AA_post over every declared allele gave the uncarried G a share of the posterior
+    (A at 0.5 instead of 0.5 / 0.6), and where G held the maximum it became the ancestral allele and the site was
+    dropped as tri-allelic."""
+    Settings.disable_pbar = True
+
+    declared = _write_vcf(tmp_path / "declared.vcf", [
+        ["1", "10", ".", "A", "C,G", ".", ".", f"AA_post={post}", "GT", "0/1", "0/0", "2/2"],
+    ], samples=("s1", "s2", "s3"))
+    trimmed = _write_vcf(tmp_path / "trimmed.vcf", [
+        ["1", "10", ".", "A", "C", ".", ".", f"AA_post={post}", "GT", "0/1", "0/0", "./."],
+    ], samples=("s1", "s2", "s3"))
+
+    def sfs(source):
+        return su.Parser(source=source, n=4, include_samples=["s1", "s2"], filtrations=[]).parse()["all"].to_list()
+
+    w = float(post.split(",")[0]) / (float(post.split(",")[0]) + float(post.split(",")[1]))
+
+    # one C among four A/C alleles with A ancestral at probability w, three otherwise
+    assert sfs(declared) == pytest.approx([0, w, 0, 1 - w, 0])
+    assert sfs(declared) == sfs(trimmed)
+
+
+def test_ancestral_posterior_over_carried_alleles_excludes_an_uncarried_reference():
+    """Where the parsed samples carry two alternate alleles but not the reference, the posterior is renormalised over
+    the two alternate alleles."""
+    parser = su.Parser.__new__(su.Parser)
+    parser.polarize_probabilistically = True
+    parser.skip_non_polarized = True
+    parser.info_ancestral = "AA"
+    parser.info_ancestral_post = "AA_post"
+    parser.n_aa_prob = 0
+    parser._samples_mask = np.array([True, True, False])
+
+    v = Variant(ref="A", pos=1, chrom="1", alt=["C", "G"], is_snp=True, gt_bases=np.array(["C/G", "G/G", "A/A"]),
+                info={"AA_post": "0.9,0.02,0.08,0"})
+
+    assert parser._get_ancestral(v) == "G"
+    assert parser._get_ancestral_prob(v) == pytest.approx(0.8)
+
+
 def test_zarr_degeneracy_stratification_end_to_end(tmp_path):
     """The headline workflow the '.' regression broke: a VCF-Zarr store carrying Degeneracy (ints for
     coding sites, '.' for non-coding) parses stratified into a non-empty neutral/selected SFS."""

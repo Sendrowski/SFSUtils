@@ -1929,7 +1929,8 @@ class Parser(MultiHandler):
     def _get_ancestral_posterior(self, variant: Site) -> Optional[Tuple[str, float]]:
         """
         The ancestral allele and its probability from the posterior over A, C, G and T (see
-        ``info_ancestral_post``), renormalised over the site's own alleles. At a site with a single allele, the
+        ``info_ancestral_post``), renormalised over the site's own alleles: those the parsed samples carry where
+        they carry at least two, and the record's alleles otherwise. At a site with a single allele, the
         probability that this allele is not ancestral goes to the most probable other base.
 
         :param variant: The site.
@@ -1957,6 +1958,14 @@ class Parser(MultiHandler):
                              f"not one probability for each of {', '.join(bases)}.")
 
         alleles = [a for a in get_site_alleles(variant) if a in bases]
+
+        # a record declaring several alternate alleles segregates in the parsed samples for those they carry
+        if len(alleles) > 2:
+            called = self._get_called_alleles(variant)
+            carried = [a for a in alleles if a in called]
+
+            if len(carried) >= 2:
+                alleles = carried
 
         # a site with a single allele is fixed for it or for another base, so every other base counts against it
         if len(alleles) == 1:
