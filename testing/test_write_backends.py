@@ -389,16 +389,16 @@ def test_tree_sequence_output_attaches_info_metadata(tmp_path):
 
     writer = TskitVariantWriter(ts, out)
     # keep exactly the first two sites, tagging them with INFO
-    kept = sorted(int(s.position) + 1 for s in ts.sites())[:2]
+    kept = sorted(int(s.position) for s in ts.sites())[:2]
     for site in ts.sites():
-        pos = int(site.position) + 1
+        pos = int(site.position)
         if pos in kept:
             writer.write(Variant(ref="A", pos=pos, chrom="1", info={"tag": pos}))
     writer.close()
 
     sub = tskit.load(out)
     assert sub.num_sites == 2
-    assert all(site.metadata["sfsutils"].get("tag") == int(site.position) + 1 for site in sub.sites())
+    assert all(site.metadata["sfsutils"].get("tag") == int(site.position) for site in sub.sites())
 
 
 @requires_trees

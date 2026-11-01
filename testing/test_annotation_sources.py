@@ -80,9 +80,9 @@ def _write_trees(tmp_path):
     root = tables.nodes.add_row(flags=0, time=1)
     tables.edges.add_row(left=0, right=len(CODING_SEQ), parent=root, child=0)
     tables.edges.add_row(left=0, right=len(CODING_SEQ), parent=root, child=1)
-    # a tskit site at position p-1 is read back as VCF POS = int(p-1) + 1 = p
+    # a tskit site at position p is read back as VCF POS p
     for pos, ref, alt, _ in SITES:
-        sid = tables.sites.add_row(position=pos - 1, ancestral_state=ref)
+        sid = tables.sites.add_row(position=pos, ancestral_state=ref)
         tables.mutations.add_row(site=sid, node=0, derived_state=alt)
     tables.sort()
     path = str(tmp_path / "variants.trees")
@@ -149,7 +149,7 @@ def test_degeneracy_trees_output(tmp_path):
     out = _annotate(trees, str(tmp_path / "out.trees"), fasta, gff)
 
     ts = tskit.load(out)
-    stored = {int(s.position) + 1: s.metadata.get("sfsutils", {}).get("Degeneracy") for s in ts.sites()}
+    stored = {int(s.position): s.metadata.get("sfsutils", {}).get("Degeneracy") for s in ts.sites()}
     assert stored == EXPECTED_DEGENERACY
 
 

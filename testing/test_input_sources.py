@@ -322,3 +322,91 @@ class TestTreeSequencePolarisation:
             tables.sites.add_row(position=position, ancestral_state="", metadata=metadata)
 
         assert self._spectrum(tables.tree_sequence()) == []
+
+
+@requires_trees
+class TestTreeSequencePositions:
+    """A tree-sequence site is read at the VCF ``POS`` that :meth:`tskit.TreeSequence.write_vcf` writes for it."""
+
+    @staticmethod
+    def _sources(tmp_path):
+        """The tree sequence and the VCF it writes, plus a random FASTA and a GFF of 1-bp CDS features placed on
+        every other site of that VCF."""
+        import tskit
+        from cyvcf2 import VCF as _VCF
+
+        ts = tskit.load(TREES)
+        vcf = str(tmp_path / "written.vcf")
+        with open(vcf, "w") as f:
+            ts.write_vcf(f)
+
+        records = [(v.POS, v.REF) for v in _VCF(vcf)]
+        seq = np.random.default_rng(0).choice(list("ACGT"), size=int(ts.sequence_length) + 2)
+        for pos, ref in records:
+            seq[pos - 1] = ref
+        fasta = tmp_path / "ref.fa"
+        fasta.write_text(">1\n" + "".join(seq) + "\n")
+
+        gff = tmp_path / "cds.gff"
+        gff.write_text("##gff-version 3\n" + "".join(
+            f"1\tx\tCDS\t{pos}\t{pos}\t.\t+\t0\tParent=t{i}\n" for i, (pos, _) in enumerate(records[::2])))
+
+        return ts, vcf, str(fasta), str(gff), len(records[::2])
+
+    def test_base_context_and_cds_filtering_match_the_written_vcf(self, tmp_path):
+        """Stratifying by FASTA base context and filtering by GFF coding sequences give the same spectra for the tree
+        sequence as for the VCF written from it.
+
+        The reader used to report ``POS`` as the tskit position plus one, so every FASTA and GFF lookup on a tree
+        sequence read the neighbouring base: most sites landed in another 3-mer context, and 1-bp CDS features
+        kept none of their sites.
+        """
+        ts, vcf, fasta, gff, n_cds = self._sources(tmp_path)
+        Settings.disable_pbar = True
+
+        def context(source):
+            return su.Parser(source=source, n=10, skip_non_polarized=False,
+                             stratifications=[su.BaseContextStratification(fasta=fasta)]).parse().data
+
+        def coding(source):
+            return su.Parser(source=source, n=10, skip_non_polarized=False, gff=gff,
+                             filtrations=[su.CodingSequenceFiltration()]).parse().all.data
+
+        from_vcf, from_trees = context(vcf), context(ts)
+        assert sorted(from_trees.columns) == sorted(from_vcf.columns)
+        np.testing.assert_array_equal(from_trees[from_vcf.columns].to_numpy(), from_vcf.to_numpy())
+
+        np.testing.assert_array_equal(coding(ts), coding(vcf))
+        assert coding(ts).sum() == pytest.approx(n_cds)
+
+    def test_continuous_positions_round_as_written(self):
+        """A non-integer tskit position becomes the nearest integer, as in the VCF written from it."""
+        import io
+        import tskit
+        from sfsutils.io_handlers import TskitVariantReader
+
+        tables = tskit.load(TREES).dump_tables()
+        positions = tables.sites.position.copy()
+        positions[:3] += [0.4, 0.6, -0.4]
+        tables.sites.position = positions
+        ts = tables.tree_sequence()
+
+        buf = io.StringIO()
+        ts.write_vcf(buf)
+        written = [int(line.split("\t")[1]) for line in buf.getvalue().splitlines() if not line.startswith("#")]
+
+        assert [v.POS for v in TskitVariantReader(ts)] == written
+
+    def test_a_site_at_position_zero_is_rejected(self):
+        """A site at tskit position 0 has no VCF ``POS``, so reading it raises, as writing it to a VCF does."""
+        import tskit
+        from sfsutils.io_handlers import TskitVariantReader
+
+        tables = tskit.load(TREES).dump_tables()
+        positions = tables.sites.position.copy()
+        positions[0] = 0
+        tables.sites.position = positions
+        ts = tables.tree_sequence()
+
+        with pytest.raises(ValueError, match="POS 0"):
+            list(TskitVariantReader(ts))

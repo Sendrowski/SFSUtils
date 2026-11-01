@@ -1824,7 +1824,8 @@ class TskitVariantReader(VariantReader):
     Stream variants from a tskit tree sequence (e.g. an inferred ARG or an msprime simulation). Sample
     haplotype nodes are grouped into diploid (or higher-ploidy) samples by individual, exactly as
     :meth:`tskit.TreeSequence.write_vcf` does, so parsing a ``.trees`` file yields the same spectrum as
-    parsing the VCF written from it. tskit states each site's ancestral allele as allele ``0``, which is
+    parsing the VCF written from it. Each site's ``POS`` is its tskit position rounded to the nearest integer,
+    as in that VCF. tskit states each site's ancestral allele as allele ``0``, which is
     surfaced under the ancestral INFO tag, so polarisation works as it does for an annotated VCF and
     ``skip_non_polarized`` keeps its meaning.
     """
@@ -2007,6 +2008,12 @@ class TskitVariantReader(VariantReader):
         # mutations, so the positions are taken from the table column instead
         positions = self._ts.sites_position
 
+        # VCF POS is the tskit position rounded to the nearest integer, as write_vcf writes it. A POS of 0 has
+        # no reference base for the FASTA and GFF lookups to read, so it is rejected as write_vcf rejects it
+        if len(positions) and np.round(positions[0]) == 0:
+            raise ValueError(f"The tree sequence has a site at position {positions[0]}, which rounds to VCF POS 0. "
+                             f"Shift or delete it before parsing, as tskit's write_vcf requires.")
+
         for var in self._ts.variants():
             alleles = var.alleles
             genotypes = var.genotypes
@@ -2053,7 +2060,7 @@ class TskitVariantReader(VariantReader):
 
             variant = Variant(
                 ref=alleles[0],
-                pos=int(position) + 1,  # tskit positions are 0-based, VCF POS is 1-based
+                pos=int(np.round(position)),
                 chrom=self._contig,
                 gt_bases=gt_bases,
                 alt=[a for a in alleles[1:] if a],
@@ -3346,16 +3353,16 @@ class TskitVariantWriter(VariantWriter):
 
     def _position(self, variant: Site) -> float:
         """
-        The exact tskit (0-based) position of a variant. :class:`TskitVariantReader` attaches it so that
+        The exact tskit position of a variant. :class:`TskitVariantReader` attaches it so that
         continuous-genome sequences, whose positions collide under the integer VCF ``POS``, are identified
-        unambiguously; for any other source we fall back to reconstructing it from ``POS``.
+        unambiguously. For any other source it is ``POS``.
 
         :param variant: The variant.
-        :return: The exact 0-based position.
+        :return: The exact tskit position.
         """
         pos = getattr(variant, '_tskit_position', None)
 
-        return float(pos) if pos is not None else float(int(variant.POS) - 1)
+        return float(pos) if pos is not None else float(int(variant.POS))
 
     def write(self, variant: Site) -> None:
         """

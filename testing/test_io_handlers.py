@@ -471,7 +471,7 @@ def test_the_tskit_positions_are_those_of_the_sites():
     variants = list(TskitVariantReader(ts))
 
     assert [v._tskit_position for v in variants] == list(ts.sites_position)
-    assert [v.POS for v in variants] == [int(p) + 1 for p in ts.sites_position]
+    assert [v.POS for v in variants] == [int(round(p)) for p in ts.sites_position]
 
 
 def test_the_writer_agrees_with_the_genotype_strings(tmp_path):
